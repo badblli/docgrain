@@ -59,3 +59,17 @@ def put_upload(object_name: str, data: object, content_type: str, length: int) -
         length=length,
         content_type=content_type,
     )
+
+
+def get_text(object_name: str) -> str | None:
+    """Read a small UTF-8 artifact without exposing object storage to the browser."""
+    settings = get_settings()
+    try:
+        response = storage_client().get_object(settings.s3_bucket, object_name)
+    except S3Error:
+        return None
+    try:
+        return response.read().decode("utf-8")
+    finally:
+        response.close()
+        response.release_conn()

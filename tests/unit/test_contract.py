@@ -76,6 +76,13 @@ def test_registered_file_can_be_stored_then_confirmed(monkeypatch: pytest.Monkey
     assert confirmation.json()["job_id"] == payload["job_id"]
 
 
+def test_canonical_markdown_artifact_stays_behind_the_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(document_routes, "get_text", lambda _: "# Canonical output")
+    response = client.get("/v1/documents/doc_7fk2/versions/dver_2/artifacts/document.md")
+    assert response.status_code == 200
+    assert response.text == "# Canonical output"
+
+
 def test_every_chunk_carries_the_contract_fields() -> None:
     chunks = client.get("/v1/versions/dver_2/chunks").json()
     assert chunks

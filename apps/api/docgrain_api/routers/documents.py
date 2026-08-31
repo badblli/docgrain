@@ -17,12 +17,13 @@ from docgrain_domain import (
     new_id,
 )
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from .. import repository
 from ..queue import enqueue
 from ..settings import get_settings
-from ..storage import object_exists, put_upload
+from ..storage import get_text, object_exists, put_upload
 
 router = APIRouter(prefix="/v1/documents", tags=["documents"])
 
@@ -95,6 +96,20 @@ def get_document(document_id: str) -> DocumentListItem:
 @router.get("/{document_id}/versions", response_model=list[DocumentVersion])
 def list_versions(document_id: str) -> list[DocumentVersion]:
     return repository.list_versions(document_id)
+
+
+@router.get("/{document_id}/versions/{version_id}/artifacts/{artifact_name}")
+def get_artifact(document_id: str, version_id: str, artifact_name: str) -> PlainTextResponse:
+    """Serve canonical artifacts through the API; the storage bucket remains private."""
+    if artifact_name not in {"document.md", "document.json"}:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "artifact not found")
+    if repository.get_version(document_id, version_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "document version not found")
+    content = get_text(f"artifacts/{document_id}/{version_id}/{artifact_name}")
+    if content is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "artifact is not available yet")
+    media_type = "text/markdown; charset=utf-8" if artifact_name.endswith(".md") else "application/json"
+    return PlainTextResponse(content, media_type=media_type)
 
 
 @router.post("", response_model=RegisterResponse, status_code=status.HTTP_202_ACCEPTED)
