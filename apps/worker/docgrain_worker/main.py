@@ -11,6 +11,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from urllib.parse import urlparse
 
+import fitz
 import psycopg
 import redis
 from docling.document_converter import DocumentConverter
@@ -30,7 +31,7 @@ def storage() -> Minio:
 
 def stage_update(stages: list[dict[str, object]], failed: str | None = None) -> list[dict[str, object]]:
     now = datetime.now(UTC).isoformat()
-    done = {"register", "extract", "normalize", "publish"}
+    done = {"register", "render", "extract", "normalize", "publish"}
     for stage in stages:
         name = str(stage["stage"])
         stage["status"] = "failed" if failed and name == "extract" else ("done" if name in done and not failed else "skipped")
@@ -49,6 +50,26 @@ def fail(job_id: str, message: str) -> None:
         conn.commit()
 
 
+def render_pages(source: Path, prefix: str, bucket: str) -> int:
+    """Render reviewable page PNGs; each is an immutable version artifact."""
+    pdf = fitz.open(source)
+    try:
+        client = storage()
+        for number, page in enumerate(pdf, start=1):
+            pixmap = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+            image = pixmap.tobytes("png")
+            client.put_object(
+                bucket,
+                f"{prefix}/pages/{number:04d}.png",
+                BytesIO(image),
+                len(image),
+                content_type="image/png",
+            )
+        return len(pdf)
+    finally:
+        pdf.close()
+
+
 def process(job_id: str) -> None:
     with closing(psycopg.connect(db_url())) as conn, conn.cursor() as cur:
         cur.execute("SELECT document_version_id, document_id, stages FROM jobs WHERE id=%s AND status='running'", (job_id,))
@@ -65,14 +86,15 @@ def process(job_id: str) -> None:
                 source.write_bytes(response.read())
             finally:
                 response.close(); response.release_conn()
+            prefix = f"artifacts/{document_id}/{version_id}"
+            rendered_page_count = render_pages(source, prefix, bucket)
             document = DocumentConverter().convert(source).document
             markdown = document.export_to_markdown().encode()
             structured = json.dumps(document.export_to_dict(), ensure_ascii=False).encode()
-            prefix = f"artifacts/{document_id}/{version_id}"
             client = storage()
             client.put_object(bucket, f"{prefix}/document.md", BytesIO(markdown), len(markdown), content_type="text/markdown")
             client.put_object(bucket, f"{prefix}/document.json", BytesIO(structured), len(structured), content_type="application/json")
-            page_count = len(getattr(document, "pages", {}))
+            page_count = len(getattr(document, "pages", {})) or rendered_page_count
         with closing(psycopg.connect(db_url())) as conn, conn.cursor() as cur:
             cur.execute("UPDATE document_versions SET status='done', parser='docling', page_count=%s, published_at=NOW() WHERE id=%s", (page_count, version_id))
             cur.execute("UPDATE jobs SET status='done', stages=%s::jsonb, finished_at=NOW() WHERE id=%s", (json.dumps(stage_update(stages)), job_id))
