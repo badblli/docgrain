@@ -31,7 +31,9 @@ Her dikey dilim yalnızca metni değil dokümanın bütün yapısını korumalı
 - Her yapı document version, sayfa ve mümkünse bounding box ile kaynağına bağlanır.
 - Yapılar arası `described_by`, `references`, `continues_on`, `belongs_to` ve
   `sourced_from` ilişkileri document graph içinde saklanır.
-- Docling çıktısı canonical; Gemini/Qwen gibi modellerin yorumları `derived` olur.
+- Her sayfa primary `VisionProvider` ile multimodal olarak işlenir. Kabul edilen
+  OCR/layout/table extraction canonical normalized temsile katılabilir.
+- Gemini/Qwen'in yorumlayıcı açıklama, özet ve ilişki çıkarımları `derived` olur.
 - Vision çıktısı source region, ilgili node ID'leri, provider/model, prompt
   version, amaç ve confidence olmadan kabul edilmez.
 - Chunk; metinle birlikte ilgili tablo/görsel bağlamını ve inherited metadata'yı
@@ -39,7 +41,7 @@ Her dikey dilim yalnızca metni değil dokümanın bütün yapısını korumalı
 - Heading-first chunking esastır. Cosine similarity başlıksız metinde sınır
   sinyali, küçük overlap ise yalnızca token-aware fallback olarak kullanılır.
 - Pipeline değişiklikleri golden document setinde metin, tablo, görsel-caption,
-  ilişki, provenance, chunk sınırı ve vision fallback doğruluğuyla ölçülür.
+  ilişki, provenance, chunk sınırı ve primary vision extraction doğruluğuyla ölçülür.
 
 ## 3. Mevcut harness
 
@@ -74,17 +76,18 @@ olmadan tek başlarına ürün özelliği oluşturmazlar:
 - **Redis:** durable job kuyruğu; API ile worker arasındaki sınır.
 - **MinIO:** orijinal dosya, sayfa render'ı ve artifact'ların lokal S3 uyumlu deposu.
 - **Qdrant:** embedding tabanlı chunk retrieval için vector index.
-- **Docling:** PDF/DOCX/PPTX/XLSX gibi dosyalardan canonical Markdown ve
-  structured JSON çıkaran birincil parser. Worker adapter'ı kuruludur; gerçek
-  uçtan uca artifact ve provenance akışı tamamlanacaktır.
-- **Gemini Flash:** kalite kapısına takılan taranmış veya layout-complex
-  sayfalarda vision fallback/enrichment. Her çıktısı `derived` olarak işaretlenir.
+- **Gemini Vision:** 200 DPI render edilen her sayfada primary multimodal
+  extraction. Varsayılan concurrency 4, sayfa başına en fazla 3 retry; gerçek
+  model adı provider config üzerinden seçilir.
+- **Docling:** PDF/DOCX/PPTX/XLSX için deterministic ikinci parse; Gemini
+  extraction'ını doğrulama, yapısal uzlaştırma ve fallback amacıyla kullanılır.
 - **Gemini embedding:** Qdrant'a yazılacak vector üretimi için ayrıca seçilecek;
   Flash modeli embedding modeli değildir.
 
-Önerilen sıra: önce Docling + MinIO ile artifact üretimi, sonra yalnızca gerekli
-sayfalarda Gemini Vision, ardından embedding ve Qdrant. Böylece her sayfayı
-gereksiz yere modele göndermeyiz ve maliyet/provenance kontrol altında kalır.
+Önerilen sıra: render + provider contract + fake vision testleri, ardından gerçek
+Gemini page extraction, document-level join/normalize, chunking, embedding ve
+Qdrant/PostgreSQL index. Maliyet; sayfa concurrency, retry bütçesi, model profili
+ve artifact cache ile kontrol edilir.
 
 ### Aşama A — Temeli sabitle
 
@@ -118,12 +121,17 @@ version üretmez.
 
 - [ ] PDF render ve page image storage
 - [x] Docling parser adapter
-- [x] Canonical Markdown ve structured JSON artifact'ları
+- [x] Docling Markdown ve structured JSON artifact prototipi
+- [ ] Primary `VisionProvider` request/response sözleşmesi
+- [ ] Fake vision provider ile tüm page-level case testleri
+- [ ] Her sayfada Gemini multimodal extraction (default 4 parallel, 3 retry)
+- [ ] Page Markdown + structured region artifact'ları
+- [ ] Document join ve heading normalization; destructive rewrite guard
 - [ ] Text/table/asset/form/page-region yapılarını normalize etmek
 - [ ] İlk document graph node ve relationship sözleşmesini eklemek
 - [ ] Table continuation, caption ve cross-reference ilişkilerini korumak
-- [ ] Page-level quality gate
-- [ ] Yalnızca seçilen region/sayfalarda evidence-bound Gemini Vision fallback
+- [ ] Extraction sonrası page-level quality gate ve Docling cross-check
+- [ ] Evidence-bound semantic description/relationship enrichment
 - [ ] Partial/failed sonuçların manifest'e yazılması
 - [ ] Küçük multimodal golden document fixture seti
 
@@ -135,8 +143,8 @@ yerine redakte edilmiş küçük fixture'lar üretilecektir.
 
 Kaynak dosya PDF ile sınırlı değildir: PNG/JPEG/WebP menü ve harita yüklemeleri
 de aynı immutable version akışına girer. Bunlar için sayfanın kendisi kaynak
-görsel olur; Vision/OCR çıktısı canonical source yerine `derived` artifact
-olarak saklanır.
+görsel olur. Kabul edilen OCR/layout extraction canonical normalized temsile
+katılabilir; semantik açıklama ve yorumlar `derived` artifact olarak saklanır.
 
 **Bitti sayılır:** Başarılı, kısmi ve başarısız PDF'ler immutable version ve
 page-level provenance ile incelenebilir.
@@ -198,8 +206,8 @@ Public ve sentetik fixture'lar en az şu sınıfları kapsar:
 - Türkçe ve İngilizce içerik
 
 Her pipeline sürümünde metin doğruluğu, tablo yapısı, görsel-caption eşleşmesi,
-document-graph ilişkileri, provenance bütünlüğü, chunk sınır kalitesi ve vision
-fallback isabeti karşılaştırılır.
+document-graph ilişkileri, provenance bütünlüğü, chunk sınır kalitesi, primary
+vision extraction ve retry/partial davranışı karşılaştırılır.
 
 ## 6. Her iş için mini spec şablonu
 
@@ -242,6 +250,7 @@ Yeni bir issue/branch açarken şu şablon doldurulur:
 Bir sonraki dikey dilim: **Aşama B — web'deki gerçek upload akışını register →
 upload → confirm API zincirine bağlamak; ardından job'u terminal duruma kadar
 polling ile izlemek.** Bu akış küçük sentetik PDF ile doğrulandıktan sonra worker
-artifact/provenance zinciri tamamlanacak. Gemini yalnızca quality gate'in seçtiği
-sayfa veya region'larda evidence-bound çalışacak; cosine similarity ve overlap
-ise heading-aware chunking sonrasında kontrollü fallback olarak eklenecek.
+artifact/provenance zinciri tamamlanacak. Ardından fake provider ile page-level
+case'ler sabitlenip Gemini her 200 DPI sayfada primary multimodal extractor olarak
+çalıştırılacak. Cosine similarity ve overlap ise heading-aware chunking sonrasında
+kontrollü fallback olarak eklenecek.

@@ -3,6 +3,10 @@
 - Status: accepted
 - Date: 2026-08-31
 
+> Extraction ownership in this ADR is partially superseded by ADR 0003. Page
+> rendering and primary multimodal extraction are both page-level fan-out
+> stages; document-level joining and normalization remain fan-in stages.
+
 ## Context
 
 A 500-page PDF rendered and vision-read serially takes tens of minutes. The

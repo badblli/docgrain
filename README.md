@@ -53,15 +53,15 @@ Luwi or another consumer
 ## Core pipeline
 
 1. **Register** -- validate the source, calculate a content hash, create a document version and queue a durable job.
-2. **Render** -- render PDF pages to PNG previews. Preserve the original file; use higher resolution only for difficult vision work.
-3. **Extract** -- use Docling as the primary parser to produce structured JSON and canonical Markdown.
-4. **Quality gate** -- detect empty, suspiciously short, low-confidence, scanned, table-heavy, or layout-complex pages.
-5. **Vision fallback/enrichment** -- send only qualifying pages to a configured vision provider. Gemini is the hosted quality profile; Qwen VL is an optional local/private profile.
-6. **Normalize** -- repair safe formatting defects without replacing source content. Keep original and normalized variants.
-7. **Chunk** -- split by document and heading structure; apply token-aware fallback splitting only when necessary.
-8. **Enrich** -- attach contextual headers and inherited metadata to each chunk.
-9. **Embed and index** -- optional provider-backed embeddings plus vector and keyword index writes.
-10. **Publish** -- write an immutable manifest; mark the version `done`, `partial`, or `failed`.
+2. **Render** -- render every page to a 200 DPI PNG while preserving the immutable original.
+3. **Multimodal extract** -- read every page with the configured primary vision provider. Gemini is the hosted default; page calls use bounded concurrency and per-page retries.
+4. **Join and normalize** -- combine page Markdown and structured regions, repair heading hierarchy, reconnect cross-page tables/captions and reject destructive rewrites.
+5. **Quality gate** -- validate extraction completeness, confidence and structure. Pages that exhaust their retries are reported without blocking successful pages.
+6. **Structure** -- build text, table, asset, chart, form and relationship nodes with page/bounding-box provenance. Docling provides a deterministic secondary parse for validation and fallback.
+7. **Chunk** -- split by document and heading structure; use cosine boundary signals for headingless text and token-aware overlap only as a final fallback.
+8. **Enrich** -- attach contextual headers, related table/asset context and inherited metadata to each chunk.
+9. **Embed and index** -- create document-mode embeddings and write the same chunk IDs to vector and keyword indexes atomically.
+10. **Publish** -- write an immutable manifest, invalidate retrieval caches and mark the version `done`, `partial`, or `failed`.
 
 ## Visual and table extraction
 
@@ -70,7 +70,7 @@ Images and tables are first-class artifacts, not discarded during text extractio
 - Every PDF page can have a PNG render for UI review and source attribution.
 - Tables are stored in structured JSON and Markdown/HTML representations where extraction supports it.
 - Images retain page number, bounding box when available, MIME type, checksum, and storage URI.
-- A vision provider may generate an image/table description, but the generated description is explicitly marked as derived content.
+- Accepted OCR/layout extraction can form the canonical normalized representation, but semantic image/table descriptions and inferred relationships are explicitly marked as derived content.
 - Chunks reference their related `asset_ids` and `table_ids`; consumers can surface the exact source beside a retrieved result.
 
 ## Data contract
@@ -124,9 +124,9 @@ Cosine similarity can help identify semantic boundaries in unstructured text, bu
 
 Provider interfaces prevent the rest of the pipeline from being locked to a model or cloud:
 
-- `DocumentParser`: Docling primary parser
+- `VisionProvider`: Gemini Vision hosted primary extractor; Qwen VL or another compatible local/private implementation
+- `DocumentParser`: Docling secondary structural parser, validator and fallback
 - `PageRenderer`: PyMuPDF or equivalent
-- `VisionProvider`: Gemini, Qwen VL, or another compatible backend
 - `EmbeddingProvider`: hosted or local embeddings
 - `ObjectStorage`: S3, GCS, Azure Blob, or MinIO
 - `VectorIndex`: Qdrant or pgvector
@@ -221,7 +221,7 @@ Services planned for the local environment:
 - [ ] Docker Compose stack and health checks
 - [ ] document/job/version data model
 - [ ] PDF upload, original-file storage, page PNG rendering
-- [ ] Docling extraction to Markdown + JSON
+- [ ] page-level multimodal extraction to Markdown + structured JSON
 - [ ] web document and artifact viewer
 
 ### Milestone 1 -- retrieval-ready output
@@ -234,7 +234,7 @@ Services planned for the local environment:
 
 ### Milestone 2 -- quality and scale
 
-- [ ] vision fallback and derived captions
+- [ ] primary vision extraction, evidence-bound descriptions and derived captions
 - [ ] document version comparison
 - [ ] tenancy and access scopes
 - [ ] observability dashboard and evaluation suite
@@ -242,7 +242,7 @@ Services planned for the local environment:
 
 ## Inspiration and acknowledgements
 
-Docgrain draws inspiration from practical open-source RAG work such as [paper-bold](https://github.com/enesmanan/paper-bold) and [DataCommit](https://github.com/enesmanan/DataCommit), while expanding their prototype-level pipelines into a standalone, inspectable document-ingestion service. It will use [Docling](https://github.com/docling-project/docling) as the primary document-processing foundation.
+Docgrain draws inspiration from practical open-source RAG work such as [paper-bold](https://github.com/enesmanan/paper-bold) and [DataCommit](https://github.com/enesmanan/DataCommit), while expanding their prototype-level pipelines into a standalone, inspectable document-ingestion service. It uses page-level multimodal extraction as the primary ingestion path and [Docling](https://github.com/docling-project/docling) as a complementary deterministic parser and validator.
 
 ## License
 
