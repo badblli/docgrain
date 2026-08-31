@@ -66,6 +66,18 @@ services:
       timeout: 5s
       retries: 5
 
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   minio_data:

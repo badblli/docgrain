@@ -176,6 +176,25 @@ cp .env.example .env
 docker compose up --build
 ```
 
+Ardından web konsolunu [http://localhost:3000](http://localhost:3000), API
+dokümantasyonunu [http://localhost:8000/docs](http://localhost:8000/docs) ve
+MinIO konsolunu [http://localhost:9001](http://localhost:9001) açın.
+
+Sadece web ekranını Docker olmadan çalıştırmak için:
+
+```bash
+cd apps/web
+npm install
+npm run dev
+```
+
+Bu durumda konsol [http://localhost:3000](http://localhost:3000) adresinde
+açılır. API'yi ayrı çalıştırmak için repository kökünden:
+
+```bash
+PYTHONPATH=apps/api:packages/domain uvicorn docgrain_api.main:app --reload --port 8000
+```
+
 Services planned for the local environment:
 
 - Next.js web application
