@@ -1,0 +1,15 @@
+.git
+.github
+**/node_modules
+**/.next
+**/out
+**/__pycache__
+**/.pytest_cache
+*.pyc
+.env
+data
+storage
+uploads
+postgres_data
+redis_data
+qdrant_storage
