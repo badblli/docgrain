@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from .. import fixtures
+from ..settings import get_settings
 
 router = APIRouter(prefix="/v1/documents", tags=["documents"])
 
@@ -119,5 +120,5 @@ def register_document(payload: RegisterRequest) -> RegisterResponse:
         document=document,
         version=version,
         job_id=new_id("job"),
-        upload_url=None if payload.source_uri else f"https://minio.local/presigned/{version_id}",
+        upload_url=None if payload.source_uri else f"{get_settings().s3_public_endpoint_url}/{get_settings().s3_bucket}/uploads/{version_id}",
     )

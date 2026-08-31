@@ -35,6 +35,21 @@ services:
     volumes:
       - minio_data:/data
 
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: ["/bin/sh", "-c"]
+    command: >-
+      "until mc alias set local http://minio:9000 $${MINIO_ROOT_USER:-docgrain} $${MINIO_ROOT_PASSWORD:-change-me-locally}; do sleep 1; done;
+      mc mb --ignore-existing local/$${S3_BUCKET:-docgrain};
+      mc anonymous set private local/$${S3_BUCKET:-docgrain}"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-docgrain}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-change-me-locally}
+      S3_BUCKET: ${S3_BUCKET:-docgrain}
+
   qdrant:
     image: qdrant/qdrant:latest
     ports:
@@ -51,6 +66,8 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://docgrain:change-me-locally@postgres:5432/docgrain}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_PUBLIC_ENDPOINT_URL: ${S3_PUBLIC_ENDPOINT_URL:-http://localhost:9000}
+      S3_BUCKET: ${S3_BUCKET:-docgrain}
       QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
       USE_FIXTURES: ${USE_FIXTURES:-true}
     ports:
@@ -60,6 +77,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/healthz')\""]
       interval: 10s

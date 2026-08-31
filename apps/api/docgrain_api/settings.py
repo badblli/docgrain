@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
 
     s3_endpoint_url: str = "http://minio:9000"
+    s3_public_endpoint_url: str = "http://localhost:9000"
     s3_bucket: str = "docgrain"
 
     qdrant_url: str = "http://qdrant:6333"
