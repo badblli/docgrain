@@ -166,6 +166,9 @@ tests/                    fixtures, unit, integration and end-to-end tests
 
 ## Local development
 
+Geliştirme sırası, kalite kapıları ve tamamlanma ölçütleri için
+[geliştirme planına](docs/DEVELOPMENT_HARNESS.md) bakın.
+
 The initial stack is Docker Compose based:
 
 ```bash
