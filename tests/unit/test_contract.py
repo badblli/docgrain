@@ -63,6 +63,9 @@ def test_registered_file_can_be_stored_then_confirmed(monkeypatch: pytest.Monkey
     )
     assert registration.status_code == 202
     payload = registration.json()
+    assert payload["upload_url"].endswith(
+        f"/v1/documents/{payload['document']['id']}/versions/{payload['version']['id']}/content"
+    )
     upload = client.put(
         payload["upload_url"],
         files={"file": ("test.txt", b"test", "text/plain")},
@@ -74,6 +77,59 @@ def test_registered_file_can_be_stored_then_confirmed(monkeypatch: pytest.Monkey
     )
     assert confirmation.status_code == 202
     assert confirmation.json()["job_id"] == payload["job_id"]
+    job = client.get(f"/v1/jobs/{payload['job_id']}")
+    assert job.status_code == 200
+    assert job.json()["status"] == "queued"
+
+
+def test_upload_confirmation_requires_the_original_object(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(document_routes, "object_exists", lambda _: False)
+    registration = client.post(
+        "/v1/documents",
+        json={
+            "workspace_id": "ws_luwi",
+            "filename": "missing.pdf",
+            "mime_type": "application/pdf",
+            "byte_size": 128,
+        },
+    ).json()
+
+    confirmation = client.post(
+        f"/v1/documents/{registration['document']['id']}/versions/"
+        f"{registration['version']['id']}/uploaded"
+    )
+
+    assert confirmation.status_code == 409
+    assert confirmation.json()["detail"] == "upload has not reached object storage"
+
+
+def test_upload_rejects_a_filename_that_does_not_match_registration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        document_routes,
+        "put_upload",
+        lambda *args, **kwargs: pytest.fail("mismatched upload must not reach storage"),
+    )
+    registration = client.post(
+        "/v1/documents",
+        json={
+            "workspace_id": "ws_luwi",
+            "filename": "expected.pdf",
+            "mime_type": "application/pdf",
+            "byte_size": 4,
+        },
+    ).json()
+
+    upload = client.put(
+        registration["upload_url"],
+        files={"file": ("different.pdf", b"test", "application/pdf")},
+    )
+
+    assert upload.status_code == 400
+    assert upload.json()["detail"] == "uploaded filename does not match registration"
 
 
 def test_canonical_markdown_artifact_stays_behind_the_api(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -120,6 +176,14 @@ def test_boundaries_flag_low_similarity_pairs() -> None:
 def test_stage_order_is_the_documented_ten() -> None:
     assert next_stage(JobStage.REGISTER) is JobStage.RENDER
     assert next_stage(JobStage.PUBLISH) is None
+
+
+def test_provider_health_does_not_claim_unconfigured_gemini_is_healthy() -> None:
+    providers = client.get("/v1/providers/health").json()
+    gemini = next(item for item in providers if item["interface"] == "VisionProvider")
+
+    assert gemini["healthy"] is False
+    assert "GEMINI_API_KEY" in gemini["note"]
 
 
 def test_terminal_states_are_terminal() -> None:

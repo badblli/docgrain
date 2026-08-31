@@ -3,8 +3,26 @@
 import { useEffect, useRef, useState } from "react";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const WORKSPACE = process.env.NEXT_PUBLIC_WORKSPACE_ID ?? "ws_local";
 type Screen = "documents" | "jobs" | "providers" | "contract" | "detail";
 type DetailTab = "pipeline" | "pages" | "chunks" | "assets" | "versions";
+type UploadPhase =
+  | "idle"
+  | "registering"
+  | "uploading"
+  | "confirming"
+  | "queued"
+  | "running"
+  | "done"
+  | "partial"
+  | "failed"
+  | "error";
+type UploadState = {
+  phase: UploadPhase;
+  fileName?: string;
+  message?: string;
+  jobId?: string;
+};
 type DocumentRow = {
   id: string;
   versionId?: string;
@@ -37,6 +55,9 @@ type Job = {
   status: string;
   stages: Stage[];
   duration_ms?: number;
+  queued_at?: string;
+  started_at?: string;
+  finished_at?: string;
 };
 type Provider = {
   interface: string;
@@ -101,6 +122,24 @@ type Version = {
   vision_provider?: string;
   status: string;
   created_at: string;
+};
+type RegisterResponse = {
+  document: {
+    id: string;
+    title: string;
+    filename: string;
+    version_count: number;
+    updated_at: string;
+  };
+  version: Version;
+  job_id: string;
+  upload_url: string | null;
+  deduplicated: boolean;
+};
+type DocumentListResponse = {
+  document: RegisterResponse["document"];
+  latest_version: Version | null;
+  latest_job_id: string | null;
 };
 
 const demoDocs: DocumentRow[] = [
@@ -244,9 +283,9 @@ const demoJobs: Job[] = [
 const stageMeta: Record<string, { name: string; via: string }> = {
   register: { name: "Kayıt", via: "POST /v1/documents" },
   render: { name: "Sayfa render", via: "PyMuPDF → PNG" },
-  extract: { name: "Çıkarım", via: "Docling" },
+  extract: { name: "Multimodal çıkarım", via: "Gemini Vision (primary)" },
   quality: { name: "Kalite kapısı", via: "heuristics" },
-  vision: { name: "Görsel model", via: "Gemini / Qwen2.5-VL" },
+  vision: { name: "Başlık düzeltme", via: "Gemini · temperature 0" },
   normalize: { name: "Normalize", via: "markdown repair" },
   chunk: { name: "Chunk’lama", via: "heading-first + LangChain" },
   enrich: { name: "Zenginleştirme", via: "context header" },
@@ -476,6 +515,46 @@ async function getText(path: string): Promise<string> {
     return "";
   }
 }
+async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, init);
+  if (!response.ok) {
+    let detail = `${response.status} ${response.statusText}`;
+    try {
+      const payload = await response.json();
+      detail = payload.detail ?? detail;
+    } catch {
+      // Keep the HTTP status when the response is not JSON.
+    }
+    throw new Error(detail);
+  }
+  return response.json();
+}
+const documentRow = ({
+  document: d,
+  latest_version: v,
+  latest_job_id,
+}: DocumentListResponse): DocumentRow => ({
+  id: d.id,
+  versionId: v?.id,
+  jobId: latest_job_id ?? undefined,
+  title: d.title,
+  file: d.filename,
+  type: d.filename.split(".").pop()?.toUpperCase() ?? "FILE",
+  status: v?.status ?? "processing",
+  version: v ? `v${v.revision}` : "—",
+  pages: v?.page_count ?? 0,
+  chunks: v?.chunk_count ?? 0,
+  updated: new Date(d.updated_at).toLocaleString("tr-TR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }),
+  versionCount: d.version_count ?? 1,
+  tables: v?.table_count ?? 0,
+  assets: v?.asset_count ?? 0,
+});
 const duration = (ms = 0) =>
   ms >= 60000
     ? `${Math.floor(ms / 60000)} dk ${String(Math.round((ms % 60000) / 1000)).padStart(2, "0")} sn`
@@ -677,13 +756,18 @@ function Head({
 function Documents({
   docs,
   open,
-  toast,
+  upload,
+  uploadState,
 }: {
   docs: DocumentRow[];
   open: (d: DocumentRow) => void;
-  toast: (s: string) => void;
+  upload: (file: File) => Promise<void>;
+  uploadState: UploadState;
 }) {
   const input = useRef<HTMLInputElement>(null);
+  const busy = ["registering", "uploading", "confirming", "queued", "running"].includes(
+    uploadState.phase,
+  );
   return (
     <>
       <Head
@@ -703,22 +787,35 @@ function Documents({
               yazılır, hash’i alınır ve dayanıklı bir iş kuyruğa girer — API
               isteği hiçbir zaman çıkarımı kendi içinde çalıştırmaz.
             </p>
+            {uploadState.phase !== "idle" && (
+              <div className={`uploadState upload-${uploadState.phase}`} role="status">
+                <span className="uploadDot" />
+                <b>{uploadState.fileName}</b>
+                <span>{uploadState.message}</span>
+                {uploadState.jobId && <code>{uploadState.jobId}</code>}
+              </div>
+            )}
           </div>
           <input
             ref={input}
             type="file"
             hidden
             accept=".pdf,.docx,.pptx,.xlsx,.html"
-            onChange={(e) =>
-              e.target.files?.[0] &&
-              toast(`${e.target.files[0].name} seçildi · yükleme akışı hazır`)
-            }
+            disabled={busy}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (!file) return;
+              void upload(file).finally(() => {
+                if (input.current) input.current.value = "";
+              });
+            }}
           />
           <button
             className="btn pri dropAction"
             onClick={() => input.current?.click()}
+            disabled={busy}
           >
-            Dosya seç
+            {busy ? "İşleniyor…" : "Dosya seç"}
           </button>
         </section>
         <section className="card">
@@ -1128,6 +1225,7 @@ function Pipeline({ job }: { job: Job | null }) {
               : `${stageMeta[s].name} çıktısı nesne depolamaya yazıldı.`,
         duration_ms: 800,
       }));
+  const jobTime = job?.started_at ?? job?.queued_at;
   return (
     <div className="wrap">
       <section className="card">
@@ -1135,7 +1233,10 @@ function Pipeline({ job }: { job: Job | null }) {
           <div>
             <h2>İş {job?.id ?? "job_9a12"}</h2>
             <p className="note">
-              30 Ağu 2025, 14:06 · {duration(job?.duration_ms ?? 252000)}
+              {jobTime
+                ? new Date(jobTime).toLocaleString("tr-TR")
+                : "30 Ağu 2025, 14:06"}{" "}
+              · {duration(job?.duration_ms ?? 252000)}
             </p>
           </div>
           <span className="sp">
@@ -1803,6 +1904,7 @@ export default function Home() {
     [tables, setTables] = useState(demoTables),
     [assets, setAssets] = useState(demoAssets),
     [versions, setVersions] = useState<Version[]>([]),
+    [uploadState, setUploadState] = useState<UploadState>({ phase: "idle" }),
     [toast, setToast] = useState("");
   useEffect(() => {
     (async () => {
@@ -1812,34 +1914,7 @@ export default function Home() {
         getJson<Provider[]>("/v1/providers/health", []),
       ]);
       if (rd.length) {
-        const m = rd.map(
-          ({
-            document: d,
-            latest_version: v,
-            latest_job_id,
-          }: any): DocumentRow => ({
-            id: d.id,
-            versionId: v?.id,
-            jobId: latest_job_id,
-            title: d.title,
-            file: d.filename,
-            type: d.filename.split(".").pop().toUpperCase(),
-            status: v?.status ?? "processing",
-            version: v ? `v${v.revision}` : "—",
-            pages: v?.page_count ?? 0,
-            chunks: v?.chunk_count ?? 0,
-            updated: new Date(d.updated_at).toLocaleString("tr-TR", {
-              day: "2-digit",
-              month: "short",
-              year: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
-            versionCount: d.version_count ?? 1,
-            tables: v?.table_count ?? 0,
-            assets: v?.asset_count ?? 0,
-          }),
-        );
+        const m = rd.map((item) => documentRow(item));
         setDocs([
           ...m,
           ...demoDocs.filter((d) => !m.some((x) => x.id === d.id)),
@@ -1899,6 +1974,118 @@ export default function Home() {
         : `${j.id} için yeniden deneme hazır`,
     );
   }
+  async function upload(file: File) {
+    const terminal = new Set(["done", "partial", "failed"]);
+    try {
+      setUploadState({
+        phase: "registering",
+        fileName: file.name,
+        message: "Doküman ve immutable sürüm kaydı açılıyor…",
+      });
+      const registration = await apiJson<RegisterResponse>(`${API}/v1/documents`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          workspace_id: WORKSPACE,
+          filename: file.name,
+          mime_type: file.type || "application/octet-stream",
+          byte_size: file.size,
+        }),
+      });
+
+      const pendingRow = documentRow({
+        document: registration.document,
+        latest_version: registration.version,
+        latest_job_id: registration.job_id,
+      });
+      setDocs((current) => [pendingRow, ...current.filter((d) => d.id !== pendingRow.id)]);
+
+      if (!registration.deduplicated) {
+        if (!registration.upload_url) throw new Error("API bir upload URL döndürmedi");
+        setUploadState({
+          phase: "uploading",
+          fileName: file.name,
+          jobId: registration.job_id,
+          message: "Orijinal dosya MinIO’ya yazılıyor…",
+        });
+        const form = new FormData();
+        form.append("file", file, file.name);
+        await apiJson<{ status: string }>(registration.upload_url, {
+          method: "PUT",
+          body: form,
+        });
+
+        setUploadState({
+          phase: "confirming",
+          fileName: file.name,
+          jobId: registration.job_id,
+          message: "Upload doğrulanıp durable job kuyruğa alınıyor…",
+        });
+        await apiJson<{ status: string; job_id: string }>(
+          `${API}/v1/documents/${registration.document.id}/versions/${registration.version.id}/uploaded`,
+          { method: "POST" },
+        );
+      }
+
+      setUploadState({
+        phase: "queued",
+        fileName: file.name,
+        jobId: registration.job_id,
+        message: registration.deduplicated
+          ? "Aynı içerik daha önce kaydedilmiş. Mevcut sürüm kullanılıyor."
+          : "Job kuyrukta; worker bekleniyor…",
+      });
+
+      for (let poll = 0; poll < 450; poll += 1) {
+        const currentJob = await apiJson<Job>(`${API}/v1/jobs/${registration.job_id}`);
+        setJobs((current) => [
+          currentJob,
+          ...current.filter((item) => item.id !== currentJob.id),
+        ]);
+        setDocs((current) =>
+          current.map((item) =>
+            item.id === registration.document.id
+              ? { ...item, status: currentJob.status }
+              : item,
+          ),
+        );
+        setUploadState({
+          phase: currentJob.status as UploadPhase,
+          fileName: file.name,
+          jobId: currentJob.id,
+          message: terminal.has(currentJob.status)
+            ? statusLabel(currentJob.status)
+            : currentJob.status === "running"
+              ? "Worker pipeline’ı çalıştırıyor…"
+              : "Job kuyrukta; worker bekleniyor…",
+        });
+        if (terminal.has(currentJob.status)) {
+          const refreshed = await apiJson<DocumentListResponse>(
+            `${API}/v1/documents/${registration.document.id}`,
+          );
+          const finalRow = documentRow(refreshed);
+          setDocs((current) => [
+            finalRow,
+            ...current.filter((item) => item.id !== finalRow.id),
+          ]);
+          setToast(`${file.name}: ${statusLabel(currentJob.status)}`);
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+
+      setUploadState({
+        phase: "running",
+        fileName: file.name,
+        jobId: registration.job_id,
+        message: "İşlem arka planda devam ediyor; İşler ekranından izlenebilir.",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Bilinmeyen upload hatası";
+      setUploadState({ phase: "error", fileName: file.name, message });
+      setToast(`${file.name} yüklenemedi: ${message}`);
+    }
+  }
   return (
     <div className="app">
       <Sidebar
@@ -1909,7 +2096,12 @@ export default function Home() {
       />
       <main>
         {screen === "documents" ? (
-          <Documents docs={docs} open={open} toast={setToast} />
+          <Documents
+            docs={docs}
+            open={open}
+            upload={upload}
+            uploadState={uploadState}
+          />
         ) : screen === "jobs" ? (
           <Jobs jobs={jobs} docs={docs} retry={retry} />
         ) : screen === "providers" ? (

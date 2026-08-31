@@ -70,6 +70,8 @@ services:
       S3_PUBLIC_ENDPOINT_URL: ${S3_PUBLIC_ENDPOINT_URL:-http://localhost:9000}
       S3_BUCKET: ${S3_BUCKET:-docgrain}
       QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.7-flash}
       USE_FIXTURES: ${USE_FIXTURES:-false}
     ports:
       - "8000:8000"
@@ -109,6 +111,8 @@ services:
       S3_BUCKET: ${S3_BUCKET:-docgrain}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-docgrain}
       S3_SECRET_KEY: ${S3_SECRET_KEY:-change-me-locally}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.7-flash}
     restart: unless-stopped
     depends_on:
       api:

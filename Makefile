@@ -1,7 +1,7 @@
 .PHONY: test lint web-build quality
 
 test:
-	PYTHONPATH=apps/api:packages/domain pytest -q
+	PYTHONPATH=apps/api:apps/worker:packages/domain pytest -q
 
 lint:
 	ruff check apps packages tests

@@ -311,6 +311,14 @@ h1 {
 .btn.pri:hover {
   background: #201f1b;
 }
+.btn:disabled,
+.btn:disabled:hover {
+  cursor: not-allowed;
+  opacity: 0.58;
+  background: var(--idle-soft);
+  border-color: var(--line);
+  color: var(--muted);
+}
 .btn.sm {
   padding: 4px 9px;
   font-size: 12px;
@@ -440,6 +448,39 @@ table.grid tbody tr.click:hover {
 }
 .dropAction {
   margin-left: auto;
+}
+.uploadState {
+  margin-top: 9px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.uploadState b {
+  color: var(--ink2);
+}
+.uploadState code {
+  font: 9.5px var(--f-mono);
+  color: var(--faint);
+}
+.uploadDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warn);
+  box-shadow: 0 0 0 3px var(--warn-soft);
+}
+.upload-done .uploadDot {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px var(--ok-soft);
+}
+.upload-partial .uploadDot,
+.upload-failed .uploadDot,
+.upload-error .uploadDot {
+  background: var(--err);
+  box-shadow: 0 0 0 3px var(--err-soft);
 }
 .fname {
   font-weight: 600;

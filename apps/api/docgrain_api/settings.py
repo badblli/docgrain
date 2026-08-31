@@ -25,6 +25,7 @@ class Settings(BaseSettings):
 
     qdrant_url: str = "http://qdrant:6333"
     gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.7-flash"
     qwen_base_url: str = ""
 
     # While the persistence layer is unimplemented the API serves the

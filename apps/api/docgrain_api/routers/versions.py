@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from docgrain_domain import (
     Asset,
     BoundaryPoint,
@@ -18,7 +20,7 @@ from pydantic import BaseModel
 
 from .. import fixtures, repository
 from ..settings import get_settings
-from ..storage import storage_client
+from ..storage import get_text, storage_client
 
 router = APIRouter(prefix="/v1/versions", tags=["versions"])
 
@@ -37,9 +39,38 @@ def _fixture_version(version_id: str) -> bool:
     return any(version.id == version_id for version in fixtures.VERSIONS)
 
 
-def _live_page(version: DocumentVersion, page_number: int) -> Page:
+def _page_manifest(version: DocumentVersion) -> dict[int, dict[str, int]]:
+    content = get_text(
+        f"artifacts/{version.document_id}/{version.id}/pages.json"
+    )
+    if not content:
+        return {}
+    try:
+        payload = json.loads(content)
+        return {
+            int(page["page_number"]): page
+            for page in payload.get("pages", [])
+            if isinstance(page, dict) and "page_number" in page
+        }
+    except (TypeError, ValueError, KeyError):
+        return {}
+
+
+def _live_page(
+    version: DocumentVersion,
+    page_number: int,
+    manifest: dict[int, dict[str, int]] | None = None,
+) -> Page:
     if page_number < 1 or page_number > version.page_count:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "page not found")
+    job = repository.job_for_version(version.id)
+    extraction_failed = any(
+        failure.page_number == page_number
+        for failure in (job.page_failures if job else [])
+    )
+    metadata = (manifest if manifest is not None else _page_manifest(version)).get(
+        page_number, {}
+    )
     return Page(
         id=f"pg_{version.id}_{page_number:04d}",
         document_version_id=version.id,
@@ -48,11 +79,12 @@ def _live_page(version: DocumentVersion, page_number: int) -> Page:
             f"{get_settings().api_public_url}/v1/versions/{version.id}/pages/"
             f"{page_number}/render"
         ),
-        width=1190,
-        height=1684,
-        dpi=144,
+        width=int(metadata.get("width", 1654)),
+        height=int(metadata.get("height", 2339)),
+        dpi=200,
         parser=version.parser or "docling",
-        confidence=1.0,
+        confidence=0.0 if extraction_failed else 1.0,
+        quality_flags=["empty"] if extraction_failed else [],
     )
 
 
@@ -66,7 +98,11 @@ def list_pages(version_id: str) -> list[Page]:
     version = _require_version(version_id)
     if _fixture_version(version_id):
         return [page for page in fixtures.PAGES if page.document_version_id == version_id]
-    return [_live_page(version, number) for number in range(1, version.page_count + 1)]
+    manifest = _page_manifest(version)
+    return [
+        _live_page(version, number, manifest)
+        for number in range(1, version.page_count + 1)
+    ]
 
 
 @router.get("/{version_id}/pages/{page_number}", response_model=Page)
