@@ -1781,7 +1781,7 @@ function Detail({
       <DetailHead doc={doc} tab={tab} setTab={setTab} />
       {tab === "pipeline" && <Pipeline job={job} />}{" "}
       {tab === "pages" && (
-        <PagesView pages={pages} tables={tables} chunks={chunks} />
+        <PagesView pages={pages} tables={tables} chunks={chunks} markdown="" />
       )}{" "}
       {tab === "chunks" && <ChunkView chunks={chunks} />}{" "}
       {tab === "assets" && <AssetsView tables={tables} assets={assets} />}{" "}

@@ -85,7 +85,8 @@ def process(job_id: str) -> None:
             try:
                 source.write_bytes(response.read())
             finally:
-                response.close(); response.release_conn()
+                response.close()
+                response.release_conn()
             prefix = f"artifacts/{document_id}/{version_id}"
             rendered_page_count = render_pages(source, prefix, bucket)
             document = DocumentConverter().convert(source).document
@@ -109,7 +110,8 @@ def run() -> None:
         _, job_id = client.brpop(QUEUE_NAME, timeout=0)
         with closing(psycopg.connect(db_url())) as conn, conn.cursor() as cur:
             cur.execute("UPDATE jobs SET status='running', started_at=COALESCE(started_at, NOW()) WHERE id=%s AND status='queued'", (job_id,))
-            claimed = cur.rowcount == 1; conn.commit()
+            claimed = cur.rowcount == 1
+            conn.commit()
         if claimed:
             process(job_id)
 
