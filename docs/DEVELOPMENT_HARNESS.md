@@ -96,11 +96,22 @@ version üretmez.
 ### Aşama C — İlk gerçek artifact pipeline'ı
 
 - [ ] PDF render ve page image storage
-- [ ] Docling parser adapter
-- [ ] Canonical Markdown ve structured JSON artifact'ları
+- [x] Docling parser adapter
+- [x] Canonical Markdown ve structured JSON artifact'ları
 - [ ] Page-level quality gate
 - [ ] Partial/failed sonuçların manifest'e yazılması
 - [ ] Küçük golden PDF fixture seti
+
+Yerel doğrulama seti (public repoya eklenmez): `C:\Users\Lenovo\Documents\docs`
+içindeki otel fact sheet'leri. İlk smoke örneği 7 sayfalık Corendon Playa
+Kemer fact sheet'tir; büyük Maxx/Regnum dosyaları performans/layout, menüler
+tablo ve haritalar görsel-layout sınır testi içindir. CI için telifli dosyalar
+yerine redakte edilmiş küçük fixture'lar üretilecektir.
+
+Kaynak dosya PDF ile sınırlı değildir: PNG/JPEG/WebP menü ve harita yüklemeleri
+de aynı immutable version akışına girer. Bunlar için sayfanın kendisi kaynak
+görsel olur; Vision/OCR çıktısı canonical source yerine `derived` artifact
+olarak saklanır.
 
 **Bitti sayılır:** Başarılı, kısmi ve başarısız PDF'ler immutable version ve
 page-level provenance ile incelenebilir.
