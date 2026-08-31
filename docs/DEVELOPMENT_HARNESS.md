@@ -46,6 +46,27 @@ CI yeşil değilse özellik tamamlanmış sayılmaz. Uyarılar ayrıca incelenir
 
 ## 3. Aşamalar
 
+## Altyapı servisleri ve model rolleri
+
+Bu servisler ilk aşamada Docker Compose ile hazır edilir; uygulama kodu
+olmadan tek başlarına ürün özelliği oluşturmazlar:
+
+- **PostgreSQL:** metadata, sürümler, job kayıtları ve ileride keyword search.
+- **Redis:** durable job kuyruğu; API ile worker arasındaki sınır.
+- **MinIO:** orijinal dosya, sayfa render'ı ve artifact'ların lokal S3 uyumlu deposu.
+- **Qdrant:** embedding tabanlı chunk retrieval için vector index.
+- **Docling:** PDF/DOCX/PPTX/XLSX gibi dosyalardan canonical Markdown ve
+  structured JSON çıkaran birincil parser. Henüz kurulmadı; C aşamasında adapter
+  arkasına alınarak kurulacak.
+- **Gemini Flash:** kalite kapısına takılan taranmış veya layout-complex
+  sayfalarda vision fallback/enrichment. Her çıktısı `derived` olarak işaretlenir.
+- **Gemini embedding:** Qdrant'a yazılacak vector üretimi için ayrıca seçilecek;
+  Flash modeli embedding modeli değildir.
+
+Önerilen sıra: önce Docling + MinIO ile artifact üretimi, sonra yalnızca gerekli
+sayfalarda Gemini Vision, ardından embedding ve Qdrant. Böylece her sayfayı
+gereksiz yere modele göndermeyiz ve maliyet/provenance kontrol altında kalır.
+
 ### Aşama A — Temeli sabitle
 
 - [x] API/domain contract smoke testleri
