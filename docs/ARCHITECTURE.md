@@ -14,6 +14,37 @@
 | Vector index | Qdrant | Metadata filtering and independent vector lifecycle. |
 | Vision | Pluggable Gemini/Qwen VL providers | Hosted quality and local/private choices. |
 
+## Multimodal document understanding
+
+Docgrain does not treat a document as a flat text stream. Text blocks, headings,
+lists, tables, figures, diagrams, charts, forms, captions and page regions are
+first-class structures. Docling produces the canonical structural extraction;
+vision providers interpret only pages or regions selected by the quality gate.
+
+The normalized representation is a document graph:
+
+```text
+DocumentVersion
+  -> Page
+    -> Section | TextBlock | Table | Asset | Form
+  -> Relationship
+    -> described_by | references | continues_on | belongs_to | sourced_from
+  -> Chunk
+    -> text + related tables/assets + inherited context
+```
+
+Graph nodes retain page and bounding-box provenance. Relationships make such
+facts as a figure's caption, a table continued on the next page, or a paragraph
+referencing a diagram queryable without flattening the original layout.
+
+Vision output is evidence-bound. Every derived observation records its source
+page/region, related node identifiers, provider/model, prompt version,
+confidence and purpose. Derived observations never replace canonical content.
+
+Chunks may be multimodal: coherent text can be packaged with a table summary,
+figure description and section context. The chunk still points to every
+canonical and derived component used to construct it.
+
 ## Job state machine
 
 ```text
@@ -35,6 +66,12 @@ A `partial` version is searchable only for successfully produced chunks and reta
 5. Index writes are idempotent and keyed by document-version/chunk identifiers.
 6. A document version is published only after the manifest is complete.
 7. Derived LLM content never overwrites canonical Docling extraction.
+8. Every extracted table, asset and derived observation retains page/region provenance.
+9. Every vision observation is evidence-bound and identifies its provider/model/prompt version.
+10. Document-graph relationships are version-scoped and never point across tenants.
+11. Multimodal chunks enumerate every text, table and asset source they inherit.
+12. Heading structure is preferred over semantic splitting; cosine similarity and
+    overlap are controlled fallbacks, not default flattening behavior.
 
 ## API outline
 

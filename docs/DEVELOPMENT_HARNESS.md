@@ -22,7 +22,26 @@ Her özellik şu sırayla geliştirilir:
    partial, failed ve stale durumları kontrol edilir.
 7. **Commit et:** Küçük, tek amaçlı bir commit oluşturulur.
 
-## 2. Mevcut harness
+## 2. Ürün kabul ölçütleri
+
+Her dikey dilim yalnızca metni değil dokümanın bütün yapısını korumalıdır:
+
+- Metin, başlık, liste, tablo, görsel, grafik, diyagram, form ve caption ayrı
+  yapılar olarak algılanır.
+- Her yapı document version, sayfa ve mümkünse bounding box ile kaynağına bağlanır.
+- Yapılar arası `described_by`, `references`, `continues_on`, `belongs_to` ve
+  `sourced_from` ilişkileri document graph içinde saklanır.
+- Docling çıktısı canonical; Gemini/Qwen gibi modellerin yorumları `derived` olur.
+- Vision çıktısı source region, ilgili node ID'leri, provider/model, prompt
+  version, amaç ve confidence olmadan kabul edilmez.
+- Chunk; metinle birlikte ilgili tablo/görsel bağlamını ve inherited metadata'yı
+  taşıyabilir, fakat kullandığı her kaynağı açıkça listeler.
+- Heading-first chunking esastır. Cosine similarity başlıksız metinde sınır
+  sinyali, küçük overlap ise yalnızca token-aware fallback olarak kullanılır.
+- Pipeline değişiklikleri golden document setinde metin, tablo, görsel-caption,
+  ilişki, provenance, chunk sınırı ve vision fallback doğruluğuyla ölçülür.
+
+## 3. Mevcut harness
 
 Harness şu kalite kapılarını çalıştırır:
 
@@ -44,7 +63,7 @@ py -m pytest -q
 CI yeşil değilse özellik tamamlanmış sayılmaz. Uyarılar ayrıca incelenir;
 özellikle dependency deprecation uyarıları bir sonraki bakım işine yazılır.
 
-## 3. Aşamalar
+## 4. Aşamalar
 
 ## Altyapı servisleri ve model rolleri
 
@@ -56,8 +75,8 @@ olmadan tek başlarına ürün özelliği oluşturmazlar:
 - **MinIO:** orijinal dosya, sayfa render'ı ve artifact'ların lokal S3 uyumlu deposu.
 - **Qdrant:** embedding tabanlı chunk retrieval için vector index.
 - **Docling:** PDF/DOCX/PPTX/XLSX gibi dosyalardan canonical Markdown ve
-  structured JSON çıkaran birincil parser. Henüz kurulmadı; C aşamasında adapter
-  arkasına alınarak kurulacak.
+  structured JSON çıkaran birincil parser. Worker adapter'ı kuruludur; gerçek
+  uçtan uca artifact ve provenance akışı tamamlanacaktır.
 - **Gemini Flash:** kalite kapısına takılan taranmış veya layout-complex
   sayfalarda vision fallback/enrichment. Her çıktısı `derived` olarak işaretlenir.
 - **Gemini embedding:** Qdrant'a yazılacak vector üretimi için ayrıca seçilecek;
@@ -83,6 +102,8 @@ contract testi response shape değişikliklerini yakalar.
 
 - [x] Upload endpoint'i ve kaynak kaydı
 - [x] Local MinIO bucket ve API upload proxy
+- [ ] Web'deki `Dosya seç` akışını register → upload → confirm API zincirine bağlamak
+- [ ] Upload progress, hata ve queued/running/done durumlarını göstermek
 - [ ] Production için direct signed-upload adapter
 - [x] PostgreSQL repository altyapısı (şema başlangıçta oluşturuluyor; versioned migration dosyaları sonraki bakım işi)
 - [x] Redis job enqueue/dequeue akışı ve kalıcı `queued → running` geçişi
@@ -98,9 +119,13 @@ version üretmez.
 - [ ] PDF render ve page image storage
 - [x] Docling parser adapter
 - [x] Canonical Markdown ve structured JSON artifact'ları
+- [ ] Text/table/asset/form/page-region yapılarını normalize etmek
+- [ ] İlk document graph node ve relationship sözleşmesini eklemek
+- [ ] Table continuation, caption ve cross-reference ilişkilerini korumak
 - [ ] Page-level quality gate
+- [ ] Yalnızca seçilen region/sayfalarda evidence-bound Gemini Vision fallback
 - [ ] Partial/failed sonuçların manifest'e yazılması
-- [ ] Küçük golden PDF fixture seti
+- [ ] Küçük multimodal golden document fixture seti
 
 Yerel doğrulama seti (public repoya eklenmez): `C:\Users\Lenovo\Documents\docs`
 içindeki otel fact sheet'leri. İlk smoke örneği 7 sayfalık Corendon Playa
@@ -134,11 +159,15 @@ extraction'dan görsel olarak ayrıdır.
 ### Aşama E — Retrieval-ready output
 
 - [ ] Heading-aware chunker
+- [ ] Başlıksız metin için cosine-similarity boundary değerlendirmesi
+- [ ] Yalnızca token-aware fallback için ölçülü overlap
+- [ ] Text + table/asset context taşıyan multimodal chunk sözleşmesi
 - [ ] Contextual `embedding_text`
 - [ ] Embedding provider interface
 - [ ] Qdrant/vector index adapter
 - [ ] PostgreSQL keyword search
 - [ ] Chunk boundary evaluation fixture'ları
+- [ ] Metadata/provenance filtreleri ve graph ilişki referansları
 
 **Bitti sayılır:** Her chunk document version, page, section ve kaynak URI
 provenance'ını korur; retrieval çıktısı aynı kaynağa geri bağlanır.
@@ -155,7 +184,24 @@ provenance'ını korur; retrieval çıktısı aynı kaynağa geri bağlanır.
 **Bitti sayılır:** Hatalı provider veya worker yeniden başlatması veri
 provenance'ını bozmaz; hassas belge içeriği loglara veya public repo'ya düşmez.
 
-## 4. Her iş için mini spec şablonu
+## 5. Golden document değerlendirme seti
+
+Public ve sentetik fixture'lar en az şu sınıfları kapsar:
+
+- Basit metin ve heading hiyerarşisi
+- Taranmış/OCR gerektiren sayfa
+- Çok kolonlu ve karmaşık layout
+- Birleşik hücreli ve birden fazla sayfaya taşan tablo
+- Grafik/diyagram ve caption ilişkisi
+- Görseli çevre metninden anlam kazanan sayfa
+- Form alanları ve işaret kutuları
+- Türkçe ve İngilizce içerik
+
+Her pipeline sürümünde metin doğruluğu, tablo yapısı, görsel-caption eşleşmesi,
+document-graph ilişkileri, provenance bütünlüğü, chunk sınır kalitesi ve vision
+fallback isabeti karşılaştırılır.
+
+## 6. Her iş için mini spec şablonu
 
 Yeni bir issue/branch açarken şu şablon doldurulur:
 
@@ -168,18 +214,21 @@ Yeni bir issue/branch açarken şu şablon doldurulur:
 
 ## Provenance ve güvenlik etkisi
 
+## Multimodal/document-graph etkisi
+
 ## Test planı
 - [ ] Domain/unit
 - [ ] API contract
 - [ ] Fixture/integration
 - [ ] UI state
+- [ ] Golden document/evaluation
 
 ## Tamamlanma ölçütü
 
 ## ADR veya migration gerekiyor mu?
 ```
 
-## 5. Branch ve commit kuralı
+## 7. Branch ve commit kuralı
 
 - `dev`: günlük entegrasyon branch'i.
 - Özellikler: `feat/<kısa-ad>`, düzeltmeler: `fix/<kısa-ad>`.
@@ -190,8 +239,9 @@ Yeni bir issue/branch açarken şu şablon doldurulur:
 
 ## Sıradaki iş
 
-Bir sonraki dikey dilim: **Aşama C — worker içinde Docling ile kaynak dosyayı
-ayrıştırmak, canonical Markdown/JSON artifact'larını MinIO'ya yazmak ve job
-stage durumlarını kalıcı olarak ilerletmek.** Bundan sonra Gemini yalnızca
-kalite kapısına takılan sayfalara eklenecek; Qdrant ise hazır chunk'lar oluşunca
-devreye girecek.
+Bir sonraki dikey dilim: **Aşama B — web'deki gerçek upload akışını register →
+upload → confirm API zincirine bağlamak; ardından job'u terminal duruma kadar
+polling ile izlemek.** Bu akış küçük sentetik PDF ile doğrulandıktan sonra worker
+artifact/provenance zinciri tamamlanacak. Gemini yalnızca quality gate'in seçtiği
+sayfa veya region'larda evidence-bound çalışacak; cosine similarity ve overlap
+ise heading-aware chunking sonrasında kontrollü fallback olarak eklenecek.
