@@ -5,21 +5,20 @@ from __future__ import annotations
 from docgrain_domain import Job, JobStatus
 from fastapi import APIRouter, HTTPException, status
 
-from .. import fixtures
+from .. import repository
 
 router = APIRouter(prefix="/v1/jobs", tags=["jobs"])
 
 
 @router.get("", response_model=list[Job])
 def list_jobs(job_status: JobStatus | None = None) -> list[Job]:
-    if job_status is None:
-        return fixtures.JOBS
-    return [job for job in fixtures.JOBS if job.status is job_status]
+    jobs = repository.list_jobs()
+    return jobs if job_status is None else [job for job in jobs if job.status is job_status]
 
 
 @router.get("/{job_id}", response_model=Job)
 def get_job(job_id: str) -> Job:
-    job = next((j for j in fixtures.JOBS if j.id == job_id), None)
+    job = repository.get_job(job_id)
     if job is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "job not found")
     return job

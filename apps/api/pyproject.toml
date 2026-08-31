@@ -10,6 +10,8 @@ dependencies = [
   "pydantic-settings>=2.3",
   "minio>=7.2",
   "python-multipart>=0.0.20",
+  "psycopg[binary]>=3.2",
+  "redis>=5.2",
   "docgrain-domain",
 ]
 

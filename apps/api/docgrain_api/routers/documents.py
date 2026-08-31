@@ -20,6 +20,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 
 from .. import repository
+from ..queue import enqueue
 from ..settings import get_settings
 from ..storage import object_exists, put_upload
 
@@ -78,7 +79,7 @@ def list_documents(limit: int = 50, offset: int = 0) -> list[DocumentListItem]:
 
 @router.get("/{document_id}", response_model=DocumentListItem)
 def get_document(document_id: str) -> DocumentListItem:
-    document = next((d for d in repository.documents if d.id == document_id), None)
+    document = repository.get_document(document_id)
     if document is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "document not found")
     versions = repository.versions_by_id()
@@ -93,7 +94,7 @@ def get_document(document_id: str) -> DocumentListItem:
 
 @router.get("/{document_id}/versions", response_model=list[DocumentVersion])
 def list_versions(document_id: str) -> list[DocumentVersion]:
-    return [v for v in repository.versions if v.document_id == document_id]
+    return repository.list_versions(document_id)
 
 
 @router.post("", response_model=RegisterResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -164,13 +165,11 @@ def upload_content(
     file: Annotated[UploadFile, File(...)],
 ) -> dict[str, str]:
     """Local-development upload proxy. Production storage can replace this with a direct presign."""
-    version = next(
-        (item for item in repository.versions if item.id == version_id and item.document_id == document_id),
-        None,
-    )
+    version = repository.get_version(document_id, version_id)
     if version is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "document version not found")
-    if file.filename != next(item.filename for item in repository.documents if item.id == document_id):
+    document = repository.get_document(document_id)
+    if document is None or file.filename != document.filename:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "uploaded filename does not match registration")
     object_name = f"uploads/{document_id}/{version_id}/original"
     put_upload(object_name, file.file, file.content_type or "application/octet-stream", version.byte_size)
@@ -180,13 +179,15 @@ def upload_content(
 @router.post("/{document_id}/versions/{version_id}/uploaded", status_code=status.HTTP_202_ACCEPTED)
 def confirm_upload(document_id: str, version_id: str) -> dict[str, str]:
     """Confirm the direct browser upload before a worker can process it."""
-    version = next(
-        (item for item in repository.versions if item.id == version_id and item.document_id == document_id),
-        None,
-    )
+    version = repository.get_version(document_id, version_id)
     if version is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "document version not found")
     object_name = f"uploads/{document_id}/{version_id}/original"
     if not object_exists(object_name):
         raise HTTPException(status.HTTP_409_CONFLICT, "upload has not reached object storage")
-    return {"status": "queued", "job_id": next(job.id for job in repository.jobs if job.document_version_id == version_id)}
+    job = repository.job_for_version(version_id)
+    if job is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "job not found")
+    if not get_settings().use_fixtures:
+        enqueue(job.id)
+    return {"status": "queued", "job_id": job.id}

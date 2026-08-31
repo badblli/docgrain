@@ -6,13 +6,24 @@ either reads stored artifacts or enqueues durable work for the worker.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .repository import initialize
 from .routers import chunks, documents, jobs, providers, versions
 from .settings import get_settings
 
 settings = get_settings()
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    initialize()
+    yield
+
 
 app = FastAPI(
     title="Docgrain API",
@@ -23,6 +34,7 @@ app = FastAPI(
         "Consumers register sources, poll job status and read versioned "
         "artifacts: pages, tables, assets, chunks and their provenance."
     ),
+    lifespan=lifespan,
     openapi_tags=[
         {"name": "documents", "description": "Registration, listing, versions."},
         {"name": "jobs", "description": "Ten-stage pipeline status and retries."},

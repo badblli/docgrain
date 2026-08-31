@@ -73,7 +73,7 @@ gereksiz yere modele göndermeyiz ve maliyet/provenance kontrol altında kalır.
 - [x] Docker Compose altyapı iskeleti
 - [x] Public repo ve CI kalite workflow'u
 - [x] Artefact tasarımının ilk Dokümanlar ekranına aktarılması
-- [ ] Web UI'ı gerçek `/v1` API client'ına bağlamak
+- [x] Web UI'ı gerçek `/v1` API client'ına bağlamak
 - [ ] API OpenAPI tiplerini `apps/web/lib/api/schema.d.ts` içine üretmek
 
 **Bitti sayılır:** UI artık sahte diziden değil API response'undan beslenir ve
@@ -81,11 +81,11 @@ contract testi response shape değişikliklerini yakalar.
 
 ### Aşama B — Gerçek doküman kaydı ve durable job
 
-- [ ] Upload endpoint'i ve kaynak kaydı
+- [x] Upload endpoint'i ve kaynak kaydı
 - [x] Local MinIO bucket ve API upload proxy
 - [ ] Production için direct signed-upload adapter
-- [ ] PostgreSQL repository ve migration altyapısı
-- [ ] Redis job enqueue/dequeue akışı
+- [x] PostgreSQL repository altyapısı (şema başlangıçta oluşturuluyor; versioned migration dosyaları sonraki bakım işi)
+- [x] Redis job enqueue/dequeue akışı ve kalıcı `queued → running` geçişi
 - [ ] Worker'ın `register -> render -> extract -> publish` dikey dilimi
 - [ ] Job retry ve idempotency testi
 
@@ -179,6 +179,8 @@ Yeni bir issue/branch açarken şu şablon doldurulur:
 
 ## Sıradaki iş
 
-Bir sonraki dikey dilim: **Aşama A — UI'ı gerçek `/v1/documents` endpoint'ine
-bağlamak ve OpenAPI tip üretimini eklemek.** Bu iş tamamlanınca sahte veri
-ekranı ile API ekranı aynı contract üzerinden doğrulanabilecek.
+Bir sonraki dikey dilim: **Aşama C — worker içinde Docling ile kaynak dosyayı
+ayrıştırmak, canonical Markdown/JSON artifact'larını MinIO'ya yazmak ve job
+stage durumlarını kalıcı olarak ilerletmek.** Bundan sonra Gemini yalnızca
+kalite kapısına takılan sayfalara eklenecek; Qdrant ise hazır chunk'lar oluşunca
+devreye girecek.

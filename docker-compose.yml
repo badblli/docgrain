@@ -70,7 +70,7 @@ services:
       S3_PUBLIC_ENDPOINT_URL: ${S3_PUBLIC_ENDPOINT_URL:-http://localhost:9000}
       S3_BUCKET: ${S3_BUCKET:-docgrain}
       QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
-      USE_FIXTURES: ${USE_FIXTURES:-true}
+      USE_FIXTURES: ${USE_FIXTURES:-false}
     ports:
       - "8000:8000"
     depends_on:
@@ -94,6 +94,18 @@ services:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     ports:
       - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://docgrain:change-me-locally@postgres:5432/docgrain}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+    restart: unless-stopped
     depends_on:
       api:
         condition: service_healthy
