@@ -82,7 +82,8 @@ contract testi response shape değişikliklerini yakalar.
 ### Aşama B — Gerçek doküman kaydı ve durable job
 
 - [ ] Upload endpoint'i ve kaynak kaydı
-- [ ] Object storage adapter arayüzü; önce MinIO implementasyonu
+- [x] Local MinIO bucket ve API upload proxy
+- [ ] Production için direct signed-upload adapter
 - [ ] PostgreSQL repository ve migration altyapısı
 - [ ] Redis job enqueue/dequeue akışı
 - [ ] Worker'ın `register -> render -> extract -> publish` dikey dilimi

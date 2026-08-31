@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 from docgrain_api.main import app
+from docgrain_api.routers import documents as document_routes
 from docgrain_domain import JobStage, JobStatus, StageStatus
 from docgrain_domain.state import (
     JobStateError,
@@ -40,6 +41,39 @@ REQUIRED_CHUNK_FIELDS = {
 
 def test_healthz() -> None:
     assert client.get("/healthz").status_code == 200
+
+
+def test_registered_file_can_be_stored_then_confirmed(monkeypatch: pytest.MonkeyPatch) -> None:
+    stored: dict[str, object] = {}
+
+    def fake_put(object_name: str, data: object, content_type: str, length: int) -> None:
+        stored.update(object_name=object_name, content_type=content_type, length=length)
+
+    monkeypatch.setattr(document_routes, "put_upload", fake_put)
+    monkeypatch.setattr(document_routes, "object_exists", lambda object_name: object_name == stored["object_name"])
+
+    registration = client.post(
+        "/v1/documents",
+        json={
+            "workspace_id": "ws_luwi",
+            "filename": "test.txt",
+            "mime_type": "text/plain",
+            "byte_size": 4,
+        },
+    )
+    assert registration.status_code == 202
+    payload = registration.json()
+    upload = client.put(
+        payload["upload_url"],
+        files={"file": ("test.txt", b"test", "text/plain")},
+    )
+    assert upload.status_code == 201
+    assert stored["length"] == 4
+    confirmation = client.post(
+        f"/v1/documents/{payload['document']['id']}/versions/{payload['version']['id']}/uploaded"
+    )
+    assert confirmation.status_code == 202
+    assert confirmation.json()["job_id"] == payload["job_id"]
 
 
 def test_every_chunk_carries_the_contract_fields() -> None:

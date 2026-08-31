@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     s3_endpoint_url: str = "http://minio:9000"
     s3_public_endpoint_url: str = "http://localhost:9000"
     s3_bucket: str = "docgrain"
+    s3_access_key: str = "docgrain"
+    s3_secret_key: str = "change-me-locally"
+    api_public_url: str = "http://localhost:8000"
 
     qdrant_url: str = "http://qdrant:6333"
     gemini_api_key: str = ""

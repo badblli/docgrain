@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
 
 type Document = { type: string; title: string; file: string; status: "done" | "running" | "partial" | "failed"; version: string; pages: string; chunks: string; updated: string };
 
@@ -19,8 +19,12 @@ export default function Home() {
   const [items, setItems] = useState<Document[]>(documents);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
+  const loadDocuments = useCallback(() => {
+    setLoading(true);
     fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}/v1/documents?limit=50`)
       .then((response) => {
         if (!response.ok) throw new Error("API yanıt vermedi");
@@ -42,6 +46,42 @@ export default function Home() {
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => { loadDocuments(); }, [loadDocuments]);
+
+  async function handleFile(file: File) {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+    setUploading(true);
+    setUploadMessage(null);
+    setError(null);
+    try {
+      const registration = await fetch(`${apiUrl}/v1/documents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workspace_id: "ws_luwi", filename: file.name, mime_type: file.type || "application/octet-stream", byte_size: file.size }),
+      });
+      if (!registration.ok) throw new Error("Kayıt oluşturulamadı");
+      const intent = await registration.json();
+      const data = new FormData();
+      data.append("file", file);
+      const stored = await fetch(intent.upload_url, { method: "PUT", body: data });
+      if (!stored.ok) throw new Error("Dosya depoya yazılamadı");
+      const confirmation = await fetch(`${apiUrl}/v1/documents/${intent.document.id}/versions/${intent.version.id}/uploaded`, { method: "POST" });
+      if (!confirmation.ok) throw new Error("Yükleme doğrulanamadı");
+      setUploadMessage(`${file.name} kuyruğa alındı.`);
+      loadDocuments();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Yükleme tamamlanamadı");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function onFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (file) void handleFile(file);
+    event.target.value = "";
+  }
+
   return <main className="appShell">
     <aside className="sidebar" aria-label="Ana navigasyon">
       <a className="wordmark" href="#top"><span className="wordmarkIcon">d</span><span>docgrain</span></a>
@@ -54,10 +94,12 @@ export default function Home() {
       <header className="topbar"><div className="breadcrumbs"><span>Çalışma alanı</span><b>/</b><strong>Dokümanlar</strong></div><div className="topbarActions"><button className="searchButton" aria-label="Ara">⌕ <span>Ara</span><kbd>Ctrl K</kbd></button><button className="quietButton" aria-label="Bildirimler">♧</button><span className="connection"><i /> bağlı</span></div></header>
       <div className="content">
         {error && <div className="apiNotice" role="status">{error}</div>}
-        <div className="intro"><div><p className="eyebrow">ÇALIŞMA ALANI</p><h1>Dokümanlar</h1><p className="description">Belgelerini, sürümlerini ve çıkarılan içerikleri tek bir yerde incele.</p></div><button className="primaryButton">＋ Yükle</button></div>
-        <div className="subnav"><a className="selected" href="#all">Tümü <span>6</span></a><a href="#recent">Son kullanılanlar</a><a href="#failed">İnceleme bekleyenler <span className="alertCount">2</span></a><div className="subnavEnd"><button className="viewButton" aria-label="Liste görünümü">☷</button><button className="viewButton" aria-label="Izgara görünümü">⊞</button></div></div>
+        {uploadMessage && <div className="uploadNotice" role="status">{uploadMessage}</div>}
+        <input ref={fileInput} style={{ display: "none" }} type="file" accept=".pdf,.docx,.pptx,.xlsx,.html,.txt" onChange={onFileChange} />
+        <div className="intro"><div><p className="eyebrow">ÇALIŞMA ALANI</p><h1>Dokümanlar</h1><p className="description">Belgelerini, sürümlerini ve çıkarılan içerikleri tek bir yerde incele.</p></div><button className="primaryButton" onClick={() => fileInput.current?.click()} disabled={uploading}>{uploading ? "Yükleniyor…" : "＋ Yükle"}</button></div>
+        <div className="subnav"><a className="selected" href="#all">Tümü <span>{items.length}</span></a><a href="#recent">Son kullanılanlar</a><a href="#failed">İnceleme bekleyenler <span className="alertCount">2</span></a><div className="subnavEnd"><button className="viewButton" aria-label="Liste görünümü">☷</button><button className="viewButton" aria-label="Izgara görünümü">⊞</button></div></div>
         <div className="documentList" id="documents"><div className="listHeader"><span>AD</span><span>DURUM</span><span>GÜNCELLENME</span><span /></div>{loading ? <div className="loadingRow">Dokümanlar yükleniyor…</div> : items.map((doc) => <a className="documentRow" href={`#${doc.file}`} key={doc.file}><div className="documentName"><span className={`fileIcon ${doc.type.toLowerCase()}`}>{doc.type === "DOCX" ? "W" : doc.type === "XLSX" ? "X" : "P"}</span><span><strong>{doc.title}</strong><small>{doc.file} · {doc.version} · {doc.pages} sayfa</small></span></div><span className={`status ${doc.status}`}><i />{statusLabel[doc.status]}{doc.status === "partial" && <small>{doc.chunks} chunk</small>}</span><time>{doc.updated}</time><span className="rowArrow">→</span></a>)}</div>
-        <div className="emptyHint"><span>✦</span><p>Yeni bir doküman yükleyerek başlayın.<br /><small>İşleme alındığında sürümler ve içerik detayları burada görünür.</small></p><button className="outlineButton">Doküman yükle</button></div>
+        <div className="emptyHint"><span>✦</span><p>Yeni bir doküman yükleyerek başlayın.<br /><small>İşleme alındığında sürümler ve içerik detayları burada görünür.</small></p><button className="outlineButton" onClick={() => fileInput.current?.click()} disabled={uploading}>Doküman yükle</button></div>
         <footer><span>Docgrain</span><span>API bağlı · v0.0.1</span></footer>
       </div>
     </section>

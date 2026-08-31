@@ -3,13 +3,25 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Annotated
 
-from docgrain_domain import Document, DocumentVersion, VersionStatus, new_id
-from fastapi import APIRouter, HTTPException, status
+from docgrain_domain import (
+    STAGE_ORDER,
+    Document,
+    DocumentVersion,
+    Job,
+    JobStatus,
+    StageRun,
+    StageStatus,
+    VersionStatus,
+    new_id,
+)
+from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 
-from .. import fixtures
+from .. import repository
 from ..settings import get_settings
+from ..storage import object_exists, put_upload
 
 router = APIRouter(prefix="/v1/documents", tags=["documents"])
 
@@ -50,38 +62,38 @@ class DocumentListItem(BaseModel):
 
 @router.get("", response_model=list[DocumentListItem])
 def list_documents(limit: int = 50, offset: int = 0) -> list[DocumentListItem]:
-    versions = {version.id: version for version in fixtures.VERSIONS}
+    versions = repository.versions_by_id()
     items = [
         DocumentListItem(
             document=document,
             latest_version=versions.get(document.latest_version_id or ""),
             latest_job_id=next(
-                (job.id for job in fixtures.JOBS if job.document_id == document.id), None
+                (job.id for job in repository.jobs_for_document(document.id)), None
             ),
         )
-        for document in fixtures.DOCUMENTS
+        for document in repository.list_documents()
     ]
     return items[offset : offset + limit]
 
 
 @router.get("/{document_id}", response_model=DocumentListItem)
 def get_document(document_id: str) -> DocumentListItem:
-    document = next((d for d in fixtures.DOCUMENTS if d.id == document_id), None)
+    document = next((d for d in repository.documents if d.id == document_id), None)
     if document is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "document not found")
-    versions = {version.id: version for version in fixtures.VERSIONS}
+    versions = repository.versions_by_id()
     return DocumentListItem(
         document=document,
         latest_version=versions.get(document.latest_version_id or ""),
         latest_job_id=next(
-            (job.id for job in fixtures.JOBS if job.document_id == document.id), None
+            (job.id for job in repository.jobs_for_document(document.id)), None
         ),
     )
 
 
 @router.get("/{document_id}/versions", response_model=list[DocumentVersion])
 def list_versions(document_id: str) -> list[DocumentVersion]:
-    return [v for v in fixtures.VERSIONS if v.document_id == document_id]
+    return [v for v in repository.versions if v.document_id == document_id]
 
 
 @router.post("", response_model=RegisterResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -116,9 +128,65 @@ def register_document(payload: RegisterRequest) -> RegisterResponse:
         status=VersionStatus.PROCESSING,
         created_at=now,
     )
+    job = Job(
+        id=new_id("job"),
+        document_id=document_id,
+        document_version_id=version_id,
+        workspace_id=payload.workspace_id,
+        status=JobStatus.QUEUED,
+        stages=[
+            StageRun(
+                stage=stage,
+                status=StageStatus.PENDING,
+                attempt=0,
+            )
+            for stage in STAGE_ORDER
+        ],
+        queued_at=now,
+    )
+    repository.add(document, version, job)
     return RegisterResponse(
         document=document,
         version=version,
-        job_id=new_id("job"),
-        upload_url=None if payload.source_uri else f"{get_settings().s3_public_endpoint_url}/{get_settings().s3_bucket}/uploads/{version_id}",
+        job_id=job.id,
+        upload_url=(
+            None
+            if payload.source_uri
+            else f"{get_settings().api_public_url}/v1/documents/{document_id}/versions/{version_id}/content"
+        ),
     )
+
+
+@router.put("/{document_id}/versions/{version_id}/content", status_code=status.HTTP_201_CREATED)
+def upload_content(
+    document_id: str,
+    version_id: str,
+    file: Annotated[UploadFile, File(...)],
+) -> dict[str, str]:
+    """Local-development upload proxy. Production storage can replace this with a direct presign."""
+    version = next(
+        (item for item in repository.versions if item.id == version_id and item.document_id == document_id),
+        None,
+    )
+    if version is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "document version not found")
+    if file.filename != next(item.filename for item in repository.documents if item.id == document_id):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "uploaded filename does not match registration")
+    object_name = f"uploads/{document_id}/{version_id}/original"
+    put_upload(object_name, file.file, file.content_type or "application/octet-stream", version.byte_size)
+    return {"status": "stored", "object_name": object_name}
+
+
+@router.post("/{document_id}/versions/{version_id}/uploaded", status_code=status.HTTP_202_ACCEPTED)
+def confirm_upload(document_id: str, version_id: str) -> dict[str, str]:
+    """Confirm the direct browser upload before a worker can process it."""
+    version = next(
+        (item for item in repository.versions if item.id == version_id and item.document_id == document_id),
+        None,
+    )
+    if version is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "document version not found")
+    object_name = f"uploads/{document_id}/{version_id}/original"
+    if not object_exists(object_name):
+        raise HTTPException(status.HTTP_409_CONFLICT, "upload has not reached object storage")
+    return {"status": "queued", "job_id": next(job.id for job in repository.jobs if job.document_version_id == version_id)}
