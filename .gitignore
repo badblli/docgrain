@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+
+# Node
+node_modules/
+.next/
+out/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Runtime data and document artifacts
+data/
+storage/
+uploads/
+chroma_db/
+qdrant_storage/
+postgres_data/
+redis_data/
+*.pdf
+*.png
+*.jpg
+*.jpeg
+
+# Editor and OS
+.DS_Store
+Thumbs.db
+.vscode/
