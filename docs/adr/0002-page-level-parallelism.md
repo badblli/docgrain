@@ -1,5 +1,10 @@
 # ADR 0002 — Page-level parallelism, and where it stops
 
+> **Tarihsel ADR — güncel kapsam için [ADR 0004](0004-canonical-first-scope-freeze.md).**
+> Aşağıdaki kararlar/garantiler uygulanmış özellik listesi değildir. Canonical-first hedef,
+> scope ve mode sözleşmesi ADR 0004 ile belirlenir. Primary-Vision hedefi superseded;
+> mevcut runtime M0'da korunur.
+
 - Status: accepted
 - Date: 2026-08-31
 

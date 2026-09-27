@@ -43,8 +43,10 @@ def test_healthz() -> None:
     assert client.get("/healthz").status_code == 200
 
 
-def test_registered_file_can_be_stored_then_confirmed(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_registered_file_can_be_stored_then_confirmed(monkeypatch: pytest.MonkeyPatch, live_repository) -> None:
     stored: dict[str, object] = {}
+    queued = []
+    monkeypatch.setattr(document_routes, "enqueue", queued.append)
 
     def fake_put(object_name: str, data: object, content_type: str, length: int) -> None:
         stored.update(object_name=object_name, content_type=content_type, length=length)
@@ -56,8 +58,8 @@ def test_registered_file_can_be_stored_then_confirmed(monkeypatch: pytest.Monkey
         "/v1/documents",
         json={
             "workspace_id": "ws_luwi",
-            "filename": "test.txt",
-            "mime_type": "text/plain",
+            "filename": "test.pdf",
+            "mime_type": "application/pdf",
             "byte_size": 4,
         },
     )
@@ -68,7 +70,7 @@ def test_registered_file_can_be_stored_then_confirmed(monkeypatch: pytest.Monkey
     )
     upload = client.put(
         payload["upload_url"],
-        files={"file": ("test.txt", b"test", "text/plain")},
+        files={"file": ("test.pdf", b"test", "application/pdf")},
     )
     assert upload.status_code == 201
     assert stored["length"] == 4
@@ -80,10 +82,12 @@ def test_registered_file_can_be_stored_then_confirmed(monkeypatch: pytest.Monkey
     job = client.get(f"/v1/jobs/{payload['job_id']}")
     assert job.status_code == 200
     assert job.json()["status"] == "queued"
+    assert queued == [payload["job_id"]]
+    assert payload["version"]["source_uri"].endswith(stored["object_name"])
 
 
 def test_upload_confirmation_requires_the_original_object(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, live_repository,
 ) -> None:
     monkeypatch.setattr(document_routes, "object_exists", lambda _: False)
     registration = client.post(
@@ -106,7 +110,7 @@ def test_upload_confirmation_requires_the_original_object(
 
 
 def test_upload_rejects_a_filename_that_does_not_match_registration(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, live_repository,
 ) -> None:
     monkeypatch.setattr(
         document_routes,
@@ -132,11 +136,16 @@ def test_upload_rejects_a_filename_that_does_not_match_registration(
     assert upload.json()["detail"] == "uploaded filename does not match registration"
 
 
-def test_canonical_markdown_artifact_stays_behind_the_api(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(document_routes, "get_text", lambda _: "# Canonical output")
-    response = client.get("/v1/documents/doc_7fk2/versions/dver_2/artifacts/document.md")
+def test_extraction_markdown_artifact_stays_behind_the_api(monkeypatch, live_repository) -> None:
+    monkeypatch.setattr(document_routes, "get_text", lambda _: "# Extraction output")
+    registration = client.post("/v1/documents", json={
+        "workspace_id": "ws_test", "filename": "test.pdf", "mime_type": "application/pdf", "byte_size": 4,
+    }).json()
+    response = client.get(
+        f"/v1/documents/{registration['document']['id']}/versions/{registration['version']['id']}/artifacts/document.md"
+    )
     assert response.status_code == 200
-    assert response.text == "# Canonical output"
+    assert response.text == "# Extraction output"
 
 
 def test_every_chunk_carries_the_contract_fields() -> None:

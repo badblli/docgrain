@@ -14,7 +14,6 @@ from docgrain_domain import (
     TableArtifact,
 )
 from docgrain_domain.models import VersionDiff
-from docgrain_domain.state import retryable_stages
 from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import BaseModel
 
@@ -29,14 +28,16 @@ def _require_version(version_id: str) -> DocumentVersion:
     version = next(
         (v for v in repository.list_versions() if v.id == version_id),
         None,
-    ) or next((v for v in fixtures.VERSIONS if v.id == version_id), None)
+    )
     if version is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "version not found")
     return version
 
 
 def _fixture_version(version_id: str) -> bool:
-    return any(version.id == version_id for version in fixtures.VERSIONS)
+    return get_settings().use_fixtures and any(
+        version.id == version_id for version in fixtures.VERSIONS
+    )
 
 
 def _page_manifest(version: DocumentVersion) -> dict[int, dict[str, int]]:
@@ -63,11 +64,6 @@ def _live_page(
 ) -> Page:
     if page_number < 1 or page_number > version.page_count:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "page not found")
-    job = repository.job_for_version(version.id)
-    extraction_failed = any(
-        failure.page_number == page_number
-        for failure in (job.page_failures if job else [])
-    )
     metadata = (manifest if manifest is not None else _page_manifest(version)).get(
         page_number, {}
     )
@@ -83,8 +79,8 @@ def _live_page(
         height=int(metadata.get("height", 2339)),
         dpi=200,
         parser=version.parser or "docling",
-        confidence=0.0 if extraction_failed else 1.0,
-        quality_flags=["empty"] if extraction_failed else [],
+        confidence=None,
+        quality_flags=[],
     )
 
 
@@ -135,6 +131,8 @@ def get_page(version_id: str, page_number: int) -> Page:
 @router.get("/{version_id}/pages/{page_number}/render", response_class=Response)
 def get_page_render(version_id: str, page_number: int) -> Response:
     version = _require_version(version_id)
+    if get_settings().use_fixtures:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "demo pages have no stored renders")
     _live_page(version, page_number)
     document = repository.get_document(version.document_id)
     if document is None:
@@ -183,24 +181,21 @@ class BoundaryReport(BaseModel):
 
 @router.get("/{version_id}/chunks/boundaries", response_model=BoundaryReport)
 def chunk_boundaries(version_id: str) -> BoundaryReport:
-    """Consecutive-chunk cosine similarity.
-
-    Docgrain splits by heading first; this report exists to *audit* that
-    decision, not to make it. A dip below the threshold that lines up with a
-    heading confirms the split; a dip in the middle of high similarity means
-    the chunk was cut unnecessarily and should be merged.
-    """
+    """Simulated boundary scores, available only for demo fixtures."""
     _require_version(version_id)
     if not _fixture_version(version_id):
-        return BoundaryReport(threshold=fixtures.SPLIT_THRESHOLD, points=[])
+        raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "chunk boundary analysis is not implemented")
     return BoundaryReport(threshold=fixtures.SPLIT_THRESHOLD, points=fixtures.boundaries())
 
 
 @router.get("/{version_id}/diff", response_model=VersionDiff)
 def diff(version_id: str, base: str) -> VersionDiff:
+    """Live responses contain count deltas only, not semantic changes."""
     head = _require_version(version_id)
     base_version = _require_version(base)
-    if _fixture_version(version_id) and _fixture_version(base):
+    if head.document_id != base_version.document_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "versions must belong to the same document")
+    if _fixture_version(version_id) and version_id == fixtures.V2 and base == fixtures.V1:
         return fixtures.DIFF
     return VersionDiff(
         base_version_id=base_version.id,
@@ -221,16 +216,8 @@ class RetryResponse(BaseModel):
     replays: list[JobStage]
 
 
-@router.post("/{version_id}/retry", response_model=RetryResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post("/{version_id}/retry", response_model=RetryResponse, status_code=status.HTTP_501_NOT_IMPLEMENTED)
 def retry(version_id: str, payload: RetryRequest) -> RetryResponse:
-    """Re-run from a stage. Stages are idempotent, so a replay is safe."""
+    """Reserved endpoint. No retry is scheduled in either mode."""
     _require_version(version_id)
-    job = repository.job_for_version(version_id) or next(
-        (j for j in fixtures.JOBS if j.document_version_id == version_id),
-        None,
-    )
-    if job is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "no job for this version")
-    statuses = {run.stage: run.status for run in job.stages}
-    replays = retryable_stages(statuses) or [payload.from_stage]
-    return RetryResponse(job_id=job.id, replays=replays)
+    raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "stage retry is not implemented; no work was queued")

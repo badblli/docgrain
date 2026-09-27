@@ -40,7 +40,7 @@ def page_failures(page_numbers: list[int]) -> list[dict[str, object]]:
             "page_number": page_number,
             "stage": "extract",
             "reason": "Parser did not produce a valid page representation.",
-            "resolution": "Page render was preserved; multimodal retry is required.",
+            "resolution": "Page render was preserved; page replay is not implemented.",
         }
         for page_number in page_numbers
     ]

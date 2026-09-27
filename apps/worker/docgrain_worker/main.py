@@ -1,4 +1,4 @@
-"""Durable Docling worker: source object to canonical artifacts."""
+"""PDF worker: source object to provider-specific extraction artifacts."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ import json
 import os
 from contextlib import closing
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
@@ -38,9 +37,10 @@ class RenderedPage:
 def document_converter() -> DocumentConverter:
     """Build the deterministic secondary parser used after page rendering.
 
-    OCR is deliberately disabled here. Gemini Vision owns page reading in the
-    target architecture; until it is configured, pages without a reliable text
-    layer must become partial instead of being silently rewritten by local OCR.
+    OCR is deliberately disabled here. Gemini currently owns page reading when
+    configured. The target direction
+    makes Docling primary, but M0 does not change extraction ownership.
+    The existing page-dimension check does not establish OCR completeness.
     """
     options = PdfPipelineOptions(do_ocr=False)
     return DocumentConverter(
@@ -66,16 +66,14 @@ def stage_update(
     rendered_pages: int = 0,
     missing_pages: list[int] | None = None,
     extraction_provider: str = "docling",
+    failed_stage: str = "extract",
 ) -> list[dict[str, object]]:
-    now = datetime.now(UTC).isoformat()
-    done = {"register", "render", "extract", "quality", "normalize", "publish"}
+    done = {"register", "render", "extract", "quality", "publish"}
     missing_pages = missing_pages or []
     for stage in stages:
         name = str(stage["stage"])
-        stage["status"] = "failed" if failed and name == "extract" else ("done" if name in done and not failed else "skipped")
-        stage["error"] = failed if failed and name == "extract" else None
-        if name in done and not failed:
-            stage.update(started_at=now, finished_at=now, attempt=1)
+        stage["status"] = "failed" if failed and name == failed_stage else ("done" if name in done and not failed else "skipped")
+        stage["error"] = failed if failed and name == failed_stage else None
         if name == "render" and not failed:
             stage["summary"] = f"{rendered_pages} pages rendered at 200 DPI."
             stage["provider"] = "pymupdf"
@@ -91,19 +89,25 @@ def stage_update(
             }
         elif name == "quality" and not failed:
             stage["summary"] = (
-                "All rendered pages have valid parser output."
+                "No page failures recorded; extraction completeness/confidence are not measured."
                 if not missing_pages
-                else f"{len(missing_pages)} pages require multimodal retry."
+                else f"{len(missing_pages)} pages failed; stage replay is not implemented."
             )
             stage["attributes"] = {"failed_pages": missing_pages}
+        if name in {"normalize", "chunk", "enrich", "embed"}:
+            stage["summary"] = "Not implemented."
+        elif name == "vision":
+            stage["summary"] = "No separate enrichment stage; configured Vision runs under extract."
+        elif name == "publish" and not failed:
+            stage["summary"] = "Extraction JSON/Markdown stored; no canonical manifest or index was produced."
     return stages
 
 
-def fail(job_id: str, message: str) -> None:
+def fail(job_id: str, message: str, failed_stage: str = "extract") -> None:
     with closing(psycopg.connect(db_url())) as conn, conn.cursor() as cur:
         cur.execute("SELECT document_version_id, stages FROM jobs WHERE id = %s", (job_id,))
         version_id, stages = cur.fetchone()
-        cur.execute("UPDATE jobs SET status='failed', stages=%s::jsonb, finished_at=NOW() WHERE id=%s", (json.dumps(stage_update(stages, message)), job_id))
+        cur.execute("UPDATE jobs SET status='failed', stages=%s::jsonb, finished_at=NOW() WHERE id=%s", (json.dumps(stage_update(stages, message, failed_stage=failed_stage)), job_id))
         cur.execute("UPDATE document_versions SET status='failed' WHERE id=%s", (version_id,))
         conn.commit()
 
@@ -111,7 +115,7 @@ def fail(job_id: str, message: str) -> None:
 def render_pages(
     source: Path, prefix: str, bucket: str, output_dir: Path
 ) -> list[RenderedPage]:
-    """Render reviewable page PNGs; each is an immutable version artifact."""
+    """Render reviewable PDF page PNGs under the version object prefix."""
     pdf = pymupdf.open(source)
     try:
         client = storage()
@@ -159,7 +163,7 @@ def render_pages(
 def gemini_extraction(
     rendered: list[RenderedPage], prefix: str, bucket: str, api_key: str, model: str
 ) -> tuple[bytes, bytes, list[int], list[dict[str, object]], int, int]:
-    """Run the artifact-approved four-page parallel, three-attempt vision pass."""
+    """Run the current four-worker, three-attempt Vision extraction pass."""
     results, errors = extract_pages(
         [(page.page_number, page.path) for page in rendered],
         GeminiPageExtractor(api_key, model),
@@ -193,7 +197,7 @@ def gemini_extraction(
             "page_number": page_number,
             "stage": "extract",
             "reason": errors[page_number],
-            "resolution": "Page render was preserved; retry this page.",
+            "resolution": "Page render was preserved; page replay is not implemented.",
         }
         for page_number in missing_pages
     ]
@@ -215,6 +219,7 @@ def process(job_id: str) -> None:
         return
     version_id, document_id, stages = row
     bucket = os.environ["S3_BUCKET"]
+    active_stage = "render"
     try:
         with TemporaryDirectory() as temp:
             response = storage().get_object(bucket, f"uploads/{document_id}/{version_id}/original")
@@ -227,6 +232,7 @@ def process(job_id: str) -> None:
             prefix = f"artifacts/{document_id}/{version_id}"
             rendered = render_pages(source, prefix, bucket, Path(temp))
             rendered_page_count = len(rendered)
+            active_stage = "extract"
             gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
             gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.7-flash")
             if gemini_key:
@@ -259,6 +265,7 @@ def process(job_id: str) -> None:
                 parser = "docling-fallback"
                 vision_provider = None
                 extraction_provider = "docling-fallback"
+            active_stage = "publish"
             final_status = "partial" if failures else "done"
             content_hash = sha256(source.read_bytes()).hexdigest()
             client = storage()
@@ -303,7 +310,7 @@ def process(job_id: str) -> None:
             )
             conn.commit()
     except Exception as exc:  # noqa: BLE001 - pipeline must persist unexpected provider failures.
-        fail(job_id, str(exc)[:1000])
+        fail(job_id, str(exc)[:1000], active_stage)
 
 
 def run() -> None:

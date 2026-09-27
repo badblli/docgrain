@@ -1,4 +1,4 @@
-"""Durable Redis queue boundary."""
+"""Redis list dispatch. Acknowledgment and crash recovery are not implemented."""
 
 from __future__ import annotations
 

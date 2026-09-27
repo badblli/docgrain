@@ -1,0 +1,60 @@
+- generic [active] [ref=f1e1]:
+  - generic [ref=f1e2]:
+    - complementary [ref=f1e3]:
+      - button "Docgrain konsol" [ref=f1e4] [cursor=pointer]:
+        - generic [ref=f1e10]:
+          - generic [ref=f1e11]: Docgrain
+          - generic [ref=f1e12]: konsol
+      - generic [ref=f1e13]: Çalışma alanı
+      - button [ref=f1e410] [cursor=pointer]:
+        - text: Dokümanlar
+        - emphasis [ref=f1e18]: "0"
+      - button [ref=f1e411] [cursor=pointer]:
+        - text: İşler
+        - emphasis [ref=f1e23]: "0"
+      - button "Sağlayıcılar" [ref=f1e24] [cursor=pointer]
+      - generic [ref=f1e30]: Referans
+      - button "Veri sözleşmesi" [ref=f1e31] [cursor=pointer]
+      - generic [ref=f1e35]:
+        - text: M0 · PDF extraction prototipiEkranlar
+        - code [ref=f1e36]: /v1
+        - text: sözleşmesine göre çizildi; her başlıktaki mavi rozet o ekranı besleyen uç noktadır.
+    - main [ref=f1e37]:
+      - status [ref=f1e38]:
+        - text: LIVE — gerçek kayıtlar. PDF extraction mevcut; canonical model, chunking, index ve recovery henüz yok.
+        - button "Listeyi yenile" [ref=f1e39] [cursor=pointer]
+      - generic [ref=f1e412]:
+        - generic [ref=f1e413]:
+          - generic [ref=f1e414]: Çalışma alanı
+          - generic [ref=f1e415]: ›
+          - generic [ref=f1e416]: Dokümanlar
+        - generic [ref=f1e417]:
+          - generic [ref=f1e418]:
+            - heading "Dokümanlar" [level=1] [ref=f1e419]
+            - paragraph [ref=f1e420]: Her yükleme yeni bir doküman ve ilk sürüm kaydı oluşturur. Deduplication ve mevcut dokümana yeni sürüm ekleme henüz yok.
+          - code [ref=f1e422]: GET /v1/documents
+      - generic [ref=f1e423]:
+        - generic [ref=f1e424]:
+          - generic [ref=f1e429]:
+            - heading "PDF yükle" [level=3] [ref=f1e430]
+            - paragraph [ref=f1e431]: Şu anda yalnızca PDF işlenir. DOCX, TXT ve XLSX ilk ürün kapsamındadır, ancak henüz desteklenmez. Demo modu salt okunurdur.
+          - button "PDF seç" [ref=f1e432] [cursor=pointer]
+        - generic [ref=f1e433]:
+          - generic [ref=f1e434]:
+            - heading "Tüm dokümanlar" [level=2] [ref=f1e435]
+            - paragraph [ref=f1e436]: Satıra tıkla → sürüm, pipeline ve çıkarılan içerik.
+            - code [ref=f1e438]: GET /v1/documents?limit=50
+          - table [ref=f1e440]:
+            - rowgroup [ref=f1e441]:
+              - row [ref=f1e442]:
+                - columnheader "Doküman" [ref=f1e443]
+                - columnheader "Durum" [ref=f1e444]
+                - columnheader "Sürüm" [ref=f1e445]
+                - columnheader "Sayfa" [ref=f1e446]
+                - columnheader "Chunk" [ref=f1e447]
+                - columnheader "Son işlem" [ref=f1e448]
+                - columnheader [ref=f1e449]
+            - rowgroup [ref=f1e450]:
+              - row [ref=f1e451]:
+                - cell "Henüz doküman yok." [ref=f1e452]
+  - alert [ref=f1e93]

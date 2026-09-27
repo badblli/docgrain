@@ -1,5 +1,7 @@
-# Domain package
+# Domain contracts
 
-This package will contain vendor-neutral domain models and state-machine rules. It may not import Docling, Gemini, Qwen, Qdrant, cloud SDKs or web-framework types.
+Vendor-neutral Pydantic document/version/page/table/asset/chunk/job sözleşmeleri, ID helpers ve state helpers implement edilmiştir. Worker shared state machine'i henüz kullanmaz; çoğu content modeli demo/API contract düzeyindedir.
 
-It owns identifiers, document/version/page/table/asset/chunk schemas, job state transitions and metadata validation.
+Bu package henüz Canonical Knowledge Model değildir. M1 ayrı onaydan sonra başlayacaktır. SDK/framework bağımlılıkları core modele eklenmez.
+
+M0 contract düzeltmesi: ölçülmeyen `Page.confidence` ve probe yapılmayan `ProviderHealth.healthy` null olabilir. Model varlığı, ilgili extraction/projection'ın implement edildiğini göstermez.

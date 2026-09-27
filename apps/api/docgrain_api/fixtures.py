@@ -1,9 +1,6 @@
-"""In-memory fixtures.
-
-These are the exact shapes the review console was designed against. They let
-the UI be built and demoed before PostgreSQL, the worker and object storage
-exist. Every reader goes through the repository functions at the bottom, so
-swapping in a real database means replacing this module, not the routers.
+"""Synthetic read-only demo data. Similarities, diffs and stage summaries are
+simulations, not evidence of implemented pipeline capabilities. Live readers
+must never return this data.
 """
 
 from __future__ import annotations

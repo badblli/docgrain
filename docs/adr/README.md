@@ -1,3 +1,7 @@
 # Architecture Decision Records
 
-Add a numbered ADR for decisions that change the project boundary, public contract, storage model, provider abstraction, security posture or deployment strategy.
+Güncel yön: [ADR 0004 — canonical-first scope freeze](0004-canonical-first-scope-freeze.md).
+
+ADR 0001–0003 tarihsel tasarım kararlarıdır; güncel implementasyon özellik listesi değildir. Özellikle primary-Vision hedefi ADR 0004 ile değiştirilmiştir. Mevcut runtime, M0'da henüz yeni extraction yönüne geçirilmez.
+
+Public contract veya mimari sınır değişikliklerinde küçük, açık bir ADR/migration note ekleyin.

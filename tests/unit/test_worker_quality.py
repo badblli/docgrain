@@ -24,6 +24,6 @@ def test_quality_failures_preserve_render_and_request_multimodal_retry() -> None
             "page_number": 4,
             "stage": "extract",
             "reason": "Parser did not produce a valid page representation.",
-            "resolution": "Page render was preserved; multimodal retry is required.",
+            "resolution": "Page render was preserved; page replay is not implemented.",
         }
     ]

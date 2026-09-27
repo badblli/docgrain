@@ -6,12 +6,15 @@ from docgrain_domain import Chunk, Neighbor
 from fastapi import APIRouter, HTTPException, status
 
 from .. import fixtures
+from ..settings import get_settings
 
 router = APIRouter(prefix="/v1/chunks", tags=["chunks"])
 
 
 @router.get("/{chunk_id}", response_model=Chunk)
 def get_chunk(chunk_id: str) -> Chunk:
+    if not get_settings().use_fixtures:
+        raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "chunk generation is not implemented")
     chunk = next((c for c in fixtures.CHUNKS if c.id == chunk_id), None)
     if chunk is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "chunk not found")
@@ -20,6 +23,8 @@ def get_chunk(chunk_id: str) -> Chunk:
 
 @router.get("/{chunk_id}/neighbors", response_model=list[Neighbor])
 def chunk_neighbors(chunk_id: str, limit: int = 5) -> list[Neighbor]:
+    if not get_settings().use_fixtures:
+        raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "embedding similarity is not implemented")
     if not any(c.id == chunk_id for c in fixtures.CHUNKS):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "chunk not found")
     return fixtures.neighbors(chunk_id, limit=limit)

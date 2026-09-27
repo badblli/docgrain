@@ -1,4 +1,4 @@
-"""Job status. One durable job per document version."""
+"""Persisted job status. Crash recovery and stage replay are not implemented."""
 
 from __future__ import annotations
 

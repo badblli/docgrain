@@ -1,0 +1,161 @@
+- generic [ref=f1e1]:
+  - generic [ref=f1e2]:
+    - complementary [ref=f1e3]:
+      - button "Docgrain konsol" [ref=f1e4] [cursor=pointer]:
+        - generic [ref=f1e10]:
+          - generic [ref=f1e11]: Docgrain
+          - generic [ref=f1e12]: konsol
+      - generic [ref=f1e13]: Çalışma alanı
+      - button [ref=f1e14] [cursor=pointer]:
+        - text: Dokümanlar
+        - emphasis [ref=f1e18]: "1"
+      - button [ref=f1e19] [cursor=pointer]:
+        - text: İşler
+        - emphasis [ref=f1e23]: "1"
+      - button "Sağlayıcılar" [ref=f1e24] [cursor=pointer]
+      - generic [ref=f1e30]: Referans
+      - button "Veri sözleşmesi" [ref=f1e31] [cursor=pointer]
+      - generic [ref=f1e35]:
+        - text: M0 · PDF extraction prototipiEkranlar
+        - code [ref=f1e36]: /v1
+        - text: sözleşmesine göre çizildi; her başlıktaki mavi rozet o ekranı besleyen uç noktadır.
+    - main [ref=f1e37]:
+      - status [ref=f1e38]:
+        - text: DEMO — salt okunur sentetik veriler. Stage, chunk, tablo, görsel ve diff örnekleri gerçek işlem sonucu değildir.
+        - button "Listeyi yenile" [ref=f1e39] [cursor=pointer]
+      - generic [ref=f1e94]:
+        - generic [ref=f1e95]:
+          - generic [ref=f1e96]: Çalışma alanı
+          - generic [ref=f1e97]: ›
+          - generic [ref=f1e98]: Dokümanlar
+          - generic [ref=f1e99]: ›
+          - generic [ref=f1e100]: Finansal İstikrar Raporu 2025-II
+        - generic [ref=f1e101]:
+          - generic [ref=f1e102]:
+            - heading "Finansal İstikrar Raporu 2025-II" [level=1] [ref=f1e103]
+            - paragraph [ref=f1e104]: fsr-2025-2.pdf · 48 sayfa · sürüm v2
+          - generic [ref=f1e105]:
+            - generic [ref=f1e106]: tamamlandı
+            - code [ref=f1e108]: GET /v1/documents/doc_7fk2
+        - tablist [ref=f1e109]:
+          - tab "Pipeline10 aşama" [ref=f1e110] [cursor=pointer]
+          - tab "Sayfalar48" [ref=f1e111] [cursor=pointer]
+          - tab "Chunk’lar44" [active] [selected] [ref=f1e112] [cursor=pointer]
+          - tab "Tablo & Görsel7" [ref=f1e113] [cursor=pointer]
+          - tab "Sürümler2" [ref=f1e114] [cursor=pointer]
+      - generic [ref=f1e294]:
+        - generic [ref=f1e295]:
+          - generic [ref=f1e296]:
+            - button "chk_01 Yönetici Özeti s.1–2 118 tok" [ref=f1e297] [cursor=pointer]:
+              - text: chk_01
+              - generic [ref=f1e298]: Yönetici Özeti
+              - generic [ref=f1e299]:
+                - generic [ref=f1e300]: s.1–2
+                - generic [ref=f1e301]: 118 tok
+            - button "chk_02 Temel bulgular s.2 96 tok" [ref=f1e302] [cursor=pointer]:
+              - text: chk_02
+              - generic [ref=f1e303]: Temel bulgular
+              - generic [ref=f1e304]:
+                - generic [ref=f1e305]: s.2
+                - generic [ref=f1e306]: 96 tok
+            - button "chk_03 1. Makrofinansal Görünüm s.3 142 tok" [ref=f1e307] [cursor=pointer]:
+              - text: chk_03
+              - generic [ref=f1e308]: 1. Makrofinansal Görünüm
+              - generic [ref=f1e309]:
+                - generic [ref=f1e310]: s.3
+                - generic [ref=f1e311]: 142 tok
+            - button "chk_04 1.1 Küresel gelişmeler s.3 131 tok" [ref=f1e312] [cursor=pointer]:
+              - text: chk_04
+              - generic [ref=f1e313]: 1.1 Küresel gelişmeler
+              - generic [ref=f1e314]:
+                - generic [ref=f1e315]: s.3
+                - generic [ref=f1e316]: 131 tok
+            - button "chk_05 1.2 Yurt içi talep s.3–4 127 tok" [ref=f1e317] [cursor=pointer]:
+              - text: chk_05
+              - generic [ref=f1e318]: 1.2 Yurt içi talep
+              - generic [ref=f1e319]:
+                - generic [ref=f1e320]: s.3–4
+                - generic [ref=f1e321]: 127 tok
+            - button "chk_06 2.1 Aktif kalitesi s.4 158 tok 1 tablo" [ref=f1e322] [cursor=pointer]:
+              - text: chk_06
+              - generic [ref=f1e323]: 2.1 Aktif kalitesi
+              - generic [ref=f1e324]:
+                - generic [ref=f1e325]: s.4
+                - generic [ref=f1e326]: 158 tok
+                - generic [ref=f1e327]: 1 tablo
+            - button "chk_07 2.1 Aktif kalitesi s.4–5 149 tok 1 tablo 1 görsel" [ref=f1e328] [cursor=pointer]:
+              - text: chk_07
+              - generic [ref=f1e329]: 2.1 Aktif kalitesi
+              - generic [ref=f1e330]:
+                - generic [ref=f1e331]: s.4–5
+                - generic [ref=f1e332]: 149 tok
+                - generic [ref=f1e333]: 1 tablo
+                - generic [ref=f1e334]: 1 görsel
+            - button "chk_08 Grafik 2.3 s.5 88 tok 2 görsel" [ref=f1e335] [cursor=pointer]:
+              - text: chk_08
+              - generic [ref=f1e336]: Grafik 2.3
+              - generic [ref=f1e337]:
+                - generic [ref=f1e338]: s.5
+                - generic [ref=f1e339]: 88 tok
+                - generic [ref=f1e340]: 2 görsel
+            - button "chk_09 3. Hanehalkı Borçluluğu s.6 136 tok 1 tablo" [ref=f1e341] [cursor=pointer]:
+              - text: chk_09
+              - generic [ref=f1e342]: 3. Hanehalkı Borçluluğu
+              - generic [ref=f1e343]:
+                - generic [ref=f1e344]: s.6
+                - generic [ref=f1e345]: 136 tok
+                - generic [ref=f1e346]: 1 tablo
+            - button "chk_10 Ek A. Yöntem Notu s.7–8 104 tok 1 tablo 1 görsel" [ref=f1e347] [cursor=pointer]:
+              - text: chk_10
+              - generic [ref=f1e348]: Ek A. Yöntem Notu
+              - generic [ref=f1e349]:
+                - generic [ref=f1e350]: s.7–8
+                - generic [ref=f1e351]: 104 tok
+                - generic [ref=f1e352]: 1 tablo
+                - generic [ref=f1e353]: 1 görsel
+          - generic [ref=f1e354]:
+            - generic [ref=f1e355]:
+              - code [ref=f1e356]: chk_06
+              - generic [ref=f1e357]: … › 2. Bankacılık Sektörü › 2.1 Aktif kalitesi
+              - code [ref=f1e359]: GET /v1/chunks/chk_06
+            - generic [ref=f1e360]:
+              - generic [ref=f1e361]: text — indekslenen ham metin
+              - generic [ref=f1e362]: Takipteki alacak oranı sektör genelinde ılımlı bir artış göstermiştir.
+            - generic [ref=f1e363]:
+              - generic [ref=f1e364]: embedding_text — gömmeye giden metin
+              - generic [ref=f1e365]: Finansal İstikrar Raporu > 2. Bankacılık Sektörü > 2.1 Aktif kalitesiTakipteki alacak oranı sektör genelinde ılımlı bir artış göstermiştir.
+              - paragraph [ref=f1e366]: Başlık yolu metnin başına eklenir; böylece bağlamsız bir cümle bile hangi bölüme ait olduğunu vektör uzayında taşır.
+            - generic [ref=f1e367]:
+              - generic [ref=f1e368]:
+                - term [ref=f1e369]: pages
+                - definition [ref=f1e370]: "[4] Kaynak sayfa numaraları"
+                - term [ref=f1e371]: token
+                - definition [ref=f1e372]: "158"
+                - term [ref=f1e373]: strateji
+                - definition [ref=f1e374]: heading + token fallback (overlap 80)
+                - term [ref=f1e375]: table_ids
+                - definition [ref=f1e376]: "[tbl_01]"
+                - term [ref=f1e377]: asset_ids
+                - definition [ref=f1e378]: "[—]"
+                - term [ref=f1e379]: access_scope
+                - definition [ref=f1e380]: workspace
+              - generic [ref=f1e381]:
+                - generic [ref=f1e382]: Demo komşuları — simülasyon, gerçek embedding değil
+                - generic [ref=f1e383]:
+                  - generic [ref=f1e384]:
+                    - button "chk_08" [ref=f1e385] [cursor=pointer]
+                    - generic [ref=f1e388]: "0.906"
+                  - generic [ref=f1e389]:
+                    - button "chk_07" [ref=f1e390] [cursor=pointer]
+                    - generic [ref=f1e393]: "0.830"
+                  - generic [ref=f1e394]:
+                    - button "chk_05" [ref=f1e395] [cursor=pointer]
+                    - generic [ref=f1e398]: "0.554"
+                  - generic [ref=f1e399]:
+                    - button "chk_09" [ref=f1e400] [cursor=pointer]
+                    - generic [ref=f1e403]: "0.553"
+                  - generic [ref=f1e404]:
+                    - button "chk_04" [ref=f1e405] [cursor=pointer]
+                    - generic [ref=f1e408]: "0.467"
+        - generic [ref=f1e409]: Chunk üretimi ve embedding benzerliği henüz uygulanmadı. Demo modunda gösterilen chunk ve komşular sentetik örneklerdir.
+  - alert [ref=f1e93]

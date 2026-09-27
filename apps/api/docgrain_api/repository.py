@@ -34,7 +34,7 @@ _jobs: list[Job] = [*fixtures.JOBS]
 
 
 def initialize() -> None:
-    """Create the small Milestone 0 persistence schema when fixture mode is off."""
+    """Initialize metadata tables in live mode; this is not a migration system."""
     if _fixture_mode():
         return
     with _connection() as connection, connection.cursor() as cursor:

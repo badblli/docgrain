@@ -1,97 +1,60 @@
-# Architecture Decision Record: Initial Direction
+# Docgrain mimarisi — M0 scope freeze
 
-## Decisions
+## Hedef yön
 
-| Area | Initial decision | Why |
-|---|---|---|
-| Repository | Docker-first monorepo | API, worker and UI evolve together while sharing contracts. |
-| API | FastAPI | Native Python ecosystem fit and OpenAPI support. |
-| Worker | Durable queue worker backed by Redis | Extraction must survive API/container restarts. |
-| UI | Next.js | Good operational console, server-side access control and rich document viewer support. |
-| Primary extractor | Gemini Vision behind `VisionProvider` | Every rendered page is read multimodally, including text, tables, images and layout. |
-| Structural parser | Docling | Deterministic secondary parse for validation, reconciliation and fallback. |
-| Database | PostgreSQL | Transactional jobs, versions, metadata and full-text baseline. |
-| Object storage | MinIO locally; S3/GCS-compatible in deployment | Keep large binaries outside the application database. |
-| Vector index | Qdrant | Metadata filtering and independent vector lifecycle. |
-| Vision alternatives | Pluggable Qwen VL or compatible providers | Keep hosted quality and local/private deployment choices. |
+Docgrain domain-agnostic bir document-to-knowledge engine'dir. Canonical structured knowledge kabul edilmiş bilginin kaynak doğrusu olacak; Markdown, chunks, embeddings ve consumer-specific JSON görünümleri türetilmiş projections olacaktır. Orijinal belge ve ham extraction kanıt olarak korunur. Core schema ile kullanıcı/domain schema ayrı kalır; LUWI yalnızca gelecekteki consumer'lardan biridir.
 
-## Multimodal document understanding
+Bu bölüm hedefi anlatır. Canonical model veya yeni pipeline M0'da implement edilmemiştir.
 
-Docgrain does not treat a document as a flat text stream. Text blocks, headings,
-lists, tables, figures, diagrams, charts, forms, captions and page regions are
-first-class structures. Every rendered page is sent to the configured primary
-vision provider with bounded concurrency and retries. The page join step builds
-the normalized document representation; Docling supplies a secondary,
-deterministic parse used for validation, reconciliation and fallback.
-
-The normalized representation is a document graph:
+## Mevcut executable mimari
 
 ```text
-DocumentVersion
-  -> Page
-    -> Section | TextBlock | Table | Asset | Form
-  -> Relationship
-    -> described_by | references | continues_on | belongs_to | sourced_from
-  -> Chunk
-    -> text + related tables/assets + inherited context
+web → FastAPI → PostgreSQL: document/version/job
+              → MinIO: uploads/{document}/{version}/original
+confirmation → Redis LPUSH
+worker BRPOP → SQL queued-to-running claim → download source.pdf
+             → PyMuPDF render → Gemini (key varsa) veya Docling (OCR kapalı)
+             → MinIO: pages.json, pages/*.png, document.json, document.md
+             → PostgreSQL: done/partial/failed
 ```
 
-Graph nodes retain page and bounding-box provenance. Relationships make such
-facts as a figure's caption, a table continued on the next page, or a paragraph
-referencing a diagram queryable without flattening the original layout.
+Gemini sayfa çağrıları dört thread ve en fazla üç attempt ile çalışır. Başarılı sayfalar aggregate edilir; reconciliation yapılmaz. Docling ve Gemini aynı run içinde birleştirilmez. `quality` yalnızca temel sayfa/response kontrollerini ifade eder; completeness veya confidence ölçümü değildir.
 
-Vision output is evidence-bound. Accepted OCR, layout and table extraction can
-be published as canonical normalized extraction while retaining provider/model,
-prompt version, confidence and source-region metadata. Semantic descriptions,
-summaries and inferred relationships remain `derived`; they never masquerade as
-literal source content.
+PostgreSQL üç metadata tablosuna sahiptir. MinIO binary/artifact deposudur. Redis yalnızca job-ID list dispatch için kullanılır; acknowledgment ve crash recovery yoktur. Qdrant yapılandırılmış ancak uygulamaya bağlanmamıştır.
 
-Chunks may be multimodal: coherent text can be packaged with a table summary,
-figure description and section context. The chunk still points to every
-canonical and derived component used to construct it.
+API/worker ayrımı, FastAPI, PostgreSQL, MinIO, Redis, PyMuPDF, Docling, Gemini ve Pydantic M0'da korunur. Yeni framework/abstraction yoktur.
 
-## Job state machine
+## Mode sınırı
 
-```text
-queued -> rendering -> extracting -> quality_check -> enriching
-       -> chunking -> embedding -> indexing -> done
-                                  \-> partial
-any non-terminal state -> retrying -> previous state
-any non-terminal state -> failed
-```
+Live varsayılandır ve PostgreSQL okumalarında fixture fallback yoktur. Demo `USE_FIXTURES=true` ile açıkça seçilir; salt okunurdur, storage/queue işlemi yapmaz. API response'ları `X-Docgrain-Mode` ile etiketlenir. Frontend veri üretmez veya boş/error sonuçlarını demo ile doldurmaz.
 
-A `partial` version is searchable only for successfully produced chunks and retains a page-level failure report. A failed version does not replace the latest completed version.
+Retry her modda `501`; live chunk/similarity henüz `501`. Live table/asset/chunk listeleri boş olabilir. Demo-only similarity ve diff sentetiktir. Live diff sadece aynı logical document'ın version sayaçlarını karşılaştırır.
 
-## Invariants
+`Page.confidence` ve `ProviderHealth.healthy` ölçülmeyen değerler için `null` kabul eder. Bu M0 contract düzeltmesidir; canonical model eklenmesi değildir.
 
-1. Original source files are immutable.
-2. A new content hash creates a new document version; it never mutates historical artifacts.
-3. Chunks never cross workspace/tenant boundaries.
-4. Every chunk has a document version and at least one provenance anchor.
-5. Index writes are idempotent and keyed by document-version/chunk identifiers.
-6. A document version is published only after the manifest is complete.
-7. The immutable source and page renders remain the ultimate evidence; accepted
-   normalized extraction never destroys an earlier extraction variant.
-8. Every extracted table, asset and derived observation retains page/region provenance.
-9. Every vision observation is evidence-bound and identifies its provider/model/prompt version.
-10. Document-graph relationships are version-scoped and never point across tenants.
-11. Multimodal chunks enumerate every text, table and asset source they inherit.
-12. Heading structure is preferred over semantic splitting; cosine similarity and
-    overlap are controlled fallbacks, not default flattening behavior.
-13. Every rendered page is submitted to the configured primary vision extractor;
-    page retries are bounded and exhausted pages produce a `partial` version.
-14. Interpretive vision content is `derived`, even when accepted OCR/layout
-    extraction contributes to the canonical normalized representation.
+## Hedef sınırlar — sonraki milestone'lar
 
-## API outline
+1. Source identity ve immutable source version.
+2. Docling structural evidence ve format-specific source locations.
+3. Quality signals, selective rendering/Vision enrichment.
+4. Reconciliation/normalization ve schema validation.
+5. Accepted canonical knowledge revision.
+6. Deterministic Markdown/assets/chunk projections.
+7. Optional embedding/Qdrant projection.
+8. Schema-aware Structured Knowledge Patch ve review policy.
 
-```text
-POST   /v1/documents                    register/upload a document
-GET    /v1/documents/{document_id}      document and latest version
-GET    /v1/versions/{version_id}        version, artifacts and warnings
-GET    /v1/jobs/{job_id}                pipeline status
-POST   /v1/versions/{version_id}/retry  retry a failed/partial stage
-GET    /v1/chunks/{chunk_id}            chunk and provenance
-```
+İlk format scope'u PDF, DOCX, TXT, XLSX; bugünkü ingestion PDF-only. Core provider sınırları hedefte `DocumentParser`, `VisionProvider`, `EmbeddingProvider`, `VectorStore`; henüz olmayan adapter'lar varmış gibi sunulmaz.
 
-Authentication, tenancy and signed file upload URLs are required before any production deployment.
+Structured Knowledge Patch; old/new values, source evidence, confidence, extraction metadata ve schema version taşıyacak. Partial extraction'da eksik alanlar otomatik silme olarak yorumlanmayacak. Bu yalnızca gelecekteki tasarım kısıtıdır.
+
+## Operasyonel sınırlar
+
+Job `done` mevcut extraction'ın bittiğini gösterir. Normalization/chunk/enrich/embed uygulanmadı; ayrı Vision enrichment aşaması yoktur. `publish` yalnızca extraction dosyalarının kaydını ifade eder. Processing manifest, atomic publication, stage resume ve tam stage timing yoktur. Tarihsel job kayıtları yeniden yazılmaz.
+
+Tenant ID alanları authorization sağlamaz. Upload/source immutability ve content deduplication henüz enforce edilmez. Shared deployment öncesinde bunlar ayrıca ele alınmalıdır.
+
+## Deferred
+
+Jev; LangChain/LangGraph; çoklu provider/vector store; hybrid retrieval, keyword index ve reranking; connectors; chat/agent UI; schema discovery; cross-document matching; operational overrides; büyük dashboard/platform işleri.
+
+Karar tarihçesi için [ADR 0004](adr/0004-canonical-first-scope-freeze.md). Önceki ADR'ler tarihsel bağlamdır; uygulanmış özellik listesi değildir.

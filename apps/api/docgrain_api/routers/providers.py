@@ -1,4 +1,4 @@
-"""Provider health. Which adapter is wired in, and is it answering."""
+"""Provider configuration inventory; no connectivity probes are performed."""
 
 from __future__ import annotations
 
@@ -18,17 +18,17 @@ def provider_health() -> list[ProviderHealth]:
         ProviderHealth(
             interface="PageRenderer",
             implementation="pymupdf",
-            healthy=True,
+            healthy=None,
             location="local",
-            note="200 DPI immutable page renders",
+            note="PDF page rendering configured at 200 DPI; not probed.",
         ),
         ProviderHealth(
             interface="VisionProvider",
             implementation=settings.gemini_model,
-            healthy=gemini_configured,
+            healthy=None if gemini_configured else False,
             location="hosted",
             note=(
-                "Primary per-page extraction is configured."
+                "Primary per-page extraction configured; credentials/model not verified."
                 if gemini_configured
                 else "GEMINI_API_KEY is not configured; Docling fallback is active."
             ),
@@ -36,9 +36,9 @@ def provider_health() -> list[ProviderHealth]:
         ProviderHealth(
             interface="DocumentParser",
             implementation="docling-fallback",
-            healthy=True,
+            healthy=None,
             location="local",
-            note="Secondary deterministic parser; not the primary extractor.",
+            note="Current fallback when Gemini is unconfigured; not probed. Target: structural primary.",
         ),
         ProviderHealth(
             interface="EmbeddingProvider",
@@ -50,15 +50,15 @@ def provider_health() -> list[ProviderHealth]:
         ProviderHealth(
             interface="VectorIndex",
             implementation="qdrant",
-            healthy=True,
+            healthy=False,
             location="docker",
-            note=settings.qdrant_url,
+            note="Index adapter is not implemented; container availability is not checked.",
         ),
         ProviderHealth(
             interface="ObjectStorage",
             implementation="minio",
-            healthy=True,
+            healthy=None,
             location="docker",
-            note=f"bucket: {settings.s3_bucket}",
+            note=f"Configured bucket: {settings.s3_bucket}; connectivity not checked.",
         ),
     ]

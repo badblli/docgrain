@@ -62,7 +62,7 @@ type Job = {
 type Provider = {
   interface: string;
   implementation: string;
-  healthy: boolean;
+  healthy: boolean | null;
   location: string;
   note?: string;
 };
@@ -71,7 +71,7 @@ type Page = {
   page_number: number;
   render_uri: string;
   parser: string;
-  confidence: number;
+  confidence: number | null;
   quality_flags: string[];
   derived_content: boolean;
 };
@@ -142,381 +142,25 @@ type DocumentListResponse = {
   latest_job_id: string | null;
 };
 
-const demoDocs: DocumentRow[] = [
-  {
-    id: "doc_7fk2",
-    versionId: "dver_2",
-    jobId: "job_9a12",
-    title: "Finansal İstikrar Raporu 2025-II",
-    file: "fsr-2025-2.pdf",
-    type: "PDF",
-    status: "done",
-    version: "v2",
-    pages: 48,
-    chunks: 44,
-    updated: "30 Ağu 2025, 14:06",
-    versionCount: 2,
-    tables: 3,
-    assets: 4,
-  },
-  {
-    id: "doc_luwi",
-    title: "Luwi Müşteri Sözleşmesi",
-    file: "sozlesme-v3.docx",
-    type: "DOCX",
-    status: "done",
-    version: "v1",
-    pages: 12,
-    chunks: 19,
-    updated: "30 Ağu 2025, 11:22",
-    versionCount: 1,
-    tables: 0,
-    assets: 0,
-  },
-  {
-    id: "doc_kk41",
-    title: "Ürün Kataloğu 2026",
-    file: "katalog-2026.pdf",
-    type: "PDF",
-    status: "running",
-    version: "v1",
-    pages: 132,
-    chunks: 0,
-    updated: "31 Ağu 2025, 10:58",
-    versionCount: 1,
-    tables: 0,
-    assets: 0,
-  },
-  {
-    id: "doc_pq77",
-    title: "Saha Denetim Formu (taranmış)",
-    file: "denetim-2025-08.pdf",
-    type: "PDF",
-    status: "partial",
-    version: "v1",
-    pages: 6,
-    chunks: 7,
-    updated: "29 Ağu 2025, 16:41",
-    versionCount: 1,
-    tables: 0,
-    assets: 0,
-  },
-  {
-    id: "doc_xlsx",
-    title: "Q3 Bütçe Tabloları",
-    file: "q3-butce.xlsx",
-    type: "XLSX",
-    status: "done",
-    version: "v2",
-    pages: 4,
-    chunks: 11,
-    updated: "28 Ağu 2025, 09:15",
-    versionCount: 2,
-    tables: 3,
-    assets: 0,
-  },
-  {
-    id: "doc_zz01",
-    title: "Bozuk Tarama",
-    file: "bozuk-dosya.pdf",
-    type: "PDF",
-    status: "failed",
-    version: "—",
-    pages: 0,
-    chunks: 0,
-    updated: "27 Ağu 2025, 18:03",
-    versionCount: 0,
-    tables: 0,
-    assets: 0,
-  },
-];
-const demoJobs: Job[] = [
-  {
-    id: "job_9a12",
-    document_id: "doc_7fk2",
-    document_version_id: "dver_2",
-    status: "done",
-    duration_ms: 252000,
-    stages: [],
-  },
-  {
-    id: "job_9a08",
-    document_id: "doc_luwi",
-    document_version_id: "dver_luwi",
-    status: "done",
-    duration_ms: 48000,
-    stages: [],
-  },
-  {
-    id: "job_9a15",
-    document_id: "doc_kk41",
-    document_version_id: "dver_kk41_1",
-    status: "running",
-    duration_ms: 151000,
-    stages: [],
-  },
-  {
-    id: "job_9a11",
-    document_id: "doc_pq77",
-    document_version_id: "dver_pq77_1",
-    status: "partial",
-    duration_ms: 184000,
-    stages: [],
-  },
-  {
-    id: "job_9a06",
-    document_id: "doc_xlsx",
-    document_version_id: "dver_xlsx",
-    status: "done",
-    duration_ms: 22000,
-    stages: [],
-  },
-  {
-    id: "job_9a03",
-    document_id: "doc_zz01",
-    document_version_id: "dver_zz01_1",
-    status: "failed",
-    duration_ms: 11000,
-    stages: [],
-  },
-];
 const stageMeta: Record<string, { name: string; via: string }> = {
-  register: { name: "Kayıt", via: "POST /v1/documents" },
+  register: { name: "Kayıt", via: "API metadata kaydı" },
   render: { name: "Sayfa render", via: "PyMuPDF → PNG" },
-  extract: { name: "Multimodal çıkarım", via: "Gemini Vision (primary)" },
-  quality: { name: "Kalite kapısı", via: "heuristics" },
-  vision: { name: "Başlık düzeltme", via: "Gemini · temperature 0" },
-  normalize: { name: "Normalize", via: "markdown repair" },
-  chunk: { name: "Chunk’lama", via: "heading-first + LangChain" },
-  enrich: { name: "Zenginleştirme", via: "context header" },
-  embed: { name: "Gömme + indeks", via: "embeddings → Qdrant" },
-  publish: { name: "Yayın", via: "manifest" },
+  extract: { name: "Çıkarım", via: "Gemini veya Docling" },
+  quality: { name: "Temel kontrol", via: "Sayfa hataları / response doğrulama" },
+  vision: { name: "Vision enrichment", via: "Ayrı aşama uygulanmadı" },
+  normalize: { name: "Normalization", via: "Henüz uygulanmadı" },
+  chunk: { name: "Chunking", via: "Henüz uygulanmadı" },
+  enrich: { name: "Chunk enrichment", via: "Henüz uygulanmadı" },
+  embed: { name: "Embedding / index", via: "Henüz uygulanmadı" },
+  publish: { name: "Çıktı kaydı", via: "Extraction JSON / Markdown" },
 };
-const demoChunks: Chunk[] = [
-  [
-    "chk_01",
-    ["Finansal İstikrar Raporu", "Yönetici Özeti"],
-    [1, 2],
-    118,
-    [],
-    [],
-    "Bu raporda finansal istikrarı etkileyen makrofinansal gelişmeler değerlendirilmektedir.",
-  ],
-  [
-    "chk_02",
-    ["Finansal İstikrar Raporu", "Yönetici Özeti", "Temel bulgular"],
-    [2],
-    96,
-    [],
-    [],
-    "Takipteki alacak oranındaki artış ılımlıdır, karşılık oranları yüksektir.",
-  ],
-  [
-    "chk_03",
-    ["Finansal İstikrar Raporu", "1. Makrofinansal Görünüm"],
-    [3],
-    142,
-    [],
-    [],
-    "Küresel finansal koşullar 2025 yılının ikinci yarısında bir miktar gevşemiştir.",
-  ],
-  [
-    "chk_04",
-    [
-      "Finansal İstikrar Raporu",
-      "1. Makrofinansal Görünüm",
-      "1.1 Küresel gelişmeler",
-    ],
-    [3],
-    131,
-    [],
-    [],
-    "Uzun vadeli tahvil getirilerindeki oynaklık yüksek seyretmeye devam etmektedir.",
-  ],
-  [
-    "chk_05",
-    [
-      "Finansal İstikrar Raporu",
-      "1. Makrofinansal Görünüm",
-      "1.2 Yurt içi talep",
-    ],
-    [3, 4],
-    127,
-    [],
-    [],
-    "Cari işlemler dengesindeki iyileşme dışsal şoklara karşı tamponları güçlendirmiştir.",
-  ],
-  [
-    "chk_06",
-    ["Finansal İstikrar Raporu", "2. Bankacılık Sektörü", "2.1 Aktif kalitesi"],
-    [4],
-    158,
-    ["tbl_01"],
-    [],
-    "Takipteki alacak oranı sektör genelinde ılımlı bir artış göstermiştir. Karşılık oranlarının yüksek seyri, olası zararların büyük ölçüde önden karşılandığına işaret etmektedir.",
-  ],
-  [
-    "chk_07",
-    ["Finansal İstikrar Raporu", "2. Bankacılık Sektörü", "2.1 Aktif kalitesi"],
-    [4, 5],
-    149,
-    ["tbl_01"],
-    ["ast_01"],
-    "Kur etkisinden arındırılmış yıllık kredi büyümesi yavaşlamıştır.",
-  ],
-  [
-    "chk_08",
-    ["Finansal İstikrar Raporu", "2. Bankacılık Sektörü", "Grafik 2.3"],
-    [5],
-    88,
-    [],
-    ["ast_01", "ast_02"],
-    "Grafik 2.3, ticari ve tüketici kredi büyümesini zaman serisi olarak göstermektedir.",
-  ],
-  [
-    "chk_09",
-    ["Finansal İstikrar Raporu", "3. Hanehalkı Borçluluğu"],
-    [6],
-    136,
-    ["tbl_02"],
-    [],
-    "Hanehalkı yükümlülüklerinin harcanabilir gelire oranı düşük seviyesini korumaktadır.",
-  ],
-  [
-    "chk_10",
-    ["Finansal İstikrar Raporu", "Ek A. Yöntem Notu"],
-    [7, 8],
-    104,
-    ["tbl_03"],
-    ["ast_04"],
-    "Örneklem 2015-2025 dönemi için mevduat ve katılım bankalarını kapsamaktadır.",
-  ],
-].map((x: any) => ({
-  id: x[0],
-  heading_path: x[1],
-  page_numbers: x[2],
-  token_count: x[3],
-  table_ids: x[4],
-  asset_ids: x[5],
-  text: x[6],
-  embedding_text: `${x[1].join(" > ")}\n\n${x[6]}`,
-  access_scope: "workspace",
-  split_strategy: x[3] > 150 ? "token_fallback" : "heading",
-  derived: x[0] === "chk_08",
-  metadata: { overlap_tokens: x[3] > 150 ? 80 : 0 },
-}));
-const demoTables: TableArtifact[] = [
-  {
-    id: "tbl_01",
-    page_number: 4,
-    title: "Tablo 2.1 — Aktif kalitesi göstergeleri",
-    row_count: 4,
-    column_count: 4,
-    confidence: 0.94,
-    header: ["Dönem", "TGA oranı (%)", "Karşılık (%)", "Yakın izleme (%)"],
-    rows: [
-      ["2023-IV", "1,62", "82,4", "3,91"],
-      ["2024-II", "1,74", "80,9", "4,15"],
-      ["2024-IV", "1,88", "79,3", "4,52"],
-      ["2025-II", "2,07", "77,8", "4,88"],
-    ],
-  },
-  {
-    id: "tbl_02",
-    page_number: 6,
-    title: "Tablo 3.1 — Hanehalkı yükümlülükleri",
-    row_count: 3,
-    column_count: 3,
-    confidence: 0.87,
-    header: ["Kalem", "2024", "2025"],
-    rows: [
-      ["Konut kredisi", "1.284", "1.512"],
-      ["İhtiyaç kredisi", "2.031", "2.388"],
-      ["Kredi kartı", "1.907", "2.640"],
-    ],
-  },
-  {
-    id: "tbl_03",
-    page_number: 8,
-    title: "Tablo A.1 — Veri kaynakları",
-    row_count: 3,
-    column_count: 2,
-    confidence: 0.79,
-    header: ["Seri", "Kaynak"],
-    rows: [
-      ["TGA oranı", "BDDK"],
-      ["Kredi büyümesi", "TCMB EVDS"],
-      ["Hanehalkı geliri", "TÜİK"],
-    ],
-  },
-];
-const demoAssets: Asset[] = [
-  {
-    id: "ast_01",
-    page_number: 5,
-    caption:
-      "Yıllık kredi büyümesi: ticari ve tüketici kredileri, kur etkisinden arındırılmış.",
-    caption_is_derived: true,
-    mime_type: "image/png",
-    width: 1240,
-    height: 720,
-    byte_size: 188416,
-    sha256: "9c4f…a71b",
-  },
-  {
-    id: "ast_02",
-    page_number: 5,
-    caption: "Sektör bazında TGA oranı dağılımı, 2025-II.",
-    caption_is_derived: true,
-    mime_type: "image/png",
-    width: 980,
-    height: 640,
-    byte_size: 123904,
-    sha256: "2ea8…4d10",
-  },
-  {
-    id: "ast_03",
-    page_number: 1,
-    caption: "Kurum amblemi (kapak).",
-    caption_is_derived: false,
-    mime_type: "image/png",
-    width: 420,
-    height: 420,
-    byte_size: 22528,
-    sha256: "71bc…9f02",
-  },
-  {
-    id: "ast_04",
-    page_number: 7,
-    caption: "Taranmış ek sayfa; görsel model tarafından okundu.",
-    caption_is_derived: true,
-    mime_type: "image/png",
-    width: 2480,
-    height: 3508,
-    byte_size: 1468006,
-    sha256: "55da…08e7",
-  },
-];
+type Mode = "live" | "demo";
 
-async function getJson<T>(path: string, fallback: T): Promise<T> {
-  try {
-    const r = await fetch(`${API}${path}`);
-    if (!r.ok) throw 0;
-    return await r.json();
-  } catch {
-    return fallback;
-  }
-}
-async function getText(path: string): Promise<string> {
-  try {
-    const response = await fetch(`${API}${path}`);
-    return response.ok ? await response.text() : "";
-  } catch {
-    return "";
-  }
-}
-async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
+async function apiJson<T>(url: string, init?: RequestInit, expectedMode?: Mode): Promise<T> {
   const response = await fetch(url, init);
+  if (expectedMode && response.headers.get("X-Docgrain-Mode") !== expectedMode) {
+    throw new Error("API çalışma modu değişti veya doğrulanamadı. Listeyi yenileyin.");
+  }
   if (!response.ok) {
     let detail = `${response.status} ${response.statusText}`;
     try {
@@ -711,7 +355,7 @@ function Sidebar({
         Veri sözleşmesi
       </button>
       <div className="railfoot">
-        Prototip · canlı API
+        M0 · PDF extraction prototipi
         <br />
         Ekranlar <code>/v1</code> sözleşmesine göre çizildi; her başlıktaki mavi
         rozet o ekranı besleyen uç noktadır.
@@ -758,21 +402,23 @@ function Documents({
   open,
   upload,
   uploadState,
+  mode,
 }: {
   docs: DocumentRow[];
   open: (d: DocumentRow) => void;
   upload: (file: File) => Promise<void>;
   uploadState: UploadState;
+  mode: Mode | null;
 }) {
   const input = useRef<HTMLInputElement>(null);
-  const busy = ["registering", "uploading", "confirming", "queued", "running"].includes(
+  const busy = mode !== "live" || ["registering", "uploading", "confirming", "queued", "running"].includes(
     uploadState.phase,
   );
   return (
     <>
       <Head
         title="Dokümanlar"
-        sub="Yüklenen her dosya bir doküman, her yeni içerik özeti (hash) o dokümanın yeni bir sürümü olur. Eski sürümler asla değişmez."
+        sub="Her yükleme yeni bir doküman ve ilk sürüm kaydı oluşturur. Deduplication ve mevcut dokümana yeni sürüm ekleme henüz yok."
         endpoint="GET /v1/documents"
       />
       <div className="wrap">
@@ -781,11 +427,10 @@ function Documents({
             <Icon name="upload" />
           </div>
           <div>
-            <h3>Doküman yükle veya bir kaynak kaydet</h3>
+            <h3>PDF yükle</h3>
             <p>
-              PDF, DOCX, PPTX, XLSX, HTML. Dosya nesne depolamaya olduğu gibi
-              yazılır, hash’i alınır ve dayanıklı bir iş kuyruğa girer — API
-              isteği hiçbir zaman çıkarımı kendi içinde çalıştırmaz.
+              Şu anda yalnızca PDF işlenir. DOCX, TXT ve XLSX ilk ürün kapsamındadır,
+              ancak henüz desteklenmez. Demo modu salt okunurdur.
             </p>
             {uploadState.phase !== "idle" && (
               <div className={`uploadState upload-${uploadState.phase}`} role="status">
@@ -800,7 +445,7 @@ function Documents({
             ref={input}
             type="file"
             hidden
-            accept=".pdf,.docx,.pptx,.xlsx,.html"
+            accept=".pdf,application/pdf"
             disabled={busy}
             onChange={(event) => {
               const file = event.target.files?.[0];
@@ -815,7 +460,7 @@ function Documents({
             onClick={() => input.current?.click()}
             disabled={busy}
           >
-            {busy ? "İşleniyor…" : "Dosya seç"}
+            {mode === "demo" ? "Demo: yükleme kapalı" : mode === null ? "API bekleniyor" : busy ? "İşleniyor…" : "PDF seç"}
           </button>
         </section>
         <section className="card">
@@ -842,6 +487,7 @@ function Documents({
                 </tr>
               </thead>
               <tbody>
+                {!docs.length && <tr><td colSpan={7}>Henüz doküman yok.</td></tr>}
                 {docs.map((d) => (
                   <tr key={d.id} className="click" onClick={() => open(d)}>
                     <td>
@@ -883,39 +529,37 @@ function Documents({
 function Jobs({
   jobs,
   docs,
-  retry,
 }: {
   jobs: Job[];
   docs: DocumentRow[];
-  retry: (j: Job) => void;
 }) {
   const count = (s: string) => jobs.filter((j) => j.status === s).length;
   const current = (j: Job) => {
     const x = [...j.stages]
       .reverse()
       .find((s) => ["running", "failed", "done"].includes(s.status));
-    return x ? stageMeta[x.stage]?.name : "Yayınlandı";
+    return x ? stageMeta[x.stage]?.name : "Aşama bilgisi yok";
   };
   return (
     <>
       <Head
         title="İşler"
-        sub="Her sürüm için tek bir dayanıklı iş çalışır. İş, worker çökse bile kaldığı aşamadan devam eder."
+        sub="Kaydedilen job durumları gösterilir. Stage retry ve worker çökmesi sonrası otomatik recovery henüz uygulanmadı."
         endpoint="GET /v1/jobs"
       />
       <div className="wrap">
         <div className="stats">
           {[
-            ["Kuyrukta", 0, "bekleyen iş yok", ""],
-            ["Çalışan", count("running"), "katalog-2026.pdf", "blue"],
+            ["Kuyrukta", count("queued"), "kayıtlı queued işler", ""],
+            ["Çalışan", count("running"), "kayıtlı running işler", "blue"],
             [
               "Kısmi",
               count("partial"),
               "sayfa düzeyi hata raporu var",
               "amber",
             ],
-            ["Başarısız", count("failed"), "yeniden denenebilir", "red"],
-            ["24 saat", jobs.length, "toplam iş", ""],
+            ["Başarısız", count("failed"), "retry henüz yok", "red"],
+            ["Toplam", jobs.length, "listelenen iş", ""],
           ].map((x) => (
             <div className="stat" key={String(x[0])}>
               <div className="lb">{x[0]}</div>
@@ -931,7 +575,7 @@ function Jobs({
               Şerit, 10 aşamanın hangisine kadar gelindiğini gösterir.
             </p>
             <span className="sp">
-              <Ep>GET /v1/jobs?status=all</Ep>
+              <Ep>GET /v1/jobs</Ep>
             </span>
           </header>
           <div className="scrollx">
@@ -949,13 +593,6 @@ function Jobs({
               </thead>
               <tbody>
                 {jobs.map((j) => {
-                  const n =
-                    j.stages.filter((s) => s.status === "done").length ||
-                    (j.status === "done" || j.status === "partial"
-                      ? 10
-                      : j.status === "running"
-                        ? 6
-                        : 2);
                   return (
                     <tr key={j.id}>
                       <td className="mono">{j.id}</td>
@@ -968,29 +605,17 @@ function Jobs({
                       </td>
                       <td>
                         <div className="miniRail">
-                          {Array.from({ length: 10 }, (_, i) => (
-                            <i
-                              key={i}
-                              className={
-                                i < n
-                                  ? "done"
-                                  : i === n && j.status === "running"
-                                    ? "run"
-                                    : j.status === "failed" && i === n
-                                      ? "err"
-                                      : ""
-                              }
-                            />
-                          ))}
-                        </div>
+                          {j.stages.map((stage) => (
+                             <i key={stage.stage} title={`${stage.stage}: ${stage.status}`}
+                               className={stage.status === "done" ? "done" : stage.status === "running" ? "run" : stage.status === "failed" ? "err" : ""} />
+                           ))}
+                         </div>
                       </td>
                       <td>{current(j)}</td>
                       <td className="mono">{duration(j.duration_ms)}</td>
                       <td>
                         {["failed", "partial"].includes(j.status) && (
-                          <button className="btn sm" onClick={() => retry(j)}>
-                            Yeniden dene
-                          </button>
+                          <span className="muted">Retry henüz yok</span>
                         )}
                       </td>
                     </tr>
@@ -1009,15 +634,14 @@ function Providers({ items }: { items: Provider[] }) {
     <>
       <Head
         title="Sağlayıcılar"
-        sub="Parser, görsel model, gömme ve indeks katmanları takılıp çıkarılabilir. Hiçbiri çekirdek veri modeline sızmaz."
+        sub="Yapılandırma envanteri. Bu ekran provider bağlantılarını test etmez."
         endpoint="GET /v1/providers/health"
       />
       <div className="wrap">
         <div className="explain">
-          <b>Sağlayıcılar arayüz üzerinden bağlanır:</b> VisionProvider’ı
-          Gemini’den Qwen’e çevirmek pipeline kodunu değiştirmez, yalnızca{" "}
-          <code>.env</code> profilini değiştirir. Bu ekran hangi profilin
-          çalıştığını ve sağlıklı olup olmadığını gösterir.
+          <b>Mevcut durum:</b> Gemini ve Docling extraction yolları mevcut.
+          Ek provider, embedding ve index adapter’ları henüz uygulanmadı.
+          “Kontrol edilmedi” bağlantı veya model erişiminin doğrulanmadığını belirtir.
         </div>
         <section className="card">
           <header>
@@ -1032,7 +656,7 @@ function Providers({ items }: { items: Provider[] }) {
                 <th>Arayüz</th>
                 <th>Uygulama</th>
                 <th>Durum</th>
-                <th>Son çalıştırma</th>
+                <th>Açıklama</th>
                 <th>Konum</th>
               </tr>
             </thead>
@@ -1047,7 +671,7 @@ function Providers({ items }: { items: Provider[] }) {
                   <td>
                     <span className={`pill ${p.healthy ? "p-ok" : "p-warn"}`}>
                       <i className="dot" />
-                      {p.healthy ? "hazır" : "uyarı"}
+                      {p.healthy === null ? "Kontrol edilmedi" : p.healthy ? "Doğrulandı" : "Etkin değil"}
                     </span>
                   </td>
                   <td className="muted">{p.note}</td>
@@ -1063,100 +687,26 @@ function Providers({ items }: { items: Provider[] }) {
     </>
   );
 }
-const endpoints = [
-  [
-    "POST /v1/documents",
-    "Kaynağı doğrular, hash alır, sürüm açar, iş kuyruğa atar",
-    "Dokümanlar → yükleme",
-  ],
-  ["GET /v1/documents", "Doküman listesi + son sürüm özeti", "Dokümanlar"],
-  ["GET /v1/documents/{id}", "Doküman, sürümler, sayaçlar", "Doküman başlığı"],
-  ["GET /v1/jobs/{id}", "10 aşamanın durumu, süre, uyarı, hata", "Pipeline"],
-  [
-    "GET /v1/versions/{id}/pages",
-    "Sayfa listesi: render URI, güven, bayraklar",
-    "Sayfalar",
-  ],
-  [
-    "GET /v1/versions/{id}/pages/{n}",
-    "Tek sayfanın markdown/json/tablo/asset’i",
-    "Sayfalar sağ panel",
-  ],
-  ["GET /v1/versions/{id}/chunks", "Chunk manifesti", "Chunk’lar"],
-  [
-    "GET /v1/chunks/{id}/neighbors",
-    "Cosine komşuları + skorlar",
-    "Benzerlik paneli",
-  ],
-  ["GET /v1/versions/{id}/diff?base=", "İki sürüm arasındaki fark", "Sürümler"],
-  [
-    "POST /v1/versions/{id}/retry",
-    "Aşama bazlı yeniden deneme",
-    "Pipeline → hata",
-  ],
-];
 function Contract() {
   return (
     <>
-      <Head
-        section="Referans"
-        title="Veri sözleşmesi"
-        sub="Önyüzün tamamı bu şekiller üzerine kuruldu. Backend yazılırken pazarlık konusu olmayan omurga budur."
-        endpoint="GET /v1/chunks/{id}"
-      />
+      <Head section="Referans" title="Mevcut API ve hedef yön" sub="M0 kapsamı; Canonical Knowledge Model henüz uygulanmadı." endpoint="GET /docs" />
       <div className="wrap">
-        <section className="card">
-          <header>
-            <h2>Hiyerarşi</h2>
-            <p className="note">
-              Her ok bir sahiplik ilişkisi; alt kayıt üstü olmadan var olamaz.
-            </p>
-          </header>
-          <pre className="tree">{`Workspace\n  └─ Document              doc_*\n       └─ DocumentVersion   dver_*   ← içerik hash'i değişince yenisi açılır, eskisi asla değişmez\n            ├─ Page         pg_*     ← PNG render + güven skoru + bayraklar\n            │   ├─ Asset    ast_*    ← görsel, bbox, checksum\n            │   ├─ Table    tbl_*    ← json + markdown + html\n            │   └─ Section  sec_*\n            └─ Chunk        chk_*\n                 ├─ Embedding   emb_*\n                 └─ IndexRecord idx_*`}</pre>
-        </section>
-        <section className="card">
-          <header>
-            <h2>Chunk sözleşmesi</h2>
-            <p className="note">
-              Bir chunk en az bu alanları taşımak zorunda; taşımıyorsa
-              yayımlanamaz.
-            </p>
-            <span className="sp">
-              <Ep>GET /v1/chunks/chk_06</Ep>
-            </span>
-          </header>
-          <pre className="json">{JSON.stringify(demoChunks[5], null, 2)}</pre>
-        </section>
-        <section className="card">
-          <header>
-            <h2>Uç noktalar</h2>
-          </header>
-          <table className="grid">
-            <thead>
-              <tr>
-                <th>Uç nokta</th>
-                <th>Ne yapar</th>
-                <th>Hangi ekran</th>
-              </tr>
-            </thead>
-            <tbody>
-              {endpoints.map((e) => (
-                <tr key={e[0]}>
-                  <td>
-                    <Ep>{e[0]}</Ep>
-                  </td>
-                  <td>{e[1]}</td>
-                  <td>{e[2]}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <section className="card pad">
+          <h2>Canonical-first document-to-knowledge engine</h2>
+          <p>Hedef: document → structural parse → Vision enrichment → reconciliation → canonical knowledge → projections.</p>
+          <p>Canonical structured knowledge kaynak doğrusu olacak; Markdown, chunks, embeddings ve uygulama görünümleri ondan türetilecek.</p>
+          <p>Bugün: PDF upload → page render → Gemini veya Docling → provider-specific document.json / document.md.</p>
+          <p>PDF, DOCX, TXT ve XLSX ilk ürün kapsamıdır. Şu anda yalnızca PDF ingestion desteklenir.</p>
+          <p>Core schema ile kullanıcı/domain schema ayrı kalacak. LUWI gelecekteki tüketicilerden biridir.</p>
+          <p>Canonical model, normalization, manifest, chunking, indexing, structured patch ve crash recovery henüz yok.</p>
+          <p>Jev, LangChain/LangGraph, çoklu provider, hybrid retrieval ve connectors ertelendi.</p>
+          <a href={`${API}/docs`} target="_blank" rel="noreferrer">OpenAPI sözleşmesini aç</a>
         </section>
       </div>
     </>
   );
 }
-
 function DetailHead({
   doc,
   tab,
@@ -1212,37 +762,26 @@ function DetailHead({
   );
 }
 function Pipeline({ job }: { job: Job | null }) {
-  const stages: Stage[] = job?.stages.length
-    ? job.stages
-    : Object.keys(stageMeta).map((s) => ({
-        stage: s,
-        status: "done",
-        summary:
-          s === "quality"
-            ? "6 sayfa kalite kapısına takıldı; görsel modele yönlendirildi."
-            : s === "publish"
-              ? "Manifest yazıldı, sürüm done olarak işaretlendi."
-              : `${stageMeta[s].name} çıktısı nesne depolamaya yazıldı.`,
-        duration_ms: 800,
-      }));
+  if (!job) return <EmptyState title="Job bilgisi yok" text="Bu kayıt için pipeline sonucu alınamadı." />;
+  const stages = job.stages;
   const jobTime = job?.started_at ?? job?.queued_at;
   return (
     <div className="wrap">
       <section className="card">
         <header>
           <div>
-            <h2>İş {job?.id ?? "job_9a12"}</h2>
+            <h2>İş {job.id}</h2>
             <p className="note">
               {jobTime
                 ? new Date(jobTime).toLocaleString("tr-TR")
-                : "30 Ağu 2025, 14:06"}{" "}
-              · {duration(job?.duration_ms ?? 252000)}
+                : "Zaman bilgisi yok"}{" "}
+              · {duration(job.duration_ms)}
             </p>
           </div>
           <span className="sp">
-            <Status status={job?.status ?? "done"} />
+            <Status status={job.status} />
           </span>
-          <Ep>GET /v1/jobs/{job?.id ?? "job_9a12"}</Ep>
+          <Ep>GET /v1/jobs/{job.id}</Ep>
         </header>
         <div className="rail10">
           {stages.map((s) => (
@@ -1279,7 +818,8 @@ function Pipeline({ job }: { job: Job | null }) {
                   {s.duration_ms ? duration(s.duration_ms) : "—"}
                 </span>
               </div>
-              <p className="out">{s.summary ?? "Bu katman sırada bekliyor."}</p>
+              <p className="out">{s.summary ?? (s.status === "skipped" ? "Çalıştırılmadı." : "Aşama ayrıntısı kaydedilmedi.")}</p>
+              {s.error && <p role="alert">{s.error}</p>}
               {s.attributes && (
                 <div className="det">
                   {Object.entries(s.attributes)
@@ -1296,9 +836,10 @@ function Pipeline({ job }: { job: Job | null }) {
         ))}
       </section>
       <div className="explain">
-        <b>Neden 10 ayrı aşama?</b> Her aşama kendi çıktısını nesne depolamaya
-        yazar. Worker çökerse iş baştan değil, son tamamlanan aşamadan devam
-        eder; bir aşama tek başına yeniden denenebilir.
+        <b>Aşama kaydı:</b> Mevcut worker aşama özetlerini işlem sonunda kaydeder.
+        Ayrıntılı canlı aşama ilerlemesi, stage retry ve crash recovery henüz yok.
+        “Çıktı kaydı” extraction dosyalarını ifade eder; canonical manifest veya index üretmez.
+        M0 öncesi kayıtlar geçmiş durum özetleridir ve uygulanmamış aşamalar için yanıltıcı değerler içerebilir.
       </div>
     </div>
   );
@@ -1319,32 +860,9 @@ function PageSheet({
       </div>
     );
   }
-  return (
-    <div className={`paperMock ${small ? "small" : ""}`}>
-      <i />
-      <i />
-      <i />
-      <i className="short" />
-      {page === 4 && (
-        <div className="mockTable">
-          <span>tbl_01</span>
-          {Array.from({ length: 16 }, (_, i) => (
-            <b key={i} />
-          ))}
-        </div>
-      )}
-      {page === 5 && (
-        <div className="mockChart">
-          <b />
-          <b />
-          <b />
-          <b />
-          <b />
-        </div>
-      )}
-    </div>
-  );
+  return <div className={`paperMock ${small ? "small" : ""}`}>Sayfa görseli mevcut değil.</div>;
 }
+
 function PagesView({
   pages,
   tables,
@@ -1358,7 +876,7 @@ function PagesView({
 }) {
   const [n, setN] = useState(pages[0]?.page_number ?? 1),
     p = pages.find((x) => x.page_number === n),
-    table = tables.find((t) => t.page_number === n) ?? tables[0];
+    table = tables.find((t) => t.page_number === n);
   if (!pages.length) {
     return (
       <EmptyState
@@ -1371,7 +889,7 @@ function PagesView({
     <div className="wrap">
       <section className="card viewer">
         <div className="thumbs">
-          {pages.slice(0, 18).map((page) => (
+          {pages.map((page) => (
             <button
               className="thumb"
               aria-current={n === page.page_number}
@@ -1392,11 +910,11 @@ function PagesView({
               sayfa {n} / {pages.length}
             </span>
             <code className="chip">
-              güven <b>{(p?.confidence ?? 0.91).toFixed(2)}</b>
+              güven <b>{p?.confidence == null ? "ölçülmedi" : p.confidence.toFixed(2)}</b>
             </code>
-            <code className="chip">{p?.parser ?? "docling + gemini"}</code>
+            <code className="chip">{p?.parser ?? "bilinmiyor"}</code>
             <label className="switch">
-              <input type="checkbox" defaultChecked /> kaynak kutuları
+              <input type="checkbox" disabled /> kaynak kutuları (henüz yok)
             </label>
           </div>
           <PageSheet page={n} src={p?.render_uri} />
@@ -1405,11 +923,11 @@ function PagesView({
         <div className="extract">
           <div className="minitabs">
             <button className="minitab" aria-selected>
-              Markdown
+              Doküman Markdown
             </button>
-            <button className="minitab">JSON</button>
-            <button className="minitab">Tablolar</button>
-            <button className="minitab">Görseller</button>
+            <button className="minitab" disabled>JSON (API üzerinden)</button>
+            <button className="minitab" disabled>Tablolar</button>
+            <button className="minitab" disabled>Görseller</button>
           </div>
           <div className="flags">
             {(p?.quality_flags ?? []).map((f) => (
@@ -1423,7 +941,7 @@ function PagesView({
             {markdown ? (
               <pre className="realMarkdown">{markdown}</pre>
             ) : (
-              <p>Bu sürüm için kanonik Markdown henüz yazılmadı.</p>
+              <p>Bu sürüm için extraction Markdown mevcut değil. Demo modunda dosya üretilmez.</p>
             )}
             {table && (
               <table>
@@ -1461,57 +979,27 @@ function PagesView({
         </div>
       </section>
       <div className="explain">
-        <b>Sol taraf her zaman kaynaktır.</b> Sağdaki metin o sayfadan çıkarılan
-        içeriğin kendisidir; mor işaretli bloklar ise türetilmiş içeriktir.
+        <b>Extraction önizlemesi:</b> Solda seçilen sayfa, sağda dokümanın tamamının
+        Markdown çıktısı bulunur. Bu çıktı henüz canonical knowledge değildir.
+        Sayfa hataları job kaydında tutulur; confidence ölçülmez.
       </div>
     </div>
-  );
-}
-function Similarity() {
-  const vals = [0.853, 0.569, 0.843, 0.793, 0.594, 0.88, 0.829, 0.506, 0.454];
-  return (
-    <section className="card">
-      <header>
-        <h2>Bölme sınırı doğrulaması</h2>
-        <p className="note">
-          Ardışık chunk çiftleri arasındaki cosine benzerliği.
-        </p>
-        <span className="sp">
-          <Ep>GET /v1/versions/dver_2/chunks/boundaries</Ep>
-        </span>
-      </header>
-      <div className="chart">
-        <div className="threshold">eşik 0.55</div>
-        {vals.map((v, i) => (
-          <div className="chartCol" key={i}>
-            <i
-              className={v < 0.55 ? "low" : ""}
-              style={{ height: `${v * 130}px` }}
-            />
-            <small>
-              {i + 1}|{i + 2}
-            </small>
-          </div>
-        ))}
-      </div>
-    </section>
   );
 }
 function ChunkView({ chunks }: { chunks: Chunk[] }) {
   const [selected, setSelected] = useState(
       chunks.find((c) => c.id === "chk_06") ?? chunks[0],
     ),
-    [neighbors, setNeighbors] = useState<Neighbor[]>([]);
+    [neighbors, setNeighbors] = useState<Neighbor[]>([]),
+    [neighborError, setNeighborError] = useState("");
   useEffect(() => {
-    if (!selected && chunks[0]) {
-      setSelected(chunks[0]);
-      return;
-    }
-    if (selected)
-      getJson(`/v1/chunks/${selected.id}/neighbors?limit=5`, []).then((x) =>
-        setNeighbors(x),
-      );
-  }, [chunks, selected]);
+    let active = true;
+    setNeighbors([]); setNeighborError("");
+    if (selected) apiJson<Neighbor[]>(`${API}/v1/chunks/${selected.id}/neighbors?limit=5`, undefined, "demo")
+      .then((items) => { if (active) setNeighbors(items); })
+      .catch((error) => { if (active) setNeighborError(String(error)); });
+    return () => { active = false; };
+  }, [selected]);
   if (!selected)
     return (
       <EmptyState
@@ -1577,7 +1065,7 @@ function ChunkView({ chunks }: { chunks: Chunk[] }) {
               <dt>pages</dt>
               <dd>
                 [{selected.page_numbers.join(", ")}]{" "}
-                <button className="btn sm">sayfayı aç →</button>
+                <span>Kaynak sayfa numaraları</span>
               </dd>
               <dt>token</dt>
               <dd>{selected.token_count}</dd>
@@ -1596,7 +1084,8 @@ function ChunkView({ chunks }: { chunks: Chunk[] }) {
               <dd>{selected.access_scope}</dd>
             </dl>
             <div>
-              <label className="fieldLabel">En yakın komşular (cosine)</label>
+              <label className="fieldLabel">Demo komşuları — simülasyon, gerçek embedding değil</label>
+              {neighborError && <p role="alert">{neighborError}</p>}
               <div className="nb">
                 {neighbors.map((n) => (
                   <div className="nbRow" key={n.chunk_id}>
@@ -1619,11 +1108,9 @@ function ChunkView({ chunks }: { chunks: Chunk[] }) {
           </div>
         </div>
       </section>
-      <Similarity />
       <div className="explain">
-        <b>Bu grafik ne söylüyor?</b> Yüksek nokta, iki komşu chunk’ın aynı
-        konudan bahsettiğini; eşiğin altına düşen kırmızı nokta ise konunun
-        gerçekten değiştiğini gösterir.
+        Chunk üretimi ve embedding benzerliği henüz uygulanmadı.
+        Demo modunda gösterilen chunk ve komşular sentetik örneklerdir.
       </div>
     </div>
   );
@@ -1639,7 +1126,7 @@ function AssetsView({
     return (
       <EmptyState
         title="Tablo veya bağımsız görsel üretilmedi"
-        text="Bu sürümde Docling çıktısı ve sayfa render’ları mevcut; ayrıştırılmış tablo/görsel aşamaları henüz etkin değil."
+        text="Live pipeline bağımsız tablo/görsel catalog üretmiyor. Extraction JSON içindeki parser verileri ayrı catalog değildir."
       />
     );
   }
@@ -1780,81 +1267,13 @@ function VersionBox({ v, current }: { v: Version; current?: boolean }) {
   );
 }
 function VersionsView({ versions }: { versions: Version[] }) {
-  if (!versions.length) {
-    return (
-      <EmptyState
-        title="Sürüm bilgisi bulunamadı"
-        text="Doküman kaydı yayımlandığında sürüm özeti burada görünecek."
-      />
-    );
-  }
-  const vs = [...versions].sort((a, b) => a.revision - b.revision);
-  if (vs.length === 1) {
-    return (
-      <div className="wrap">
-        <div className="singleVersion">
-          <VersionBox v={vs[0]} current />
-        </div>
-        <div className="explain">
-          <b>İlk sürüm.</b> Aynı dokümanın içeriği değişerek yeniden
-          yüklendiğinde yeni sürüm ve gerçek farklar burada yan yana gösterilir.
-        </div>
-      </div>
-    );
-  }
-  const entries = [
-      [
-        "+",
-        "chk_08 — “Grafik 2.3” chunk’ı eklendi (görsel açıklaması artık chunk üretiyor)",
-      ],
-      [
-        "+",
-        "tbl_02, tbl_03 — sayfa 6 ve 8’deki tablolar yeni parser sürümünde algılandı",
-      ],
-      ["+", "ast_04 — taranmış ek sayfa görsel olarak kaydedildi"],
-      ["~", "chk_06 — başlık yolu düzeltildi"],
-      ["~", "chk_03 — token sayısı 168 → 142"],
-      ["−", "chk_39 — boş sayfa chunk’ı kaldırıldı"],
-      ["~", "sayfa 7 — güven 0,12 → 0,41; görsel model devreye girdi"],
-    ];
-  return (
-    <div className="wrap">
-      <div className="vcmp">
-        <VersionBox v={vs[0]} />
-        <div className="arrow">→</div>
-        <VersionBox v={vs.at(-1)!} current />
-      </div>
-      <section className="card">
-        <header>
-          <h2>Fark</h2>
-          <p className="note">
-            Sürümler birbirinin üzerine yazılmaz; eski sürüm ve indeksi silinene
-            kadar sorgulanabilir kalır.
-          </p>
-          <span className="sp">
-            <Ep>GET /v1/versions/dver_2/diff?base=dver_1</Ep>
-          </span>
-        </header>
-        <div className="dl pad">
-          {entries.map((e, i) => (
-            <div className="row" key={i}>
-              <span
-                className={`sign ${e[0] === "+" ? "s-add" : e[0] === "−" ? "s-del" : "s-mod"}`}
-              >
-                {e[0]}
-              </span>
-              {e[1]}
-            </div>
-          ))}
-        </div>
-      </section>
-      <div className="explain">
-        <b>Yeniden yükleme neden yeni sürüm açar?</b> Aynı dosyanın içerik
-        hash’i değişirse Docgrain eski sayfaları, tabloları ve chunk’ları
-        silmez; yenisini yeni sürüm altında oluşturur.
-      </div>
-    </div>
-  );
+  if (!versions.length) return <EmptyState title="Sürüm bilgisi yok" text="Bu doküman için sürüm kaydı alınamadı." />;
+  const sorted = [...versions].sort((a, b) => a.revision - b.revision);
+  return <div className="wrap">
+    {sorted.map((v, i) => <VersionBox key={v.id} v={v} current={i === sorted.length - 1} />)}
+    <div className="explain">Bunlar kayıtlı sürüm sayaçlarıdır. Live diff endpoint’i yalnızca sayaç farkı verir.
+      İçerik diff’i, Structured Knowledge Patch ve aynı dokümana yeni sürüm yükleme henüz uygulanmadı.</div>
+  </div>;
 }
 function Detail({
   doc,
@@ -1866,6 +1285,7 @@ function Detail({
   tables,
   assets,
   versions,
+  markdown,
 }: {
   doc: DocumentRow;
   tab: DetailTab;
@@ -1876,13 +1296,14 @@ function Detail({
   tables: TableArtifact[];
   assets: Asset[];
   versions: Version[];
+  markdown: string;
 }) {
   return (
     <>
       <DetailHead doc={doc} tab={tab} setTab={setTab} />
       {tab === "pipeline" && <Pipeline job={job} />}{" "}
       {tab === "pages" && (
-        <PagesView pages={pages} tables={tables} chunks={chunks} markdown="" />
+        <PagesView pages={pages} tables={tables} chunks={chunks} markdown={markdown} />
       )}{" "}
       {tab === "chunks" && <ChunkView chunks={chunks} />}{" "}
       {tab === "assets" && <AssetsView tables={tables} assets={assets} />}{" "}
@@ -1894,93 +1315,95 @@ function Detail({
 export default function Home() {
   const [screen, setScreen] = useState<Screen>("documents"),
     [tab, setTab] = useState<DetailTab>("pipeline"),
-    [docs, setDocs] = useState(demoDocs),
-    [jobs, setJobs] = useState(demoJobs),
+    [mode, setMode] = useState<Mode | null>(null),
+    [loading, setLoading] = useState(true),
+    [error, setError] = useState(""),
+    [detailLoading, setDetailLoading] = useState(false),
+    [detailError, setDetailError] = useState(""),
+    [docs, setDocs] = useState<DocumentRow[]>([]),
+    [jobs, setJobs] = useState<Job[]>([]),
     [providers, setProviders] = useState<Provider[]>([]),
-    [selected, setSelected] = useState(demoDocs[0]),
+    [selected, setSelected] = useState<DocumentRow | null>(null),
     [job, setJob] = useState<Job | null>(null),
     [pages, setPages] = useState<Page[]>([]),
-    [chunks, setChunks] = useState(demoChunks),
-    [tables, setTables] = useState(demoTables),
-    [assets, setAssets] = useState(demoAssets),
+    [chunks, setChunks] = useState<Chunk[]>([]),
+    [tables, setTables] = useState<TableArtifact[]>([]),
+    [assets, setAssets] = useState<Asset[]>([]),
     [versions, setVersions] = useState<Version[]>([]),
+    [markdown, setMarkdown] = useState(""),
     [uploadState, setUploadState] = useState<UploadState>({ phase: "idle" }),
     [toast, setToast] = useState("");
-  useEffect(() => {
-    (async () => {
-      const [rd, rj, rp] = await Promise.all([
-        getJson<any[]>("/v1/documents?limit=50", []),
-        getJson<Job[]>("/v1/jobs", demoJobs),
-        getJson<Provider[]>("/v1/providers/health", []),
+  const requestId = useRef(0);
+
+  async function refresh() {
+    const request = ++requestId.current;
+    setLoading(true); setError(""); setMode(null);
+    setDocs([]); setJobs([]); setProviders([]);
+    setSelected(null); setScreen("documents");
+    try {
+      const health = await apiJson<{ mode: Mode }>(`${API}/healthz`);
+      if (health.mode !== "live" && health.mode !== "demo") throw new Error("API çalışma modu doğrulanamadı.");
+      const [documents, nextJobs, nextProviders] = await Promise.all([
+        apiJson<DocumentListResponse[]>(`${API}/v1/documents?limit=50`, undefined, health.mode),
+        apiJson<Job[]>(`${API}/v1/jobs`, undefined, health.mode),
+        apiJson<Provider[]>(`${API}/v1/providers/health`, undefined, health.mode),
       ]);
-      if (rd.length) {
-        const m = rd.map((item) => documentRow(item));
-        setDocs([
-          ...m,
-          ...demoDocs.filter((d) => !m.some((x) => x.id === d.id)),
-        ]);
-      }
-      setJobs([
-        ...rj,
-        ...demoJobs.filter((d) => !rj.some((x) => x.id === d.id)),
-      ]);
-      setProviders(rp);
-    })();
-  }, []);
-  useEffect(() => {
-    if (toast) {
-      const id = setTimeout(() => setToast(""), 2800);
-      return () => clearTimeout(id);
+      if (request !== requestId.current) return;
+      setMode(health.mode);
+      setDocs(documents.map(documentRow)); setJobs(nextJobs); setProviders(nextProviders);
+    } catch (cause) {
+      if (request === requestId.current) setError(`API verileri alınamadı: ${String(cause)}`);
+    } finally {
+      if (request === requestId.current) setLoading(false);
     }
-  }, [toast]);
-  useEffect(() => {
-    window.scrollTo({ top: 0, behavior: "auto" });
-  }, [screen, tab, selected.id]);
-  async function open(d: DocumentRow) {
-    setSelected(d);
-    setTab("pipeline");
-    setScreen("detail");
-    if (!d.versionId) {
-      setToast("Bu dokümanın yayımlanmış bir sürümü henüz yok.");
-      return;
-    }
-    const [j, p, c, t, a, v] = await Promise.all([
-      d.jobId ? getJson<Job | null>(`/v1/jobs/${d.jobId}`, null) : null,
-      getJson<Page[]>(`/v1/versions/${d.versionId}/pages`, []),
-      getJson<Chunk[]>(`/v1/versions/${d.versionId}/chunks`, demoChunks),
-      getJson<TableArtifact[]>(
-        `/v1/versions/${d.versionId}/tables`,
-        demoTables,
-      ),
-      getJson<Asset[]>(`/v1/versions/${d.versionId}/assets`, demoAssets),
-      getJson<Version[]>(`/v1/documents/${d.id}/versions`, []),
-    ]);
-    setJob(j);
-    setPages(p);
-    setChunks(c.length ? c : demoChunks);
-    setTables(t.length ? t : demoTables);
-    setAssets(a.length ? a : demoAssets);
-    setVersions(v);
   }
-  async function retry(j: Job) {
-    const r = await fetch(`${API}/v1/versions/${j.document_version_id}/retry`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ from_stage: "extract" }),
-    }).catch(() => null);
-    setToast(
-      r?.ok
-        ? `${j.id} yeniden kuyruğa alındı`
-        : `${j.id} için yeniden deneme hazır`,
-    );
+  useEffect(() => { void refresh(); return () => { requestId.current += 1; }; }, []);
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(""), 4000);
+    return () => clearTimeout(id);
+  }, [toast]);
+  useEffect(() => { window.scrollTo({ top: 0, behavior: "auto" }); }, [screen, tab, selected?.id]);
+
+  async function open(d: DocumentRow) {
+    const request = ++requestId.current;
+    setSelected(d); setTab("pipeline"); setScreen("detail");
+    setJob(null); setPages([]); setChunks([]); setTables([]); setAssets([]); setVersions([]); setMarkdown("");
+    setDetailError(""); setDetailLoading(true);
+    try {
+      if (!mode) throw new Error("API modu doğrulanamadı.");
+      if (!d.versionId) throw new Error("Bu dokümanın sürüm kaydı yok.");
+      const [j, p, c, t, a, v] = await Promise.all([
+        d.jobId ? apiJson<Job>(`${API}/v1/jobs/${d.jobId}`, undefined, mode) : null,
+        apiJson<Page[]>(`${API}/v1/versions/${d.versionId}/pages`, undefined, mode),
+        apiJson<Chunk[]>(`${API}/v1/versions/${d.versionId}/chunks`, undefined, mode),
+        apiJson<TableArtifact[]>(`${API}/v1/versions/${d.versionId}/tables`, undefined, mode),
+        apiJson<Asset[]>(`${API}/v1/versions/${d.versionId}/assets`, undefined, mode),
+        apiJson<Version[]>(`${API}/v1/documents/${d.id}/versions`, undefined, mode),
+      ]);
+      let md = "";
+      if (mode === "live") {
+        const response = await fetch(`${API}/v1/documents/${d.id}/versions/${d.versionId}/artifacts/document.md`);
+        if (response.headers.get("X-Docgrain-Mode") !== "live") throw new Error("API modu değişti; listeyi yenileyin.");
+        if (response.ok) md = await response.text();
+        else if (response.status !== 404) throw new Error(`Markdown okunamadı: HTTP ${response.status}`);
+      }
+      if (request !== requestId.current) return;
+      setJob(j); setPages(mode === "demo" ? p.map((page) => ({ ...page, render_uri: "" })) : p); setChunks(c); setTables(t); setAssets(a); setVersions(v); setMarkdown(md);
+    } catch (cause) {
+      if (request === requestId.current) setDetailError(String(cause));
+    } finally {
+      if (request === requestId.current) setDetailLoading(false);
+    }
   }
   async function upload(file: File) {
+    if (mode !== "live") return;
     const terminal = new Set(["done", "partial", "failed"]);
     try {
       setUploadState({
         phase: "registering",
         fileName: file.name,
-        message: "Doküman ve immutable sürüm kaydı açılıyor…",
+        message: "Doküman ve ilk sürüm kaydı açılıyor…",
       });
       const registration = await apiJson<RegisterResponse>(`${API}/v1/documents`, {
         method: "POST",
@@ -1991,7 +1414,7 @@ export default function Home() {
           mime_type: file.type || "application/octet-stream",
           byte_size: file.size,
         }),
-      });
+      }, "live");
 
       const pendingRow = documentRow({
         document: registration.document,
@@ -2013,17 +1436,17 @@ export default function Home() {
         await apiJson<{ status: string }>(registration.upload_url, {
           method: "PUT",
           body: form,
-        });
+        }, "live");
 
         setUploadState({
           phase: "confirming",
           fileName: file.name,
           jobId: registration.job_id,
-          message: "Upload doğrulanıp durable job kuyruğa alınıyor…",
+          message: "Upload kontrol edilip job kuyruğa alınıyor…",
         });
         await apiJson<{ status: string; job_id: string }>(
           `${API}/v1/documents/${registration.document.id}/versions/${registration.version.id}/uploaded`,
-          { method: "POST" },
+          { method: "POST" }, "live",
         );
       }
 
@@ -2037,7 +1460,7 @@ export default function Home() {
       });
 
       for (let poll = 0; poll < 450; poll += 1) {
-        const currentJob = await apiJson<Job>(`${API}/v1/jobs/${registration.job_id}`);
+        const currentJob = await apiJson<Job>(`${API}/v1/jobs/${registration.job_id}`, undefined, "live");
         setJobs((current) => [
           currentJob,
           ...current.filter((item) => item.id !== currentJob.id),
@@ -2061,7 +1484,7 @@ export default function Home() {
         });
         if (terminal.has(currentJob.status)) {
           const refreshed = await apiJson<DocumentListResponse>(
-            `${API}/v1/documents/${registration.document.id}`,
+            `${API}/v1/documents/${registration.document.id}`, undefined, "live",
           );
           const finalRow = documentRow(refreshed);
           setDocs((current) => [
@@ -2075,10 +1498,10 @@ export default function Home() {
       }
 
       setUploadState({
-        phase: "running",
+        phase: "error",
         fileName: file.name,
         jobId: registration.job_id,
-        message: "İşlem arka planda devam ediyor; İşler ekranından izlenebilir.",
+        message: "Otomatik izleme süresi doldu; güncel job durumunu listeyi yenileyerek kontrol edin.",
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Bilinmeyen upload hatası";
@@ -2095,21 +1518,32 @@ export default function Home() {
         jobs={jobs.filter((j) => j.status === "running").length}
       />
       <main>
-        {screen === "documents" ? (
+        <div className="modeNotice" role="status">
+          {mode === "demo" ? "DEMO — salt okunur sentetik veriler. Stage, chunk, tablo, görsel ve diff örnekleri gerçek işlem sonucu değildir."
+            : mode === "live" ? "LIVE — gerçek kayıtlar. PDF extraction mevcut; canonical model, chunking, index ve recovery henüz yok." : "API çalışma modu bekleniyor."}
+          <button className="btn sm" onClick={() => void refresh()} disabled={loading || ["registering", "uploading", "confirming", "queued", "running"].includes(uploadState.phase)}>Listeyi yenile</button>
+        </div>
+        {loading ? <EmptyState title="Yükleniyor" text="API çalışma modu ve kayıtlar alınıyor." />
+          : error ? <div role="alert"><EmptyState title="API hatası" text={error} /></div>
+          : screen === "documents" ? (
           <Documents
             docs={docs}
             open={open}
             upload={upload}
             uploadState={uploadState}
+            mode={mode}
           />
         ) : screen === "jobs" ? (
-          <Jobs jobs={jobs} docs={docs} retry={retry} />
+          <Jobs jobs={jobs} docs={docs} />
         ) : screen === "providers" ? (
           <Providers items={providers} />
         ) : screen === "contract" ? (
           <Contract />
-        ) : (
+        ) : detailLoading ? <EmptyState title="Yükleniyor" text="Doküman kayıtları alınıyor." />
+          : detailError ? <div role="alert"><EmptyState title="Doküman okunamadı" text={detailError} /></div>
+          : selected ? (
           <Detail
+            key={selected.id}
             doc={selected}
             tab={tab}
             setTab={setTab}
@@ -2119,8 +1553,9 @@ export default function Home() {
             tables={tables}
             assets={assets}
             versions={versions}
+            markdown={markdown}
           />
-        )}
+        ) : null}
       </main>
       {toast && (
         <div className="toast">

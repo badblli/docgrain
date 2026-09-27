@@ -1420,3 +1420,14 @@ table.grid tbody tr.click:hover {
     scroll-behavior: auto !important;
   }
 }
+
+.modeNotice {
+  padding: 12px 24px;
+  background: var(--sheet);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 12px;
+}

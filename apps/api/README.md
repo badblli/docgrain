@@ -1,18 +1,11 @@
-# API service
+# API
 
-The FastAPI application exposes Docgrain's public HTTP API: document registration,
-local-development uploads, job status, document versions, artifacts, chunks and retry controls.
+FastAPI registration/upload/confirmation, job metadata ve extraction artifact okumalarını sağlar. Extraction API process'inde çalışmaz.
 
-Local Docker uploads are proxied through the API into MinIO because this local
-MinIO profile does not provide browser CORS support. Production object storage
-uses the same boundary but can return a direct signed upload URL instead.
+Varsayılan live: PostgreSQL/MinIO/Redis. `USE_FIXTURES=true`: açık salt okunur demo. Response'larda `X-Docgrain-Mode`; `/healthz` liveness ve mode verir, dependency readiness ölçmez.
 
-The API must only orchestrate durable work. It must never run extraction, rendering, embedding or index writes in an in-process background task.
+Mevcut upload PDF-only; her registration yeni document/revision 1 oluşturur. Proxy upload ardından confirmation queue'ya job ID ekler. Source-URI ingestion, deduplication ve revision append yoktur.
 
-Initial implementation order:
+Demo yazmaları `409`; retry tüm modlarda `501`. Live chunks/neighbors/boundaries henüz desteklenmez. Live tables/assets/chunks listeleri boş; diff yalnızca count delta'dır. `document.md/json` canonical model değil extraction çıktısıdır.
 
-1. health endpoint and OpenAPI metadata;
-2. PostgreSQL migrations and document/job/version models;
-3. source registration and object-storage upload flow;
-4. queue dispatch and job-status endpoints;
-5. authorization, workspace isolation and signed artifact URLs.
+`Page.confidence` ve `ProviderHealth.healthy` unknown için null olabilir. Auth/workspace enforcement, migrations ve crash recovery sonraki çalışmalardır. Ayrıntılar: [M0 ADR](../../docs/adr/0004-canonical-first-scope-freeze.md).

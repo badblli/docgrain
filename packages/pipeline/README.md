@@ -1,5 +1,5 @@
-# Pipeline package
+# Pipeline — planlanan package
 
-This package transforms sources into canonical document artifacts. It owns rendering, parser coordination, quality gates, normalization, chunking and manifest creation.
+Bu dizinde executable implementasyon yoktur. Mevcut extraction kodu `apps/worker/docgrain_worker` altındadır.
 
-Every transform must preserve or explicitly derive provenance metadata.
+Hedef: structural parsing → enrichment → reconciliation → canonical validation → projections. M0 bu package'ı implement etmez veya framework eklemez.

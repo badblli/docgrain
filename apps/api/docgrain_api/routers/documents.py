@@ -28,11 +28,16 @@ from ..storage import get_text, object_exists, put_upload
 router = APIRouter(prefix="/v1/documents", tags=["documents"])
 
 
+def _require_live_uploads() -> None:
+    if get_settings().use_fixtures:
+        raise HTTPException(status.HTTP_409_CONFLICT, "demo mode is read-only; uploads are disabled")
+
+
 class RegisterRequest(BaseModel):
     """A registration never carries the file body itself.
 
-    The client asks for an upload target, PUTs the bytes to object storage and
-    then confirms. The API only ever records metadata and queues a job.
+    The client uploads through the API proxy and then confirms. Registration
+    records metadata; only confirmation enqueues work. Live ingestion is PDF-only.
     """
 
     workspace_id: str
@@ -40,7 +45,7 @@ class RegisterRequest(BaseModel):
     mime_type: str
     byte_size: int = Field(gt=0)
     source_uri: str | None = Field(
-        default=None, description="Set when the bytes are already in object storage."
+        default=None, description="Reserved; external source ingestion is not implemented."
     )
     content_sha256: str | None = Field(default=None, min_length=64, max_length=64)
 
@@ -52,7 +57,7 @@ class RegisterResponse(BaseModel):
     upload_url: str | None = None
     deduplicated: bool = Field(
         default=False,
-        description="True when the hash matched an existing version; no new job was queued.",
+        description="Reserved; always false because deduplication is not implemented.",
     )
 
 
@@ -100,7 +105,9 @@ def list_versions(document_id: str) -> list[DocumentVersion]:
 
 @router.get("/{document_id}/versions/{version_id}/artifacts/{artifact_name}")
 def get_artifact(document_id: str, version_id: str, artifact_name: str) -> PlainTextResponse:
-    """Serve canonical artifacts through the API; the storage bucket remains private."""
+    """Serve provider-specific extraction artifacts, not canonical knowledge."""
+    if get_settings().use_fixtures:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "demo has no stored extraction artifacts")
     if artifact_name not in {"document.md", "document.json"}:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "artifact not found")
     if repository.get_version(document_id, version_id) is None:
@@ -114,11 +121,14 @@ def get_artifact(document_id: str, version_id: str, artifact_name: str) -> Plain
 
 @router.post("", response_model=RegisterResponse, status_code=status.HTTP_202_ACCEPTED)
 def register_document(payload: RegisterRequest) -> RegisterResponse:
-    """Validate, open a version, queue a durable job -- and nothing else.
-
-    The API must never run extraction, rendering, embedding or index writes in
-    an in-process background task; it only enqueues.
-    """
+    """Register a new PDF document/version; confirmation enqueues the job."""
+    _require_live_uploads()
+    if payload.source_uri is not None:
+        raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "external source ingestion is not implemented")
+    if not payload.filename.lower().endswith(".pdf") or payload.mime_type not in {
+        "application/pdf", "application/octet-stream"
+    }:
+        raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "current ingestion supports PDF only; DOCX, TXT and XLSX are planned")
     now = datetime.now(UTC)
     document_id = new_id("document")
     version_id = new_id("version")
@@ -139,7 +149,7 @@ def register_document(payload: RegisterRequest) -> RegisterResponse:
         workspace_id=payload.workspace_id,
         revision=1,
         content_sha256=payload.content_sha256 or ("0" * 64),
-        source_uri=payload.source_uri or f"s3://docgrain/{document_id}/{version_id}/original",
+        source_uri=f"s3://{get_settings().s3_bucket}/uploads/{document_id}/{version_id}/original",
         byte_size=payload.byte_size,
         status=VersionStatus.PROCESSING,
         created_at=now,
@@ -179,7 +189,8 @@ def upload_content(
     version_id: str,
     file: Annotated[UploadFile, File(...)],
 ) -> dict[str, str]:
-    """Local-development upload proxy. Production storage can replace this with a direct presign."""
+    """Local-development upload proxy; signed uploads are not wired in."""
+    _require_live_uploads()
     version = repository.get_version(document_id, version_id)
     if version is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "document version not found")
@@ -193,7 +204,8 @@ def upload_content(
 
 @router.post("/{document_id}/versions/{version_id}/uploaded", status_code=status.HTTP_202_ACCEPTED)
 def confirm_upload(document_id: str, version_id: str) -> dict[str, str]:
-    """Confirm the direct browser upload before a worker can process it."""
+    """Check the uploaded object exists and dispatch its job."""
+    _require_live_uploads()
     version = repository.get_version(document_id, version_id)
     if version is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "document version not found")
@@ -203,6 +215,5 @@ def confirm_upload(document_id: str, version_id: str) -> dict[str, str]:
     job = repository.job_for_version(version_id)
     if job is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "job not found")
-    if not get_settings().use_fixtures:
-        enqueue(job.id)
+    enqueue(job.id)
     return {"status": "queued", "job_id": job.id}

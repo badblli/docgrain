@@ -28,9 +28,8 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.7-flash"
     qwen_base_url: str = ""
 
-    # While the persistence layer is unimplemented the API serves the
-    # fixtures the review console was designed against.
-    use_fixtures: bool = True
+    # Demo is explicit and read-only. Live mode never falls back to fixtures.
+    use_fixtures: bool = False
 
 
 @lru_cache

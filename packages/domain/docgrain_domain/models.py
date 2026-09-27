@@ -114,7 +114,7 @@ class Page(BaseModel):
     height: int
     dpi: int = 200
     parser: str
-    confidence: float = Field(ge=0, le=1)
+    confidence: float | None = Field(default=None, ge=0, le=1, description="Null when not measured.")
     char_count: int = 0
     block_count: int = 0
     quality_flags: list[QualityFlag] = Field(default_factory=list)
@@ -228,7 +228,7 @@ class VersionDiff(BaseModel):
 class ProviderHealth(BaseModel):
     interface: str
     implementation: str
-    healthy: bool
+    healthy: bool | None = Field(description="Null when connectivity has not been checked.")
     location: str
     note: str | None = None
 
