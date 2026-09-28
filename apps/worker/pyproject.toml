@@ -1,7 +1,7 @@
 [project]
 name = "docgrain-worker"
 version = "0.0.1"
-description = "Docgrain durable pipeline worker"
+description = "Docgrain PDF extraction worker"
 requires-python = ">=3.12"
 dependencies = [
     "docling>=2.0",

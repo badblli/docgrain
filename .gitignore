@@ -4,11 +4,15 @@ __pycache__/
 .venv/
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
 
 # Node
 node_modules/
 .next/
 out/
+
+# Browser smoke-test output (not product fixtures)
+.playwright-mcp/
 
 # Environment and secrets
 .env

@@ -22,7 +22,6 @@ from docgrain_domain import (
     Neighbor,
     Page,
     PageFailure,
-    ProviderHealth,
     QualityFlag,
     SplitStrategy,
     StageRun,
@@ -355,7 +354,7 @@ def _stages(pattern: list[StageStatus]) -> list[StageRun]:
                 stage=stage,
                 status=status,
                 duration_ms=_DURATIONS_MS[index] if status in {StageStatus.DONE, StageStatus.RUNNING} else None,
-                summary=summary if status in {StageStatus.DONE, StageStatus.RUNNING} else None,
+                summary=f"DEMO (simülasyon): {summary}" if status in {StageStatus.DONE, StageStatus.RUNNING} else None,
                 provider=provider,
                 attributes=attributes if status is StageStatus.DONE else {},
                 attempt=1 if status is not StageStatus.PENDING else 0,
@@ -449,14 +448,3 @@ DIFF = VersionDiff(
         DiffEntry(change="removed", target_id="chk_39", description="Boş sayfa chunk'ı kaldırıldı."),
     ],
 )
-
-PROVIDERS: list[ProviderHealth] = [
-    ProviderHealth(interface="DocumentParser", implementation="docling-2.19", healthy=True, location="local", note="birincil parser"),
-    ProviderHealth(interface="PageRenderer", implementation="pymupdf-1.24", healthy=True, location="local", note="200 DPI PNG"),
-    ProviderHealth(interface="VisionProvider", implementation="gemini-2.5-flash", healthy=True, location="hosted", note="hosted kalite profili"),
-    ProviderHealth(interface="VisionProvider", implementation="qwen2.5-vl-3b-instruct", healthy=False, location="local", note="GPU kuyruğu dolu"),
-    ProviderHealth(interface="EmbeddingProvider", implementation="bge-m3", healthy=True, location="local", note="1024 boyut"),
-    ProviderHealth(interface="VectorIndex", implementation="qdrant-1.12", healthy=True, location="docker", note="collection: docgrain_chunks"),
-    ProviderHealth(interface="KeywordIndex", implementation="postgresql-fts", healthy=True, location="docker", note="turkish config"),
-    ProviderHealth(interface="ObjectStorage", implementation="minio", healthy=True, location="docker", note="bucket: docgrain"),
-]
