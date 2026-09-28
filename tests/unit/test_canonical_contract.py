@@ -145,15 +145,19 @@ def test_identity_policy_is_deterministic_and_revision_independent() -> None:
 def test_generated_schema_parity_and_fixture_validation() -> None:
     from jsonschema import Draft202012Validator
 
-    text = SCHEMA.read_text(encoding="utf-8")
-    assert text == generated_core_schema_text()
-    schema = json.loads(text)
-    assert schema["$id"] == "urn:docgrain:canonical-knowledge:0.1.0"
-    Draft202012Validator.check_schema(schema)
-    validator = Draft202012Validator(schema)
+    old_schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
+    assert old_schema["$id"] == "urn:docgrain:canonical-knowledge:0.1.0"
+    Draft202012Validator.check_schema(old_schema)
+    validator = Draft202012Validator(old_schema)
     for name in ("generic-pdf.json", "domain-example.json"):
         assert not list(validator.iter_errors(fixture(name)))
         CanonicalKnowledgeSnapshot.model_validate(fixture(name))
+    new_path = SCHEMA.with_name("canonical-knowledge-0.2.0.schema.json")
+    text = new_path.read_text(encoding="utf-8")
+    assert text == generated_core_schema_text()
+    new_schema = json.loads(text)
+    assert new_schema["$id"] == "urn:docgrain:canonical-knowledge:0.2.0"
+    Draft202012Validator.check_schema(new_schema)
 
 
 def test_explicit_domain_schema_validation_and_invalid_review_guard() -> None:
