@@ -5,6 +5,9 @@ description = "Vendor-neutral domain models and job state machine for Docgrain"
 requires-python = ">=3.12"
 dependencies = ["pydantic>=2.7"]
 
+[project.optional-dependencies]
+validation = ["jsonschema>=4.23"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
