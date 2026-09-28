@@ -8,27 +8,27 @@ Docgrain genel amaçlıdır. LUWI gelecekteki tüketicilerinden biridir; core i�
 
 Hedef mimaride **canonical structured knowledge kaynak doğrusudur**. Markdown, chunks, embeddings ve uygulamaya özel görünümler bu modelden türetilir. Orijinal belgeler ve ham extraction sonuçları kanıt olarak korunur. Core schema ile kullanıcı/domain JSON Schema ayrı kalır.
 
-**Durum: pre-alpha / M1 canonical foundation.** Canonical v0.1 contract, JSON Schema ve bağımsız persistence repository eklendi; live ingestion bunları henüz üretmez veya kullanmaz.
+**Durum: pre-alpha / M1b structural parsing.** Canonical 0.1.0 foundation korunur; 0.2.0 table-cell sözleşmesi, multi-format parser ve worker canonical mapping eklendi. Canonical revision yalnız doğrulanmış, sürümlenmiş kaynak nesnesiyle persist edilir; `canonical.json` henüz publish edilmez.
 
 | Alan | Bugünkü implementasyon |
 | --- | --- |
-| Ingestion | PDF kaydı → API upload proxy → MinIO → confirmation → Redis → worker |
+| Ingestion | PDF/DOCX/TXT/XLSX kaydı → API upload proxy → MinIO → confirmation → Redis → worker |
 | Rendering | PyMuPDF ile PDF sayfaları, 200 DPI PNG |
 | Extraction | Gemini key varsa tüm sayfalarda Gemini; yoksa OCR kapalı Docling |
 | Çıktılar | Provider-specific `document.json`, `document.md`, `pages.json`, page PNG; Gemini yolunda başarılı sayfa JSON dosyaları |
 | Metadata | PostgreSQL document/version/job kayıtları |
 | Kısmi hata | Bazı extraction hataları page failure olarak kaydedilir; bu recovery garantisi değildir |
 | Console | API kayıtları, page render, doküman düzeyinde extraction Markdown; açık demo modu |
-| Canonical foundation | Ayrı Pydantic v0.1 model, generated JSON Schema, sentetik örnekler ve opt-in PostgreSQL repository; henüz live pipeline'a bağlı değil |
-| Henüz yok | Canonical mapping/publication, reconciliation, normalization, processing manifest, gerçek table/asset catalog, chunking, embedding, indexing, Structured Knowledge Patch, stage retry, crash recovery |
+| Canonical structure | Docling-first PDF/DOCX/XLSX, deterministik TXT, format-aware evidence ve ayrı canonical PostgreSQL revision; yalnız object version ID varsa |
+| Henüz yok | Canonical artifact publication, Vision reconciliation, processing manifest, genel table/asset catalog, chunking, embedding, indexing, Structured Knowledge Patch, stage retry, crash recovery |
 
 `document.json` içeriği kullanılan parser'a bağlıdır; canonical knowledge sözleşmesi değildir. `pages.json` yalnızca render boyutlarını içerir; processing manifest değildir. Job `done`, mevcut extraction yolunun tamamlandığını ifade eder; hedef pipeline'ın tamamlandığı anlamına gelmez.
 
 ## Sabitlenen ilk format scope'u
 
-**PDF, DOCX, TXT, XLSX.** Şu an live ingestion yalnızca PDF kabul eder. DOCX/TXT/XLSX sonraki structural parsing çalışmasına aittir ve API bunları şimdilik `415` ile reddeder. PPTX, HTML ve bağımsız image ingestion ilk scope dışında kalır.
+**PDF, DOCX, TXT, XLSX.** API MIME/extension ve upload byte biçimini doğrular. Desteklenmeyen veya uyuşmayan biçimler `415`, bozuk destekli içerik `422` döner. PPTX, HTML ve bağımsız image ingestion ilk scope dışında kalır.
 
-## Hedef pipeline — henüz uygulanmadı
+## Hedef pipeline — sonraki aşamalar
 
 ```text
 source → Docling structural parsing → quality/routing → Vision enrichment
@@ -37,11 +37,11 @@ source → Docling structural parsing → quality/routing → Vision enrichment
                              → optional embeddings / Qdrant
 ```
 
-Docling yapısal extraction'ın ana bileşeni, Gemini görsel/semantik enrichment bileşeni olacak. M0 mevcut Gemini-or-Docling seçimini değiştirmez. All-page Vision ileride değerlendirme modu olarak kalabilir; hedef selective routing'dir.
+M1b canonical structural yolunda Docling PDF/DOCX/XLSX için ana parser, TXT için deterministik decoder'dır. Mevcut PDF legacy JSON/Markdown akışı Gemini-or-Docling olarak kalır; Gemini sonucu canonical snapshot'a eklenmez. Selective Vision ve reconciliation resmî M2 kapsamındadır.
 
 Hedef artifact seti: `canonical.json`, `canonical.md`, `manifest.json`, `assets/`, `chunks.jsonl`; embeddings ve Qdrant opsiyoneldir. Bu artifact seti bugün üretilmez. Gelecekteki canonical export path sözleşmesi `documents/{document_id}/knowledge/{knowledge_revision_id}/canonical.json`; M1 bu nesneyi yazmaz ve mevcut raw artifact path'lerini değiştirmez.
 
-M1 contract'ı `packages/domain/docgrain_domain/canonical/` altındadır. Core schema ve domain schema ayrı; domain validation yalnızca açıkça sağlanan, checksum'ı eşleşen JSON Schema ile `docgrain-domain[validation]` opsiyonel bağımlılığı kullanır. `SourceVersion` ve `KnowledgeRevision` satırları immutable, revision'lar append-only ve latest/approved head ayrı tutulur. Mevcut MinIO upload key'i overwrite edilebildiği için checksum ve sabit object identity doğrulanmadan canlı upload bu modele güvenilir immutable source olarak bağlanmaz. Karar ayrıntısı [ADR 0005](docs/adr/0005-canonical-knowledge-foundation.md).
+M1 contract'ı `packages/domain/docgrain_domain/canonical/` altındadır. Eski 0.1.0 JSON Schema korunur; M1b `TableCell` genişlemesini 0.2.0 artifact'iyle sürümler. Core ve domain schema ayrıdır. `SourceVersion` ve `KnowledgeRevision` satırları immutable, revision'lar append-only ve latest/approved head ayrıdır. Mevcut upload key'i overwrite edilebilir; worker yalnız SHA-256 doğrulaması ve gerçek MinIO object `versionId` ile canonical persistence yapar. Version ID olmayan eski kaynaklar gate dışında kalır. [ADR 0005](docs/adr/0005-canonical-knowledge-foundation.md) ve [ADR 0006](docs/adr/0006-m1b-structural-parsing.md) ayrıntıları açıklar.
 
 ## Live ve demo modları
 
@@ -66,7 +66,7 @@ docker compose up --build
 
 [Console](http://localhost:3000), [API/OpenAPI](http://localhost:8000/docs), [MinIO](http://localhost:9001).
 
-Compose; API, worker, web, PostgreSQL, Redis, MinIO ve henüz kullanılmayan Qdrant servisini içerir. Qdrant container'ının çalışması indexing özelliği sağlamaz. M0 servis mimarisini değiştirmez.
+Compose; API, worker, web, PostgreSQL, Redis, MinIO ve henüz kullanılmayan Qdrant servisini içerir. MinIO bucket versioning yeni upload'lar için etkinleştirilir. Qdrant container'ının çalışması indexing özelliği sağlamaz.
 
 Altyapısız demo API (PowerShell):
 
@@ -99,7 +99,7 @@ npm ci
 npm run build
 ```
 
-`pytest.ini` API, worker ve domain source path'lerini tanımlar. Unit testleri gerçek Docling/PyMuPDF/model işlemi çalıştırmaz; tüm worker bağımlılıklarını yüklemeyi gerektirmez. M1 persistence integration testleri yalnızca `DOCGRAIN_M1_TEST_DATABASE_URL` ile etkinleşir ve ayrı, geçici PostgreSQL schema kullanır. Docker/provider integration ve golden document benchmark henüz yoktur.
+`pytest.ini` API, worker ve domain source path'lerini tanımlar. Unit testleri gerçek Docling modeli çalıştırmaz. M1 persistence integration testleri yalnızca `DOCGRAIN_M1_TEST_DATABASE_URL` ile etkinleşir ve ayrı, geçici PostgreSQL schema kullanır. M1b sentetik corpus generator ve gerçek Docling container integration testleri `tests/fixtures/structural/` ile `tests/integration/test_m1b_docling.py` altındadır.
 
 ## Bilinen sınırlar
 
@@ -115,7 +115,7 @@ Jev ve decision-provider framework; LangChain/LangGraph; çoklu Vision/embedding
 
 ## Sonraki çalışma
 
-M1 foundation sonrası M2 structural parsing ayrı onay gerektirir. [Milestone planı](docs/DEVELOPMENT_HARNESS.md), [mimari](docs/ARCHITECTURE.md) ve [M1 kararı](docs/adr/0005-canonical-knowledge-foundation.md).
+M1b structural parsing M1 milestone'un ikinci yarısıdır. Resmî M2 selective multimodal enrichment + reconciliation'dır. [Milestone planı](docs/DEVELOPMENT_HARNESS.md), [mimari](docs/ARCHITECTURE.md) ve [M1b kararı](docs/adr/0006-m1b-structural-parsing.md).
 
 ## License
 
