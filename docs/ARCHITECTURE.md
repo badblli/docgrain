@@ -1,16 +1,16 @@
-# Docgrain mimarisi — M1 canonical foundation
+# Docgrain mimarisi — M1b structural parsing
 
 ## Hedef yön
 
 Docgrain domain-agnostic bir document-to-knowledge engine'dir. Canonical structured knowledge kabul edilmiş bilginin kaynak doğrusu olacak; Markdown, chunks, embeddings ve consumer-specific JSON görünümleri türetilmiş projections olacaktır. Orijinal belge ve ham extraction kanıt olarak korunur. Core schema ile kullanıcı/domain schema ayrı kalır; LUWI yalnızca gelecekteki consumer'lardan biridir.
 
-Canonical v0.1 contract ve opt-in persistence M1'de eklendi. Yeni pipeline, live mapping veya canonical publication henüz implement edilmedi.
+M1a canonical 0.1.0 foundation'ı, M1b ise 0.2.0 TableCell genişlemesi ve multi-format structural mapping'i ekledi. Canonical artifact publication, Vision reconciliation ve projections henüz implement edilmedi.
 
 ## M1 contract sınırı
 
-`packages/domain/docgrain_domain/canonical/` structural tree, entity/relation/domain record, source evidence, fine-grained field/cell annotations, review/provenance/validation ve temporal contract'larını içerir. Core JSON Schema Pydantic'ten üretilir; domain schema ayrı pinned ref ve explicit validator'dır. Container `children` sırası reading order'dır; node listesi sırası değildir. PDF bbox top-left normalized 0..1, TXT offset'leri decoded Unicode code point `[start,end)`, spreadsheet aralıkları normalized A1'dir. Bu locator'ların runtime Docling/Gemini dönüşümü henüz yoktur.
+`packages/domain/docgrain_domain/canonical/` structural tree, entity/relation/domain record, source evidence, fine-grained field/cell annotations, review/provenance/validation ve temporal contract'larını içerir. Core JSON Schema Pydantic'ten üretilir; domain schema ayrı pinned ref ve explicit validator'dır. Container `children` sırası reading order'dır; node listesi sırası değildir. PDF bbox top-left normalized 0..1, TXT offset'leri decoded Unicode code point `[start,end)`, spreadsheet aralıkları normalized A1'dir. M1b structural locator dönüşümünü uygular; Gemini reconciliation yoktur.
 
-`apps/api/docgrain_api/canonical_repository.py` yalnızca açıkça çağrılabilen additive PostgreSQL foundation'dır: `source_versions`, `knowledge_revisions`, `document_knowledge_heads`. API lifespan, route ve worker bunu kullanmaz. Immutable source/revision row, ayrı latest/approved pointer ve CAS append/approval sağlar. Mevcut upload object key'leri overwrite edilebildiğinden source checksum ve değişmez object identity doğrulaması olmadan live upload yeni `SourceVersion`'a bağlanmaz. `document.json`, `document.md`, `pages.json`, PNG ve Vision JSON yolları aynıdır. `canonical.json` path contract tanımlı olsa da publication M4'e kalır.
+`apps/api/docgrain_api/canonical_repository.py` additive PostgreSQL foundation'dır: `source_versions`, `knowledge_revisions`, `document_knowledge_heads`. Compose modunda API başlangıcında tablolar hazırlanır; worker yalnız doğrulanmış SHA-256 ve gerçek MinIO object `versionId` ile revision ekler. Bu startup DDL tam production migration lifecycle değildir. Legacy upload key overwrite edilebilir; eski unversioned object canonical gate'i geçmez. `document.json`, `document.md`, `pages.json`, PNG ve Vision JSON yolları aynıdır. `canonical.json` publication sonraki milestone'dadır.
 
 ## Mevcut executable mimari
 
@@ -18,15 +18,17 @@ Canonical v0.1 contract ve opt-in persistence M1'de eklendi. Yeni pipeline, live
 web → FastAPI → PostgreSQL: document/version/job
               → MinIO: uploads/{document}/{version}/original
 confirmation → Redis LPUSH
-worker BRPOP → SQL queued-to-running claim → download source.pdf
-             → PyMuPDF render → Gemini (key varsa) veya Docling (OCR kapalı)
-             → MinIO: pages.json, pages/*.png, document.json, document.md
+worker BRPOP → SQL queued-to-running claim → download + SHA/format verification
+             → Docling PDF/DOCX/XLSX veya deterministic TXT → structural result
+             → canonical mapping → versioned source varsa PostgreSQL revision
+             → PDF için ayrıca PyMuPDF render → Gemini (key varsa) veya Docling legacy extraction
+             → PDF legacy MinIO: pages.json, pages/*.png, document.json, document.md
              → PostgreSQL: done/partial/failed
 ```
 
 Gemini sayfa çağrıları dört thread ve en fazla üç attempt ile çalışır. Başarılı sayfalar aggregate edilir; reconciliation yapılmaz. Docling ve Gemini aynı run içinde birleştirilmez. `quality` yalnızca temel sayfa/response kontrollerini ifade eder; completeness veya confidence ölçümü değildir.
 
-PostgreSQL üç metadata tablosuna sahiptir. MinIO binary/artifact deposudur. Redis yalnızca job-ID list dispatch için kullanılır; acknowledgment ve crash recovery yoktur. Qdrant yapılandırılmış ancak uygulamaya bağlanmamıştır.
+PostgreSQL üç legacy metadata tablosu ve üç additive canonical tabloya sahiptir. MinIO binary/artifact deposudur. Redis yalnızca job-ID list dispatch için kullanılır; acknowledgment ve crash recovery yoktur. Qdrant yapılandırılmış ancak uygulamaya bağlanmamıştır.
 
 API/worker ayrımı, FastAPI, PostgreSQL, MinIO, Redis, PyMuPDF, Docling, Gemini ve Pydantic M0'da korunur. Yeni framework/abstraction yoktur.
 
@@ -49,13 +51,13 @@ Retry her modda `501`; live chunk/similarity henüz `501`. Live table/asset/chun
 7. Optional embedding/Qdrant projection.
 8. Schema-aware Structured Knowledge Patch ve review policy.
 
-İlk format scope'u PDF, DOCX, TXT, XLSX; bugünkü ingestion PDF-only. Core provider sınırları hedefte `DocumentParser`, `VisionProvider`, `EmbeddingProvider`, `VectorStore`; henüz olmayan adapter'lar varmış gibi sunulmaz.
+İlk format scope'u PDF, DOCX, TXT, XLSX; API bu dört biçimi kabul eder. `DocumentParser` ve `CanonicalMapper` M1b'de vardır. `VisionProvider`, `EmbeddingProvider`, `VectorStore` sonraki milestone'ların hedef sınırlarıdır.
 
 Structured Knowledge Patch; old/new values, source evidence, confidence, extraction metadata ve schema version taşıyacak. Partial extraction'da eksik alanlar otomatik silme olarak yorumlanmayacak. Bu yalnızca gelecekteki tasarım kısıtıdır.
 
 ## Operasyonel sınırlar
 
-Job `done` mevcut extraction'ın bittiğini gösterir. Normalization/chunk/enrich/embed uygulanmadı; ayrı Vision enrichment aşaması yoktur. `publish` yalnızca extraction dosyalarının kaydını ifade eder. Processing manifest, atomic publication, stage resume ve tam stage timing yoktur. Tarihsel job kayıtları yeniden yazılmaz.
+Job `done` yalnız mevcut format extraction ve açık gate varsa canonical DB append işleminin bittiğini gösterir. Normalization/chunk/enrich/embed uygulanmadı; ayrı Vision enrichment aşaması yoktur. `publish` canonical artifact yayını değildir. Processing manifest, atomic publication, stage resume ve tam stage timing yoktur. Tarihsel job kayıtları yeniden yazılmaz.
 
 Tenant ID alanları authorization sağlamaz. Upload/source immutability ve content deduplication henüz enforce edilmez. Shared deployment öncesinde bunlar ayrıca ele alınmalıdır.
 

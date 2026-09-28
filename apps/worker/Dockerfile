@@ -10,13 +10,21 @@ RUN apt-get update \
 # Docling uses PyTorch for layout analysis. Pin the CPU wheel so a local
 # development worker does not download CUDA runtimes it cannot use.
 COPY apps/worker/pyproject.toml /srv/apps/worker/pyproject.toml
+COPY apps/api/pyproject.toml /srv/apps/api/pyproject.toml
+COPY packages/domain/pyproject.toml /srv/packages/domain/pyproject.toml
 RUN mkdir -p /srv/apps/worker/docgrain_worker \
-    && touch /srv/apps/worker/docgrain_worker/__init__.py
+    && touch /srv/apps/worker/docgrain_worker/__init__.py \
+    && mkdir -p /srv/apps/api/docgrain_api \
+    && touch /srv/apps/api/docgrain_api/__init__.py \
+    && mkdir -p /srv/packages/domain/docgrain_domain \
+    && touch /srv/packages/domain/docgrain_domain/__init__.py
 RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch torchvision \
-    && pip install --no-cache-dir -e /srv/apps/worker
+    && pip install --no-cache-dir -e /srv/packages/domain -e /srv/apps/api -e /srv/apps/worker
 
 # Keep application code in a separate layer so source edits reuse the heavy
 # Torch and Docling dependency layer above.
 COPY apps/worker/docgrain_worker /srv/apps/worker/docgrain_worker
+COPY apps/api/docgrain_api /srv/apps/api/docgrain_api
+COPY packages/domain/docgrain_domain /srv/packages/domain/docgrain_domain
 
 CMD ["python", "-m", "docgrain_worker.main"]

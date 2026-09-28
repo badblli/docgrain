@@ -9,8 +9,9 @@ M0 live/demo ayrımını, doğru capability reporting'i, test collection'ı ve �
 | Milestone | Kapsam |
 | --- | --- |
 | M0 | Scope freeze / cleanup: açık salt okunur demo, live fixture isolation, gerçek capability reporting, CI |
-| M1 | Canonical Knowledge Model: core/domain schema ayrımı, evidence ve knowledge revision sözleşmeleri |
-| M2 | Structural parsing: Docling primary, PDF/DOCX/TXT/XLSX dispatch ve mapping |
+| M1a | Canonical Knowledge Model foundation: core/domain schema ayrımı, evidence ve knowledge revision sözleşmeleri |
+| M1b | Multi-format structural parsing: Docling-first PDF/DOCX/XLSX, deterministic TXT ve canonical mapping |
+| M2 | Selective multimodal enrichment + reconciliation |
 | M3 | Vision enrichment + reconciliation: selective routing, evidence ve conflict handling |
 | M4 | Canonical JSON/Markdown/assets outputs ve processing manifest |
 | M5 | Canonical structure üzerinden semantic chunking |
@@ -18,7 +19,7 @@ M0 live/demo ayrımını, doğru capability reporting'i, test collection'ı ve �
 | M7 | Structured Knowledge Patch ve review policy |
 | M8 | Evaluation/benchmarking ve release kabulü |
 
-Reliability/provenance testleri her milestone'a eşlik eder; M8'e ertelenmez. M1 contract, generated schema, sentetik fixture ve bağımsız persistence foundation tamamlandı; M2–M8 çıktıları henüz mevcut değildir. M1 canlı extraction'a bağlı değildir.
+Reliability/provenance testleri her milestone'a eşlik eder; M8'e ertelenmez. M1a contract ve persistence foundation, M1b multi-format structural parser/mapping katmanı tamamlandı. M2 Vision reconciliation ve sonraki projection'lar mevcut değildir.
 
 ## Format ve deferred scope
 
@@ -57,7 +58,7 @@ Varsayılan testler açık demo veya izole live repository stub'ları kullanır;
 
 Demo UI: banner, disabled upload, sentetik chunks; API kapalı: görünür hata; live API boş: boş liste; live version'da boş artifacts: boş görünüm. Gerçek servislerle ayrıca PDF upload → processing → extraction artifacts doğrulanmalıdır.
 
-Henüz golden PDF/DOCX/TXT/XLSX corpus, gerçek parser/provider integration, crash injection ve cost/quality benchmark yoktur. `tests/fixtures/canonical/` M1 contract için iki sentetik JSON örneği içerir; bunlar parser çıktısı veya gerçek belge corpus'u değildir.
+`tests/fixtures/structural/generate.py` sentetik PDF/DOCX/TXT/XLSX corpus'u üretir; `tests/integration/test_m1b_docling.py` gerçek Docling worker container'ında çalışır. Geniş kalite benchmark'ı, crash injection ve cost ölçümü henüz yoktur. `tests/fixtures/canonical/` M1a contract örneklerini içerir.
 
 Mevcut worker aşama özetlerini sonda yazar. Eski job stage kayıtları M0 sırasında migrate edilmez. Veri modeli ve retry/recovery kapsamı sonraki çalışmada açıkça tasarlanacaktır.
 

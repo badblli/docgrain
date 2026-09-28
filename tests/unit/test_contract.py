@@ -60,7 +60,7 @@ def test_registered_file_can_be_stored_then_confirmed(monkeypatch: pytest.Monkey
             "workspace_id": "ws_luwi",
             "filename": "test.pdf",
             "mime_type": "application/pdf",
-            "byte_size": 4,
+            "byte_size": 9,
         },
     )
     assert registration.status_code == 202
@@ -70,10 +70,10 @@ def test_registered_file_can_be_stored_then_confirmed(monkeypatch: pytest.Monkey
     )
     upload = client.put(
         payload["upload_url"],
-        files={"file": ("test.pdf", b"test", "application/pdf")},
+        files={"file": ("test.pdf", b"%PDF-test", "application/pdf")},
     )
     assert upload.status_code == 201
-    assert stored["length"] == 4
+    assert stored["length"] == 9
     confirmation = client.post(
         f"/v1/documents/{payload['document']['id']}/versions/{payload['version']['id']}/uploaded"
     )
