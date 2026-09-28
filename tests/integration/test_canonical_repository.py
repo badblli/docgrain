@@ -76,14 +76,17 @@ def test_append_idempotency_immutability_and_heads(store) -> None:
 
     for table in ("source_versions", "knowledge_revisions"):
         for operation in ("UPDATE", "DELETE"):
-            with pytest.raises(psycopg.errors.RaiseException):
-                with connect() as connection, connection.cursor() as cursor:
-                    if operation == "UPDATE":
-                        cursor.execute(sql.SQL("UPDATE {} SET workspace_id = workspace_id")
-                                       .format(sql.Identifier(schema, table)))
-                    else:
-                        cursor.execute(sql.SQL("DELETE FROM {}")
-                                       .format(sql.Identifier(schema, table)))
+            with (
+                pytest.raises(psycopg.errors.RaiseException),
+                connect() as connection,
+                connection.cursor() as cursor,
+            ):
+                if operation == "UPDATE":
+                    cursor.execute(sql.SQL("UPDATE {} SET workspace_id = workspace_id")
+                                   .format(sql.Identifier(schema, table)))
+                else:
+                    cursor.execute(sql.SQL("DELETE FROM {}")
+                                   .format(sql.Identifier(schema, table)))
 
     second = snapshot("revision-second", "revision-pdf")
     assert repository.append(second, expected_latest_revision_id="revision-pdf") is True

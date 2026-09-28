@@ -5,7 +5,14 @@ from __future__ import annotations
 from collections import Counter
 from typing import TYPE_CHECKING
 
-from .models import Annotation, AssetNode, ChartNode, DocumentNode, ListNode, SectionNode
+from .models import (
+    Annotation,
+    AssetNode,
+    ChartNode,
+    DocumentNode,
+    ListNode,
+    SectionNode,
+)
 
 if TYPE_CHECKING:
     from .models import CanonicalKnowledgeSnapshot
@@ -60,9 +67,12 @@ def validate_snapshot(snapshot: CanonicalKnowledgeSnapshot) -> None:
                 if child_id not in nodes:
                     raise ValueError(f"dangling child reference: {child_id}")
                 parents[child_id] += 1
-        if isinstance(node, (AssetNode, ChartNode)) and node.artifact_id is not None:
-            if node.artifact_id not in artifacts:
-                raise ValueError(f"dangling artifact reference: {node.artifact_id}")
+        if (
+            isinstance(node, (AssetNode, ChartNode))
+            and node.artifact_id is not None
+            and node.artifact_id not in artifacts
+        ):
+            raise ValueError(f"dangling artifact reference: {node.artifact_id}")
     if parents[snapshot.root_node_id]:
         raise ValueError("structural root has a parent or cycle")
     visited: set[str] = set()

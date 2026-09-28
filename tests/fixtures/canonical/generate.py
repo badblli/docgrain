@@ -6,7 +6,11 @@ import hashlib
 import json
 from pathlib import Path
 
-from docgrain_domain.canonical import CanonicalKnowledgeSnapshot, canonical_json_bytes, deterministic_item_id
+from docgrain_domain.canonical import (
+    CanonicalKnowledgeSnapshot,
+    canonical_json_bytes,
+    deterministic_item_id,
+)
 
 HERE = Path(__file__).resolve().parent
 STAMP = "2026-09-28T10:00:00+00:00"

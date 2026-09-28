@@ -1,6 +1,11 @@
 """Canonical knowledge v0.1 public contract. Legacy domain models remain separate."""
 
-from .identity import IDENTITY_POLICY_VERSION, canonical_json_bytes, deterministic_item_id, new_canonical_id
+from .identity import (
+    IDENTITY_POLICY_VERSION,
+    canonical_json_bytes,
+    deterministic_item_id,
+    new_canonical_id,
+)
 from .locations import (
     ArtifactObjectLocator,
     DocxBlockLocator,

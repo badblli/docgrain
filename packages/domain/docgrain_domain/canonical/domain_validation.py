@@ -41,7 +41,7 @@ def validate_domain_record(
     Draft202012Validator.check_schema(materialized)
     validator = Draft202012Validator(materialized)
     errors = sorted(
-        (f"/{'/'.join(str(part) for part in error.absolute_path)}: {error.message}"
-         for error in validator.iter_errors(record.values))
+        f"/{'/'.join(str(part) for part in error.absolute_path)}: {error.message}"
+         for error in validator.iter_errors(record.values)
     )
     return DomainValidationResult(status="invalid", errors=errors) if errors else DomainValidationResult(status="valid")
