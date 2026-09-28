@@ -48,6 +48,13 @@ def test_demo_artifacts_do_not_contact_storage(monkeypatch):
     assert client.get("/v1/versions/dver_2/pages/1/render").status_code == 404
 
 
+def test_demo_repository_is_read_only():
+    before = len(repository.list_documents())
+    with pytest.raises(RuntimeError, match="read-only"):
+        repository.add(fixtures.DOCUMENTS[0], fixtures.VERSIONS[0], fixtures.JOBS[0])
+    assert len(repository.list_documents()) == before
+
+
 def test_live_empty_repository_never_returns_demo_records(live_repository):
     assert client.get("/healthz").json()["mode"] == "live"
     for path in ("/v1/documents", "/v1/jobs"):

@@ -81,10 +81,7 @@ def _job(row: dict[str, object]) -> Job:
 
 def add(document: Document, version: DocumentVersion, job: Job) -> None:
     if _fixture_mode():
-        _documents.append(document)
-        _versions.append(version)
-        _jobs.append(job)
-        return
+        raise RuntimeError("demo repository is read-only")
     with _connection() as connection, connection.cursor() as cursor:
         cursor.execute(
             """INSERT INTO documents VALUES (%(id)s, %(workspace_id)s, %(title)s, %(filename)s,
