@@ -1,4 +1,4 @@
-"""Opt-in M1 canonical storage. Nothing in the live API/worker calls this module yet."""
+"""Canonical revision storage; callers verify source bytes and object version."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ class CanonicalRepository:
 
     Source metadata is immutable here, but current MinIO upload keys can be overwritten.
     Callers must verify source bytes and stable object identity before using this store.
-    M1 deliberately does not connect existing uploads to SourceVersion.
+    M1b callers may persist only a verified, version-addressed source object.
     """
 
     def __init__(self, connect: Callable[[], psycopg.Connection], schema: str = "public") -> None:
@@ -33,7 +33,7 @@ class CanonicalRepository:
         return sql.Identifier(self._schema, name)
 
     def initialize(self) -> None:
-        """Explicit DDL foundation, not a migration or automatic application startup hook."""
+        """Additive DDL foundation, not a production migration lifecycle."""
         with self._connect() as connection, connection.cursor() as cursor:
             cursor.execute(sql.SQL("""
                 CREATE TABLE IF NOT EXISTS {} (

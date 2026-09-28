@@ -6,7 +6,7 @@ import json
 
 from .models import CanonicalKnowledgeSnapshot
 
-SCHEMA_ID = "urn:docgrain:canonical-knowledge:0.1.0"
+SCHEMA_ID = "urn:docgrain:canonical-knowledge:0.2.0"
 DIALECT = "https://json-schema.org/draft/2020-12/schema"
 
 
@@ -14,6 +14,7 @@ def generated_core_schema() -> dict[str, object]:
     schema = CanonicalKnowledgeSnapshot.model_json_schema(mode="validation")
     schema["$schema"] = DIALECT
     schema["$id"] = SCHEMA_ID
+    schema["properties"]["schema_version"] = {"const": "0.2.0", "title": "Schema Version", "type": "string"}
     return schema
 
 

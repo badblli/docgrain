@@ -190,6 +190,12 @@ class TextBlock(NodeBase):
 class TableCell(StrictModel):
     value: JsonValue
     annotation: Annotation | None = None
+    # 0.2.0: preserve spreadsheet source facts without evaluating formulas.
+    formula: str | None = None
+    cached_value: JsonValue = None
+    display_text: str | None = None
+    row_span: int = Field(default=1, ge=1)
+    col_span: int = Field(default=1, ge=1)
 
 
 class TableNode(NodeBase):
@@ -264,7 +270,7 @@ class DomainRecord(StrictModel):
 
 
 class CanonicalKnowledgeSnapshot(StrictModel):
-    schema_version: Literal["0.1.0"] = "0.1.0"
+    schema_version: Literal["0.1.0", "0.2.0"] = "0.2.0"
     identity_policy_version: Literal["0.1.0"] = IDENTITY_POLICY_VERSION
     document_id: str = Field(min_length=1)
     workspace_id: str = Field(min_length=1)
@@ -284,5 +290,13 @@ class CanonicalKnowledgeSnapshot(StrictModel):
     def semantic_validation(self) -> CanonicalKnowledgeSnapshot:
         from .validation import validate_snapshot
 
+        if self.schema_version == "0.1.0":
+            for node in self.structure:
+                if isinstance(node, TableNode):
+                    for row in node.rows:
+                        for cell in row:
+                            if (cell.formula is not None or cell.cached_value is not None
+                                    or cell.display_text is not None or cell.row_span != 1 or cell.col_span != 1):
+                                raise ValueError("0.2.0 table cell fields require schema_version 0.2.0")
         validate_snapshot(self)
         return self

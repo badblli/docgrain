@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from hashlib import sha256
+from io import BytesIO
 from typing import Annotated
 
 from docgrain_domain import (
@@ -15,6 +17,12 @@ from docgrain_domain import (
     StageStatus,
     VersionStatus,
     new_id,
+)
+from docgrain_domain.source_format import (
+    CorruptSource,
+    FormatMismatch,
+    declared_format,
+    verify_format,
 )
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from fastapi.responses import PlainTextResponse
@@ -37,7 +45,7 @@ class RegisterRequest(BaseModel):
     """A registration never carries the file body itself.
 
     The client uploads through the API proxy and then confirms. Registration
-    records metadata; only confirmation enqueues work. Live ingestion is PDF-only.
+    records metadata; only confirmation enqueues work.
     """
 
     workspace_id: str
@@ -121,14 +129,14 @@ def get_artifact(document_id: str, version_id: str, artifact_name: str) -> Plain
 
 @router.post("", response_model=RegisterResponse, status_code=status.HTTP_202_ACCEPTED)
 def register_document(payload: RegisterRequest) -> RegisterResponse:
-    """Register a new PDF document/version; confirmation enqueues the job."""
+    """Register a supported document/version; confirmation enqueues the job."""
     _require_live_uploads()
     if payload.source_uri is not None:
         raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "external source ingestion is not implemented")
-    if not payload.filename.lower().endswith(".pdf") or payload.mime_type not in {
-        "application/pdf", "application/octet-stream"
-    }:
-        raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "current ingestion supports PDF only; DOCX, TXT and XLSX are planned")
+    try:
+        declared_format(payload.filename, payload.mime_type)
+    except FormatMismatch as exc:
+        raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, str(exc)) from exc
     now = datetime.now(UTC)
     document_id = new_id("document")
     version_id = new_id("version")
@@ -197,8 +205,22 @@ def upload_content(
     document = repository.get_document(document_id)
     if document is None or file.filename != document.filename:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "uploaded filename does not match registration")
+    try:
+        source_format = declared_format(document.filename, document.mime_type)
+        if file.content_type:
+            declared_format(document.filename, file.content_type)
+        data = file.file.read()
+        if len(data) != version.byte_size:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "upload size differs from registration")
+        verify_format(data, source_format)
+    except FormatMismatch as exc:
+        raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, str(exc)) from exc
+    except CorruptSource as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
+    if version.content_sha256 != "0" * 64 and sha256(data).hexdigest() != version.content_sha256:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "upload checksum differs from registration")
     object_name = f"uploads/{document_id}/{version_id}/original"
-    put_upload(object_name, file.file, file.content_type or "application/octet-stream", version.byte_size)
+    put_upload(object_name, BytesIO(data), file.content_type or "application/octet-stream", len(data))
     return {"status": "stored", "object_name": object_name}
 
 

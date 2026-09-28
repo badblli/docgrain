@@ -1,4 +1,4 @@
-"""PDF worker: source object to provider-specific extraction artifacts."""
+"""Worker for verified source parsing and legacy PDF extraction artifacts."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import json
 import os
 from contextlib import closing
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
@@ -15,12 +16,22 @@ from urllib.parse import urlparse
 import psycopg
 import pymupdf
 import redis
+from docgrain_api.canonical_repository import CanonicalRepository
+from docgrain_domain.canonical import SourceVersion
+from docgrain_domain.source_format import SourceFormat, declared_format, verify_format
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from minio import Minio
 
+from .canonical_mapper import CanonicalMapper
 from .quality import missing_extraction_pages, page_failures
+from .structural import (
+    DocumentParser,
+    ParseIssue,
+    StructuralParseResult,
+    VerifiedSource,
+)
 from .vision import GeminiPageExtractor, extract_pages
 
 QUEUE_NAME = "docgrain:pipeline"
@@ -35,13 +46,7 @@ class RenderedPage:
 
 
 def document_converter() -> DocumentConverter:
-    """Build the deterministic secondary parser used after page rendering.
-
-    OCR is deliberately disabled here. Gemini currently owns page reading when
-    configured. The target direction
-    makes Docling primary, but M0 does not change extraction ownership.
-    The existing page-dimension check does not establish OCR completeness.
-    """
+    """Build the legacy PDF artifact parser; canonical parsing uses DocumentParser."""
     options = PdfPipelineOptions(do_ocr=False)
     return DocumentConverter(
         format_options={
@@ -67,39 +72,53 @@ def stage_update(
     missing_pages: list[int] | None = None,
     extraction_provider: str = "docling",
     failed_stage: str = "extract",
+    non_pdf: bool = False,
+    structural_status: str | None = None,
+    structural_issues: list[dict[str, object]] | None = None,
+    canonical_persisted: bool = False,
 ) -> list[dict[str, object]]:
     done = {"register", "render", "extract", "quality", "publish"}
     missing_pages = missing_pages or []
     for stage in stages:
         name = str(stage["stage"])
         stage["status"] = "failed" if failed and name == failed_stage else ("done" if name in done and not failed else "skipped")
+        if non_pdf and name == "render":
+            stage["status"] = "skipped"
+            stage["summary"] = "Not applicable to this source format."
         stage["error"] = failed if failed and name == failed_stage else None
-        if name == "render" and not failed:
+        if name == "render" and not failed and not non_pdf:
             stage["summary"] = f"{rendered_pages} pages rendered at 200 DPI."
             stage["provider"] = "pymupdf"
             stage["attributes"] = {"pages": rendered_pages, "dpi": 200}
         elif name == "extract" and not failed:
-            stage["summary"] = (
+            stage["summary"] = ("Structural extraction completed." if non_pdf else (
                 f"{rendered_pages - len(missing_pages)} of {rendered_pages} pages extracted."
-            )
+            ))
             stage["provider"] = extraction_provider
             stage["attributes"] = {
                 "pages": rendered_pages,
                 "failed_pages": missing_pages,
+                "structural_status": structural_status,
+                "structural_issues": structural_issues or [],
+                "canonical_persisted": canonical_persisted,
             }
         elif name == "quality" and not failed:
-            stage["summary"] = (
+            stage["summary"] = (f"Structural parse: {structural_status}; {len(structural_issues or [])} issues."
+                                if non_pdf else (
                 "No page failures recorded; extraction completeness/confidence are not measured."
                 if not missing_pages
                 else f"{len(missing_pages)} pages failed; stage replay is not implemented."
-            )
-            stage["attributes"] = {"failed_pages": missing_pages}
+            ))
+            stage["attributes"] = {"failed_pages": missing_pages, "structural_issues": structural_issues or []}
         if name in {"normalize", "chunk", "enrich", "embed"}:
             stage["summary"] = "Not implemented."
         elif name == "vision":
             stage["summary"] = "No separate enrichment stage; configured Vision runs under extract."
         elif name == "publish" and not failed:
-            stage["summary"] = "Extraction JSON/Markdown stored; no canonical manifest or index was produced."
+            stage["summary"] = ("Canonical revision persisted; no canonical artifact/manifest or index was produced."
+                                if canonical_persisted else
+                                ("Structural extraction completed; no canonical revision or PDF artifacts were published."
+                                 if non_pdf else "Extraction JSON/Markdown stored; no canonical manifest or index was produced."))
     return stages
 
 
@@ -213,64 +232,126 @@ def gemini_extraction(
 
 def process(job_id: str) -> None:
     with closing(psycopg.connect(db_url())) as conn, conn.cursor() as cur:
-        cur.execute("SELECT document_version_id, document_id, stages FROM jobs WHERE id=%s AND status='running'", (job_id,))
+        cur.execute("""SELECT j.document_version_id, j.document_id, j.stages,
+                             d.filename, d.mime_type, d.workspace_id, v.byte_size, v.content_sha256
+                      FROM jobs j JOIN documents d ON d.id=j.document_id
+                      JOIN document_versions v ON v.id=j.document_version_id
+                      WHERE j.id=%s AND j.status='running'""", (job_id,))
         row = cur.fetchone()
     if row is None:
         return
-    version_id, document_id, stages = row
+    version_id, document_id, stages, filename, mime_type, workspace_id, expected_size, expected_sha = row
     bucket = os.environ["S3_BUCKET"]
-    active_stage = "render"
+    active_stage = "extract"
     try:
         with TemporaryDirectory() as temp:
-            response = storage().get_object(bucket, f"uploads/{document_id}/{version_id}/original")
-            source = Path(temp) / "source.pdf"
+            client = storage()
+            object_key = f"uploads/{document_id}/{version_id}/original"
+            response = client.get_object(bucket, object_key)
+            source_format = declared_format(filename, mime_type)
+            source = Path(temp) / f"source.{source_format.value}"
             try:
                 source.write_bytes(response.read())
+                storage_version = response.headers.get("x-amz-version-id")
             finally:
                 response.close()
                 response.release_conn()
+            source_bytes = source.read_bytes()
+            content_hash = sha256(source_bytes).hexdigest()
+            if len(source_bytes) != expected_size:
+                raise ValueError("source byte size differs from registration")
+            if expected_sha != "0" * 64 and expected_sha != content_hash:
+                raise ValueError("source SHA-256 differs from registration")
+            verify_format(source_bytes, source_format)
+            try:
+                structural = DocumentParser().parse(VerifiedSource(source, content_hash, len(source_bytes)), source_format)
+            except Exception as exc:
+                if source_format is not SourceFormat.PDF:
+                    raise
+                structural = StructuralParseResult(
+                    source_format, "docling", "unknown", "failed", [], [], [],
+                    [ParseIssue("conversion_failed", "structural_parse", source_format, None, None,
+                                str(exc)[:1000], "document")],
+                )
             prefix = f"artifacts/{document_id}/{version_id}"
-            rendered = render_pages(source, prefix, bucket, Path(temp))
-            rendered_page_count = len(rendered)
-            active_stage = "extract"
-            gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
-            gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.7-flash")
-            if gemini_key:
-                (
-                    markdown,
-                    structured,
-                    missing_pages,
-                    failures,
-                    table_count,
-                    asset_count,
-                ) = gemini_extraction(
-                    rendered, prefix, bucket, gemini_key, gemini_model
-                )
-                parser = "gemini-vision"
-                vision_provider = gemini_model
-                extraction_provider = gemini_model
+            if structural.status == "failed" and source_format is not SourceFormat.PDF:
+                raise ValueError("structural parser failed: " + "; ".join(i.reason for i in structural.issues))
+            canonical_persisted = False
+            structural_issues = [i.__dict__ for i in structural.issues]
+            if os.getenv("CANONICAL_PERSISTENCE_ENABLED", "false").lower() == "true":
+                if storage_version and storage_version != "null" and structural.status != "failed":
+                    for item in structural.items:
+                        if item.asset_bytes:
+                            digest = sha256(item.asset_bytes).hexdigest()
+                            object_name = f"{prefix}/structural/assets/{digest}"
+                            stored_asset = client.put_object(bucket, object_name, BytesIO(item.asset_bytes),
+                                                             len(item.asset_bytes), content_type=item.asset_mime or "application/octet-stream")
+                            if not stored_asset.version_id:
+                                raise ValueError("extracted asset has no immutable object version")
+                            item.asset_path = f"s3://{bucket}/{object_name}?versionId={stored_asset.version_id}"
+                    stat = client.stat_object(bucket, object_key, version_id=storage_version)
+                    source_id = "source_" + sha256(f"{version_id}:{storage_version}".encode()).hexdigest()[:32]
+                    source_version = SourceVersion(
+                        id=source_id, document_id=document_id, workspace_id=workspace_id,
+                        content_sha256=content_hash,
+                        storage_uri=f"s3://{bucket}/{object_key}?versionId={storage_version}",
+                        storage_version=storage_version, byte_size=len(source_bytes), mime_type=mime_type,
+                        filename=filename, recorded_at=stat.last_modified or datetime.now(UTC),
+                    )
+                    revision_id = "revision_" + sha256(
+                        f"{source_id}:{structural.parser}:{structural.parser_version}:m1b-0.2.0".encode()
+                    ).hexdigest()[:32]
+                    snapshot = CanonicalMapper().map(structural, source_version, revision_id=revision_id,
+                                                     created_at=source_version.recorded_at,
+                                                     pdf_path=source if source_format is SourceFormat.PDF else None)
+                    CanonicalRepository(lambda: psycopg.connect(db_url())).append(
+                        snapshot, expected_latest_revision_id=None
+                    )
+                    canonical_persisted = True
+                    structural_issues = snapshot.metadata["structural_parse"]["issues"]
+                else:
+                    structural_issues.append({"code": "source_not_versioned", "stage": "source_verification",
+                                              "reason": "Immutable object version is unavailable; canonical persistence gated",
+                                              "impact": "document"})
+            if source_format is SourceFormat.PDF:
+                active_stage = "render"
+                rendered = render_pages(source, prefix, bucket, Path(temp))
+                rendered_page_count = len(rendered)
+                active_stage = "extract"
+                gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+                gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.7-flash")
+                if gemini_key:
+                    markdown, structured, missing_pages, failures, table_count, asset_count = gemini_extraction(
+                        rendered, prefix, bucket, gemini_key, gemini_model
+                    )
+                    parser = "gemini-vision"
+                    vision_provider = gemini_model
+                    extraction_provider = gemini_model
+                else:
+                    document = document_converter().convert(source).document
+                    markdown = document.export_to_markdown().encode()
+                    structured_dict = document.export_to_dict()
+                    structured = json.dumps(structured_dict, ensure_ascii=False).encode()
+                    missing_pages = missing_extraction_pages(structured_dict, rendered_page_count)
+                    failures = page_failures(missing_pages)
+                    table_count = len(getattr(document, "tables", []))
+                    asset_count = len(getattr(document, "pictures", []))
+                    parser = "docling-fallback"
+                    vision_provider = None
+                    extraction_provider = "docling-fallback"
+                active_stage = "publish"
+                client.put_object(bucket, f"{prefix}/document.md", BytesIO(markdown), len(markdown), content_type="text/markdown")
+                client.put_object(bucket, f"{prefix}/document.json", BytesIO(structured), len(structured), content_type="application/json")
             else:
-                document = document_converter().convert(source).document
-                markdown = document.export_to_markdown().encode()
-                structured_dict = document.export_to_dict()
-                structured = json.dumps(
-                    structured_dict, ensure_ascii=False
-                ).encode()
-                missing_pages = missing_extraction_pages(
-                    structured_dict, rendered_page_count
-                )
-                failures = page_failures(missing_pages)
-                table_count = len(getattr(document, "tables", []))
-                asset_count = len(getattr(document, "pictures", []))
-                parser = "docling-fallback"
+                rendered_page_count = 0
+                missing_pages = []
+                failures = []
+                table_count = sum(i.kind == "table" for i in structural.items)
+                asset_count = 0
+                parser = structural.parser
                 vision_provider = None
-                extraction_provider = "docling-fallback"
-            active_stage = "publish"
-            final_status = "partial" if failures else "done"
-            content_hash = sha256(source.read_bytes()).hexdigest()
-            client = storage()
-            client.put_object(bucket, f"{prefix}/document.md", BytesIO(markdown), len(markdown), content_type="text/markdown")
-            client.put_object(bucket, f"{prefix}/document.json", BytesIO(structured), len(structured), content_type="application/json")
+                extraction_provider = structural.parser
+            final_status = "partial" if failures or structural_issues or not canonical_persisted else "done"
         with closing(psycopg.connect(db_url())) as conn, conn.cursor() as cur:
             cur.execute(
                 """UPDATE document_versions
@@ -302,6 +383,10 @@ def process(job_id: str) -> None:
                             rendered_pages=rendered_page_count,
                             missing_pages=missing_pages,
                             extraction_provider=extraction_provider,
+                            non_pdf=source_format is not SourceFormat.PDF,
+                            structural_status=structural.status,
+                            structural_issues=structural_issues,
+                            canonical_persisted=canonical_persisted,
                         )
                     ),
                     json.dumps(failures),
