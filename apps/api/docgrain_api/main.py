@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .canonical_repository import CanonicalRepository
 from .repository import initialize
-from .routers import chunks, documents, jobs, providers, versions
+from .routers import chunks, documents, jobs, knowledge, providers, versions
 from .settings import get_settings
 
 settings = get_settings()
@@ -47,6 +47,7 @@ app = FastAPI(
         {"name": "documents", "description": "Registration, listing, versions."},
         {"name": "jobs", "description": "Job status; stage retry is not implemented."},
         {"name": "versions", "description": "Page renders and counts; demo-only tables/assets/chunks."},
+        {"name": "knowledge", "description": "Read-only canonical knowledge revisions."},
         {"name": "chunks", "description": "Demo-only chunk and simulated neighbor inspection."},
         {"name": "providers", "description": "Configuration inventory, not connectivity probes."},
     ],
@@ -69,6 +70,8 @@ async def identify_mode(request: Request, call_next):
 
 for module in (documents, jobs, versions, chunks, providers):
     app.include_router(module.router)
+app.include_router(knowledge.document_router)
+app.include_router(knowledge.revision_router)
 
 
 @app.get("/healthz", tags=["ops"])
