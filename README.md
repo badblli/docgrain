@@ -8,7 +8,7 @@ Docgrain genel amaçlıdır. LUWI gelecekteki tüketicilerinden biridir; core i�
 
 Hedef mimaride **canonical structured knowledge kaynak doğrusudur**. Markdown, chunks, embeddings ve uygulamaya özel görünümler bu modelden türetilir. Orijinal belgeler ve ham extraction sonuçları kanıt olarak korunur. Core schema ile kullanıcı/domain JSON Schema ayrı kalır.
 
-**Durum: pre-alpha / M0 Scope Freeze. Canonical Knowledge Model henüz implement edilmedi.**
+**Durum: pre-alpha / M1 canonical foundation.** Canonical v0.1 contract, JSON Schema ve bağımsız persistence repository eklendi; live ingestion bunları henüz üretmez veya kullanmaz.
 
 | Alan | Bugünkü implementasyon |
 | --- | --- |
@@ -19,7 +19,8 @@ Hedef mimaride **canonical structured knowledge kaynak doğrusudur**. Markdown, 
 | Metadata | PostgreSQL document/version/job kayıtları |
 | Kısmi hata | Bazı extraction hataları page failure olarak kaydedilir; bu recovery garantisi değildir |
 | Console | API kayıtları, page render, doküman düzeyinde extraction Markdown; açık demo modu |
-| Henüz yok | Canonical model, reconciliation, normalization, processing manifest, gerçek table/asset catalog, chunking, embedding, indexing, Structured Knowledge Patch, stage retry, crash recovery |
+| Canonical foundation | Ayrı Pydantic v0.1 model, generated JSON Schema, sentetik örnekler ve opt-in PostgreSQL repository; henüz live pipeline'a bağlı değil |
+| Henüz yok | Canonical mapping/publication, reconciliation, normalization, processing manifest, gerçek table/asset catalog, chunking, embedding, indexing, Structured Knowledge Patch, stage retry, crash recovery |
 
 `document.json` içeriği kullanılan parser'a bağlıdır; canonical knowledge sözleşmesi değildir. `pages.json` yalnızca render boyutlarını içerir; processing manifest değildir. Job `done`, mevcut extraction yolunun tamamlandığını ifade eder; hedef pipeline'ın tamamlandığı anlamına gelmez.
 
@@ -38,7 +39,9 @@ source → Docling structural parsing → quality/routing → Vision enrichment
 
 Docling yapısal extraction'ın ana bileşeni, Gemini görsel/semantik enrichment bileşeni olacak. M0 mevcut Gemini-or-Docling seçimini değiştirmez. All-page Vision ileride değerlendirme modu olarak kalabilir; hedef selective routing'dir.
 
-Hedef artifact seti: `canonical.json`, `canonical.md`, `manifest.json`, `assets/`, `chunks.jsonl`; embeddings ve Qdrant opsiyoneldir. Bu artifact seti bugün üretilmez.
+Hedef artifact seti: `canonical.json`, `canonical.md`, `manifest.json`, `assets/`, `chunks.jsonl`; embeddings ve Qdrant opsiyoneldir. Bu artifact seti bugün üretilmez. Gelecekteki canonical export path sözleşmesi `documents/{document_id}/knowledge/{knowledge_revision_id}/canonical.json`; M1 bu nesneyi yazmaz ve mevcut raw artifact path'lerini değiştirmez.
+
+M1 contract'ı `packages/domain/docgrain_domain/canonical/` altındadır. Core schema ve domain schema ayrı; domain validation yalnızca açıkça sağlanan, checksum'ı eşleşen JSON Schema ile `docgrain-domain[validation]` opsiyonel bağımlılığı kullanır. `SourceVersion` ve `KnowledgeRevision` satırları immutable, revision'lar append-only ve latest/approved head ayrı tutulur. Mevcut MinIO upload key'i overwrite edilebildiği için checksum ve sabit object identity doğrulanmadan canlı upload bu modele güvenilir immutable source olarak bağlanmaz. Karar ayrıntısı [ADR 0005](docs/adr/0005-canonical-knowledge-foundation.md).
 
 ## Live ve demo modları
 
@@ -68,7 +71,7 @@ Compose; API, worker, web, PostgreSQL, Redis, MinIO ve henüz kullanılmayan Qdr
 Altyapısız demo API (PowerShell):
 
 ```powershell
-python -m pip install -e packages/domain -e 'apps/api[dev]'
+python -m pip install -e 'packages/domain[validation]' -e 'apps/api[dev]'
 $env:USE_FIXTURES = "true"
 python -m uvicorn docgrain_api.main:app --port 8000
 ```
@@ -88,7 +91,7 @@ Hedef `docgrain ingest` / `docgrain index` CLI henüz yoktur. Basit local conver
 ## Doğrulama
 
 ```sh
-python -m pip install -e packages/domain -e 'apps/api[dev]'
+python -m pip install -e 'packages/domain[validation]' -e 'apps/api[dev]'
 python -m pytest -q
 ruff check apps packages tests
 cd apps/web
@@ -96,7 +99,7 @@ npm ci
 npm run build
 ```
 
-`pytest.ini` API, worker ve domain source path'lerini tanımlar. Unit testleri gerçek Docling/PyMuPDF/model işlemi çalıştırmaz; tüm worker bağımlılıklarını yüklemeyi gerektirmez. Docker/provider integration ve golden document benchmark henüz yoktur.
+`pytest.ini` API, worker ve domain source path'lerini tanımlar. Unit testleri gerçek Docling/PyMuPDF/model işlemi çalıştırmaz; tüm worker bağımlılıklarını yüklemeyi gerektirmez. M1 persistence integration testleri yalnızca `DOCGRAIN_M1_TEST_DATABASE_URL` ile etkinleşir ve ayrı, geçici PostgreSQL schema kullanır. Docker/provider integration ve golden document benchmark henüz yoktur.
 
 ## Bilinen sınırlar
 
@@ -112,7 +115,7 @@ Jev ve decision-provider framework; LangChain/LangGraph; çoklu Vision/embedding
 
 ## Sonraki çalışma
 
-M0 sonrası ayrı onayla M1 Canonical Knowledge Model. [Milestone planı](docs/DEVELOPMENT_HARNESS.md), [mimari](docs/ARCHITECTURE.md) ve [M0 kararı](docs/adr/0004-canonical-first-scope-freeze.md).
+M1 foundation sonrası M2 structural parsing ayrı onay gerektirir. [Milestone planı](docs/DEVELOPMENT_HARNESS.md), [mimari](docs/ARCHITECTURE.md) ve [M1 kararı](docs/adr/0005-canonical-knowledge-foundation.md).
 
 ## License
 

@@ -9,6 +9,7 @@ __pycache__/
 # Node
 node_modules/
 .next/
+*.tsbuildinfo
 out/
 
 # Browser smoke-test output (not product fixtures)
