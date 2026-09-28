@@ -1,0 +1,390 @@
+{
+  "artifacts": [],
+  "document_id": "document-generic-pdf",
+  "domain_schemas": [],
+  "entities": [
+    {
+      "annotation": {
+        "provenance": {
+          "confidence": null,
+          "confidence_method": null,
+          "derivation": "direct",
+          "evidence_ids": [
+            "evidence-paragraph"
+          ],
+          "method": "parser",
+          "producer_id": "producer-synthetic"
+        },
+        "review_status": "unreviewed"
+      },
+      "field_annotations": {
+        "label": {
+          "provenance": {
+            "confidence": null,
+            "confidence_method": null,
+            "derivation": "direct",
+            "evidence_ids": [
+              "evidence-paragraph"
+            ],
+            "method": "parser",
+            "producer_id": "producer-synthetic"
+          },
+          "review_status": "unreviewed"
+        }
+      },
+      "id": "entity_c4cb7ab294643e71332493eae921e0d4",
+      "identity_key": "site-izmir",
+      "label": "İzmir",
+      "properties": {},
+      "type": "site",
+      "validity": null
+    },
+    {
+      "annotation": {
+        "provenance": {
+          "confidence": null,
+          "confidence_method": null,
+          "derivation": "direct",
+          "evidence_ids": [
+            "evidence-page-1"
+          ],
+          "method": "parser",
+          "producer_id": "producer-synthetic"
+        },
+        "review_status": "unreviewed"
+      },
+      "field_annotations": {},
+      "id": "entity_b4edcf5b16427d61ff473f938d14006d",
+      "identity_key": "report",
+      "label": "Field report",
+      "properties": {},
+      "type": "report",
+      "validity": null
+    }
+  ],
+  "evidence": [
+    {
+      "id": "evidence-page-1",
+      "locator": {
+        "bbox": null,
+        "kind": "pdf_page",
+        "page_number": 1
+      },
+      "note": null,
+      "source_version_id": "source-pdf"
+    },
+    {
+      "id": "evidence-paragraph",
+      "locator": {
+        "bbox": {
+          "height": 0.1,
+          "width": 0.8,
+          "x": 0.1,
+          "y": 0.1
+        },
+        "kind": "pdf_page",
+        "page_number": 1
+      },
+      "note": null,
+      "source_version_id": "source-pdf"
+    },
+    {
+      "id": "evidence-table",
+      "locator": {
+        "bbox": {
+          "height": 0.3,
+          "width": 0.8,
+          "x": 0.1,
+          "y": 0.4
+        },
+        "kind": "pdf_page",
+        "page_number": 1
+      },
+      "note": null,
+      "source_version_id": "source-pdf"
+    },
+    {
+      "id": "evidence-cell-a1",
+      "locator": {
+        "bbox": {
+          "height": 0.1,
+          "width": 0.2,
+          "x": 0.1,
+          "y": 0.4
+        },
+        "kind": "pdf_page",
+        "page_number": 1
+      },
+      "note": null,
+      "source_version_id": "source-pdf"
+    },
+    {
+      "id": "evidence-cell-b1",
+      "locator": {
+        "bbox": {
+          "height": 0.1,
+          "width": 0.2,
+          "x": 0.3,
+          "y": 0.4
+        },
+        "kind": "pdf_page",
+        "page_number": 1
+      },
+      "note": null,
+      "source_version_id": "source-pdf"
+    },
+    {
+      "id": "evidence-cell-a2",
+      "locator": {
+        "bbox": {
+          "height": 0.1,
+          "width": 0.2,
+          "x": 0.1,
+          "y": 0.5
+        },
+        "kind": "pdf_page",
+        "page_number": 1
+      },
+      "note": null,
+      "source_version_id": "source-pdf"
+    },
+    {
+      "id": "evidence-cell-b2",
+      "locator": {
+        "bbox": {
+          "height": 0.1,
+          "width": 0.2,
+          "x": 0.3,
+          "y": 0.5
+        },
+        "kind": "pdf_page",
+        "page_number": 1
+      },
+      "note": null,
+      "source_version_id": "source-pdf"
+    }
+  ],
+  "identity_policy_version": "0.1.0",
+  "knowledge_revision": {
+    "coverage": null,
+    "created_at": "2026-09-28T10:00:00Z",
+    "document_id": "document-generic-pdf",
+    "id": "revision-pdf",
+    "parent_revision_id": null,
+    "producers": [
+      {
+        "configuration_digest": null,
+        "id": "producer-synthetic",
+        "name": "synthetic-fixture",
+        "version": "1"
+      }
+    ],
+    "source_version_id": "source-pdf",
+    "workspace_id": "workspace-synthetic"
+  },
+  "metadata": {
+    "fixture": true
+  },
+  "records": [],
+  "relations": [
+    {
+      "annotation": {
+        "provenance": {
+          "confidence": null,
+          "confidence_method": null,
+          "derivation": "direct",
+          "evidence_ids": [
+            "evidence-paragraph"
+          ],
+          "method": "parser",
+          "producer_id": "producer-synthetic"
+        },
+        "review_status": "unreviewed"
+      },
+      "field_annotations": {},
+      "from_entity_id": "entity_b4edcf5b16427d61ff473f938d14006d",
+      "id": "relation_3e2e643a523572ed602860e597c5e542",
+      "identity_key": "report-site",
+      "properties": {},
+      "to_entity_id": "entity_c4cb7ab294643e71332493eae921e0d4",
+      "type": "mentions",
+      "validity": null
+    }
+  ],
+  "root_node_id": "document_94c874f9605723615b40f34883610128",
+  "schema_version": "0.1.0",
+  "source_version": {
+    "byte_size": 100,
+    "content_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "document_id": "document-generic-pdf",
+    "filename": "example.pdf",
+    "id": "source-pdf",
+    "mime_type": "application/pdf",
+    "recorded_at": "2026-09-28T10:00:00Z",
+    "storage_uri": "fixture://document-generic-pdf/source",
+    "storage_version": "fixture-v1",
+    "workspace_id": "workspace-synthetic"
+  },
+  "structure": [
+    {
+      "annotation": {
+        "provenance": {
+          "confidence": null,
+          "confidence_method": null,
+          "derivation": "direct",
+          "evidence_ids": [
+            "evidence-page-1"
+          ],
+          "method": "parser",
+          "producer_id": "producer-synthetic"
+        },
+        "review_status": "unreviewed"
+      },
+      "children": [
+        "section_2948a9cc43916954bca1fe80d0bb5e61",
+        "table_84b2742951989403bc8a379b81e86235"
+      ],
+      "field_annotations": {},
+      "id": "document_94c874f9605723615b40f34883610128",
+      "identity_key": "root",
+      "kind": "document",
+      "title": "Field report"
+    },
+    {
+      "annotation": {
+        "provenance": {
+          "confidence": null,
+          "confidence_method": null,
+          "derivation": "direct",
+          "evidence_ids": [
+            "evidence-page-1"
+          ],
+          "method": "parser",
+          "producer_id": "producer-synthetic"
+        },
+        "review_status": "unreviewed"
+      },
+      "children": [
+        "text_block_4fc2739b9405ba2a979842cffa09ffb8"
+      ],
+      "field_annotations": {},
+      "heading": "Summary",
+      "id": "section_2948a9cc43916954bca1fe80d0bb5e61",
+      "identity_key": "summary",
+      "kind": "section",
+      "level": 1
+    },
+    {
+      "annotation": {
+        "provenance": {
+          "confidence": null,
+          "confidence_method": null,
+          "derivation": "direct",
+          "evidence_ids": [
+            "evidence-paragraph"
+          ],
+          "method": "parser",
+          "producer_id": "producer-synthetic"
+        },
+        "review_status": "unreviewed"
+      },
+      "field_annotations": {},
+      "id": "text_block_4fc2739b9405ba2a979842cffa09ffb8",
+      "identity_key": "summary-paragraph",
+      "kind": "text_block",
+      "role": "paragraph",
+      "text": "İzmir site recorded 12 samples."
+    },
+    {
+      "annotation": {
+        "provenance": {
+          "confidence": null,
+          "confidence_method": null,
+          "derivation": "direct",
+          "evidence_ids": [
+            "evidence-table"
+          ],
+          "method": "parser",
+          "producer_id": "producer-synthetic"
+        },
+        "review_status": "unreviewed"
+      },
+      "caption": null,
+      "field_annotations": {},
+      "id": "table_84b2742951989403bc8a379b81e86235",
+      "identity_key": "measurements",
+      "kind": "table",
+      "rows": [
+        [
+          {
+            "annotation": {
+              "provenance": {
+                "confidence": null,
+                "confidence_method": null,
+                "derivation": "direct",
+                "evidence_ids": [
+                  "evidence-cell-a1"
+                ],
+                "method": "parser",
+                "producer_id": "producer-synthetic"
+              },
+              "review_status": "unreviewed"
+            },
+            "value": "Site"
+          },
+          {
+            "annotation": {
+              "provenance": {
+                "confidence": null,
+                "confidence_method": null,
+                "derivation": "direct",
+                "evidence_ids": [
+                  "evidence-cell-b1"
+                ],
+                "method": "parser",
+                "producer_id": "producer-synthetic"
+              },
+              "review_status": "unreviewed"
+            },
+            "value": "Samples"
+          }
+        ],
+        [
+          {
+            "annotation": {
+              "provenance": {
+                "confidence": null,
+                "confidence_method": null,
+                "derivation": "direct",
+                "evidence_ids": [
+                  "evidence-cell-a2"
+                ],
+                "method": "parser",
+                "producer_id": "producer-synthetic"
+              },
+              "review_status": "unreviewed"
+            },
+            "value": "İzmir"
+          },
+          {
+            "annotation": {
+              "provenance": {
+                "confidence": null,
+                "confidence_method": null,
+                "derivation": "direct",
+                "evidence_ids": [
+                  "evidence-cell-b2"
+                ],
+                "method": "parser",
+                "producer_id": "producer-synthetic"
+              },
+              "review_status": "unreviewed"
+            },
+            "value": 12
+          }
+        ]
+      ]
+    }
+  ],
+  "workspace_id": "workspace-synthetic"
+}

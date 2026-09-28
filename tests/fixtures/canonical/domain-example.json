@@ -1,0 +1,231 @@
+{
+  "artifacts": [],
+  "document_id": "document-domain-example",
+  "domain_schemas": [
+    {
+      "content_sha256": "657250669bb06149496867d315d6180d56ed6128b7922a2ebb7e581601c1addf",
+      "dialect": "https://json-schema.org/draft/2020-12/schema",
+      "id": "site-count",
+      "version": "1"
+    }
+  ],
+  "entities": [],
+  "evidence": [
+    {
+      "id": "evidence-sheet",
+      "locator": {
+        "a1_range": "A1:B2",
+        "kind": "spreadsheet_range",
+        "sheet": "Sheet1"
+      },
+      "note": null,
+      "source_version_id": "source-sheet"
+    },
+    {
+      "id": "evidence-site",
+      "locator": {
+        "a1_range": "A2",
+        "kind": "spreadsheet_range",
+        "sheet": "Sheet1"
+      },
+      "note": null,
+      "source_version_id": "source-sheet"
+    },
+    {
+      "id": "evidence-count",
+      "locator": {
+        "a1_range": "B2",
+        "kind": "spreadsheet_range",
+        "sheet": "Sheet1"
+      },
+      "note": null,
+      "source_version_id": "source-sheet"
+    }
+  ],
+  "identity_policy_version": "0.1.0",
+  "knowledge_revision": {
+    "coverage": null,
+    "created_at": "2026-09-28T10:00:00Z",
+    "document_id": "document-domain-example",
+    "id": "revision-sheet",
+    "parent_revision_id": null,
+    "producers": [
+      {
+        "configuration_digest": null,
+        "id": "producer-synthetic",
+        "name": "synthetic-fixture",
+        "version": "1"
+      }
+    ],
+    "source_version_id": "source-sheet",
+    "workspace_id": "workspace-synthetic"
+  },
+  "metadata": {
+    "fixture": true
+  },
+  "records": [
+    {
+      "annotation": {
+        "provenance": {
+          "confidence": null,
+          "confidence_method": null,
+          "derivation": "direct",
+          "evidence_ids": [
+            "evidence-sheet"
+          ],
+          "method": "parser",
+          "producer_id": "producer-synthetic"
+        },
+        "review_status": "proposed"
+      },
+      "entity_ids": [],
+      "field_annotations": {
+        "count": {
+          "provenance": {
+            "confidence": null,
+            "confidence_method": null,
+            "derivation": "direct",
+            "evidence_ids": [
+              "evidence-count"
+            ],
+            "method": "parser",
+            "producer_id": "producer-synthetic"
+          },
+          "review_status": "unreviewed"
+        },
+        "site": {
+          "provenance": {
+            "confidence": null,
+            "confidence_method": null,
+            "derivation": "direct",
+            "evidence_ids": [
+              "evidence-site"
+            ],
+            "method": "parser",
+            "producer_id": "producer-synthetic"
+          },
+          "review_status": "unreviewed"
+        }
+      },
+      "id": "record_c804ee7935f47fdfb979131e76e39058",
+      "identity_key": "sheet1-row2",
+      "schema_id": "site-count",
+      "validation": {
+        "errors": [],
+        "status": "not_validated"
+      },
+      "validity": null,
+      "values": {
+        "count": 12,
+        "site": "İzmir"
+      }
+    }
+  ],
+  "relations": [],
+  "root_node_id": "document_58d30c3595ceb35cf296e8cd9ff82548",
+  "schema_version": "0.1.0",
+  "source_version": {
+    "byte_size": 100,
+    "content_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "document_id": "document-domain-example",
+    "filename": "example.xlsx",
+    "id": "source-sheet",
+    "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "recorded_at": "2026-09-28T10:00:00Z",
+    "storage_uri": "fixture://document-domain-example/source",
+    "storage_version": "fixture-v1",
+    "workspace_id": "workspace-synthetic"
+  },
+  "structure": [
+    {
+      "annotation": {
+        "provenance": {
+          "confidence": null,
+          "confidence_method": null,
+          "derivation": "direct",
+          "evidence_ids": [
+            "evidence-sheet"
+          ],
+          "method": "parser",
+          "producer_id": "producer-synthetic"
+        },
+        "review_status": "unreviewed"
+      },
+      "children": [
+        "table_7d05d3db3934762e8741ede2aabd3a52"
+      ],
+      "field_annotations": {},
+      "id": "document_58d30c3595ceb35cf296e8cd9ff82548",
+      "identity_key": "root",
+      "kind": "document",
+      "title": null
+    },
+    {
+      "annotation": {
+        "provenance": {
+          "confidence": null,
+          "confidence_method": null,
+          "derivation": "direct",
+          "evidence_ids": [
+            "evidence-sheet"
+          ],
+          "method": "parser",
+          "producer_id": "producer-synthetic"
+        },
+        "review_status": "unreviewed"
+      },
+      "caption": null,
+      "field_annotations": {},
+      "id": "table_7d05d3db3934762e8741ede2aabd3a52",
+      "identity_key": "sheet1-a1-b2",
+      "kind": "table",
+      "rows": [
+        [
+          {
+            "annotation": null,
+            "value": "Site"
+          },
+          {
+            "annotation": null,
+            "value": "Count"
+          }
+        ],
+        [
+          {
+            "annotation": {
+              "provenance": {
+                "confidence": null,
+                "confidence_method": null,
+                "derivation": "direct",
+                "evidence_ids": [
+                  "evidence-site"
+                ],
+                "method": "parser",
+                "producer_id": "producer-synthetic"
+              },
+              "review_status": "unreviewed"
+            },
+            "value": "İzmir"
+          },
+          {
+            "annotation": {
+              "provenance": {
+                "confidence": null,
+                "confidence_method": null,
+                "derivation": "direct",
+                "evidence_ids": [
+                  "evidence-count"
+                ],
+                "method": "parser",
+                "producer_id": "producer-synthetic"
+              },
+              "review_status": "unreviewed"
+            },
+            "value": 12
+          }
+        ]
+      ]
+    }
+  ],
+  "workspace_id": "workspace-synthetic"
+}

@@ -18,7 +18,7 @@ M0 live/demo ayrımını, doğru capability reporting'i, test collection'ı ve �
 | M7 | Structured Knowledge Patch ve review policy |
 | M8 | Evaluation/benchmarking ve release kabulü |
 
-Reliability/provenance testleri her milestone'a eşlik eder; M8'e ertelenmez. Henüz bu tablodaki M1–M8 çıktıları mevcut değildir.
+Reliability/provenance testleri her milestone'a eşlik eder; M8'e ertelenmez. M1 contract, generated schema, sentetik fixture ve bağımsız persistence foundation tamamlandı; M2–M8 çıktıları henüz mevcut değildir. M1 canlı extraction'a bağlı değildir.
 
 ## Format ve deferred scope
 
@@ -29,7 +29,7 @@ Jev, LangChain/LangGraph, çoklu provider, hybrid retrieval/FTS/reranking, conne
 ## Yerel kontroller
 
 ```sh
-python -m pip install -e packages/domain -e 'apps/api[dev]'
+python -m pip install -e 'packages/domain[validation]' -e 'apps/api[dev]'
 python -m pytest -q
 ruff check apps packages tests
 cd apps/web
@@ -39,7 +39,7 @@ npm run build
 
 `pytest.ini` worker dahil source path'lerini tanımlar; manuel `PYTHONPATH` gerekmez. Make kuruluysa `make quality` aynı kapıları çalıştırır. CI aynı Python test yolunu kullanır.
 
-Tests açık demo veya izole live repository stub'ları kullanır; gerçek PostgreSQL, Redis, MinIO veya provider'a erişmez. Böylece demo izolasyonu, unsupported response'lar, upload orchestration, domain helpers ve fake-provider retries kontrol edilir. Bunlar gerçek ingestion integration testi değildir.
+Varsayılan testler açık demo veya izole live repository stub'ları kullanır; Redis, MinIO veya provider'a erişmez. M1 canonical repository integration testleri `DOCGRAIN_M1_TEST_DATABASE_URL` verilirse gerçek PostgreSQL'de, benzersiz geçici schema üzerinde çalışır ve yalnızca o schema'yı kaldırır. Bunlar gerçek ingestion integration testi değildir.
 
 ## M0 kabul ölçütleri
 
@@ -57,7 +57,7 @@ Tests açık demo veya izole live repository stub'ları kullanır; gerçek Postg
 
 Demo UI: banner, disabled upload, sentetik chunks; API kapalı: görünür hata; live API boş: boş liste; live version'da boş artifacts: boş görünüm. Gerçek servislerle ayrıca PDF upload → processing → extraction artifacts doğrulanmalıdır.
 
-Henüz golden PDF/DOCX/TXT/XLSX corpus, gerçek parser/provider integration, crash injection ve cost/quality benchmark yoktur. `tests/fixtures` şu anda yalnızca fixture politikası içerir. Sentetik belgeler eklenirken `.gitignore` binary kuralları da bilinçli ele alınmalıdır.
+Henüz golden PDF/DOCX/TXT/XLSX corpus, gerçek parser/provider integration, crash injection ve cost/quality benchmark yoktur. `tests/fixtures/canonical/` M1 contract için iki sentetik JSON örneği içerir; bunlar parser çıktısı veya gerçek belge corpus'u değildir.
 
 Mevcut worker aşama özetlerini sonda yazar. Eski job stage kayıtları M0 sırasında migrate edilmez. Veri modeli ve retry/recovery kapsamı sonraki çalışmada açıkça tasarlanacaktır.
 
