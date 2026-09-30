@@ -1,0 +1,147 @@
+"""Revision-qualified lineage DAG and forward/backward query contract."""
+
+from __future__ import annotations
+
+from collections import deque
+from typing import Literal
+
+from pydantic import Field, model_validator
+
+from .lifecycle import DerivedRevision, scoped_id
+from .locations import StrictModel
+from .models import CanonicalKnowledgeSnapshot
+
+ObjectKind = Literal["source", "processing", "canonical", "chunk", "embedding", "index"]
+_ORDER = {"source": 0, "processing": 1, "canonical": 2, "chunk": 3, "embedding": 4, "index": 5}
+_OUTPUT = {"chunking": "chunk", "embedding": "embedding", "indexing": "index"}
+_INPUT = {"chunk": {"canonical"}, "embedding": {"chunk"}, "index": {"chunk", "embedding"}}
+
+
+class ObjectRef(StrictModel):
+    kind: ObjectKind
+    revision_id: str = Field(min_length=1)
+    object_id: str = Field(min_length=1)
+
+    @property
+    def key(self) -> str:
+        return scoped_id("occurrence", [self.kind, self.revision_id, self.object_id])
+
+
+class LineageEdge(StrictModel):
+    upstream: ObjectRef
+    downstream: ObjectRef
+
+    @model_validator(mode="after")
+    def ordered(self) -> LineageEdge:
+        if _ORDER[self.upstream.kind] >= _ORDER[self.downstream.kind]:
+            raise ValueError("lineage edges must advance lifecycle stages")
+        return self
+
+
+class DerivedManifest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    revision: DerivedRevision
+    objects: list[ObjectRef] = Field(min_length=1)
+    edges: list[LineageEdge] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_members(self) -> DerivedManifest:
+        keys = {obj.key for obj in self.objects}
+        if len(keys) != len(self.objects):
+            raise ValueError("duplicate derived objects")
+        output_kind = _OUTPUT[self.revision.stage]
+        if any(obj.kind != output_kind or obj.revision_id != self.revision.id for obj in self.objects):
+            raise ValueError("derived object kind/revision must match manifest")
+        upstreams: set[str] = set()
+        targets: set[str] = set()
+        edge_keys: set[tuple[str, str]] = set()
+        for edge in self.edges:
+            if edge.downstream.key not in keys or edge.upstream.kind not in _INPUT[output_kind]:
+                raise ValueError("invalid derived dependency stage or target")
+            pair = (edge.upstream.key, edge.downstream.key)
+            if pair in edge_keys:
+                raise ValueError("duplicate lineage edges")
+            edge_keys.add(pair)
+            upstreams.add(edge.upstream.revision_id)
+            targets.add(edge.downstream.key)
+        if upstreams != set(self.revision.upstream_revision_ids) or targets != keys:
+            raise ValueError("every declared upstream revision and derived object must have dependency edges")
+        return self
+
+
+class LineageTrace(StrictModel):
+    workspace_id: str
+    document_id: str
+    processing_revision_id: str
+    start: ObjectRef
+    direction: Literal["upstream", "downstream"]
+    objects: list[ObjectRef]
+    edges: list[LineageEdge]
+    depth_limited: bool = False
+
+
+class LineageGraph:
+    """One canonical revision and its registered downstream manifests only."""
+
+    def __init__(self, snapshot: CanonicalKnowledgeSnapshot):
+        self.snapshot = snapshot
+        source = ObjectRef(kind="source", revision_id=snapshot.source_version.id,
+                           object_id=snapshot.document_id)
+        processing = ObjectRef(kind="processing", revision_id=snapshot.knowledge_revision.id,
+                               object_id=snapshot.document_id)
+        objects = [source, processing]
+        self.edges = [LineageEdge(upstream=source, downstream=processing)]
+        for collection in (snapshot.structure, snapshot.entities, snapshot.relations,
+                           snapshot.records, snapshot.artifacts):
+            for item in collection:
+                ref = ObjectRef(kind="canonical", revision_id=snapshot.knowledge_revision.id, object_id=item.id)
+                objects.append(ref)
+                self.edges.append(LineageEdge(upstream=processing, downstream=ref))
+        self.objects = {obj.key: obj for obj in objects}
+
+    def extend(self, manifest: DerivedManifest) -> None:
+        manifest = DerivedManifest.model_validate(manifest.model_dump(mode="json"))
+        revision = manifest.revision
+        if (revision.workspace_id, revision.document_id, revision.processing_revision_id) != (
+            self.snapshot.workspace_id, self.snapshot.document_id, self.snapshot.knowledge_revision.id
+        ):
+            raise ValueError("lineage document/workspace/processing scope mismatch")
+        if any(obj.key in self.objects for obj in manifest.objects):
+            raise ValueError("derived occurrence already registered")
+        if any(edge.upstream.key not in self.objects for edge in manifest.edges):
+            raise ValueError("unknown upstream occurrence")
+        self.objects.update({obj.key: obj for obj in manifest.objects})
+        self.edges.extend(manifest.edges)
+
+    def trace(self, start: ObjectRef, direction: Literal["upstream", "downstream"], *,
+              max_depth: int = 16, max_objects: int = 1000) -> LineageTrace:
+        if direction not in {"upstream", "downstream"} or not 1 <= max_depth <= 32 or not 1 <= max_objects <= 2000:
+            raise ValueError("invalid lineage traversal bounds")
+        if start.key not in self.objects:
+            raise KeyError("lineage object not found in this processing revision")
+        adjacency: dict[str, list[tuple[str, LineageEdge]]] = {}
+        for edge in self.edges:
+            origin, target = ((edge.upstream, edge.downstream) if direction == "downstream"
+                              else (edge.downstream, edge.upstream))
+            adjacency.setdefault(origin.key, []).append((target.key, edge))
+        seen = {start.key}
+        selected: dict[tuple[str, str], LineageEdge] = {}
+        pending = deque([(start.key, 0)])
+        depth_limited = False
+        while pending:
+            key, depth = pending.popleft()
+            if depth >= max_depth:
+                depth_limited = depth_limited or any(target not in seen for target, _ in adjacency.get(key, []))
+                continue
+            for target, edge in adjacency.get(key, []):
+                selected[(edge.upstream.key, edge.downstream.key)] = edge
+                if target not in seen:
+                    if len(seen) >= max_objects:
+                        raise ValueError("lineage exceeds max_objects; narrow query or raise limit")
+                    seen.add(target)
+                    pending.append((target, depth + 1))
+        return LineageTrace(workspace_id=self.snapshot.workspace_id, document_id=self.snapshot.document_id,
+                            processing_revision_id=self.snapshot.knowledge_revision.id,
+                            start=start, direction=direction,
+                            objects=[self.objects[key] for key in sorted(seen)],
+                            edges=[selected[key] for key in sorted(selected)], depth_limited=depth_limited)

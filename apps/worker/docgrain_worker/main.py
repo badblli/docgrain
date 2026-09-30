@@ -18,13 +18,15 @@ import pymupdf
 import redis
 from docgrain_api.canonical_repository import CanonicalRepository
 from docgrain_domain.canonical import SourceVersion
+from docgrain_domain.canonical.lifecycle import source_revision_id
 from docgrain_domain.source_format import SourceFormat, declared_format, verify_format
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from minio import Minio
 
-from .canonical_mapper import CanonicalMapper
+from .canonical_assets import store_asset
+from .canonical_writer import persist_structural, processing_spec
 from .quality import missing_extraction_pages, page_failures
 from .structural import (
     DocumentParser,
@@ -263,6 +265,11 @@ def process(job_id: str) -> None:
             if expected_sha != "0" * 64 and expected_sha != content_hash:
                 raise ValueError("source SHA-256 differs from registration")
             verify_format(source_bytes, source_format)
+            canonical_repository = CanonicalRepository(lambda: psycopg.connect(db_url()))
+            expected_head = None
+            if os.getenv("CANONICAL_PERSISTENCE_ENABLED", "false").lower() == "true":
+                heads = canonical_repository.get_heads(document_id)
+                expected_head = heads[0] if heads else None
             try:
                 structural = DocumentParser().parse(VerifiedSource(source, content_hash, len(source_bytes)), source_format)
             except Exception as exc:
@@ -280,17 +287,8 @@ def process(job_id: str) -> None:
             structural_issues = [i.__dict__ for i in structural.issues]
             if os.getenv("CANONICAL_PERSISTENCE_ENABLED", "false").lower() == "true":
                 if storage_version and storage_version != "null" and structural.status != "failed":
-                    for item in structural.items:
-                        if item.asset_bytes:
-                            digest = sha256(item.asset_bytes).hexdigest()
-                            object_name = f"{prefix}/structural/assets/{digest}"
-                            stored_asset = client.put_object(bucket, object_name, BytesIO(item.asset_bytes),
-                                                             len(item.asset_bytes), content_type=item.asset_mime or "application/octet-stream")
-                            if not stored_asset.version_id:
-                                raise ValueError("extracted asset has no immutable object version")
-                            item.asset_path = f"s3://{bucket}/{object_name}?versionId={stored_asset.version_id}"
                     stat = client.stat_object(bucket, object_key, version_id=storage_version)
-                    source_id = "source_" + sha256(f"{version_id}:{storage_version}".encode()).hexdigest()[:32]
+                    source_id = source_revision_id(workspace_id, document_id, content_hash)
                     source_version = SourceVersion(
                         id=source_id, document_id=document_id, workspace_id=workspace_id,
                         content_sha256=content_hash,
@@ -298,14 +296,22 @@ def process(job_id: str) -> None:
                         storage_version=storage_version, byte_size=len(source_bytes), mime_type=mime_type,
                         filename=filename, recorded_at=stat.last_modified or datetime.now(UTC),
                     )
-                    revision_id = "revision_" + sha256(
-                        f"{source_id}:{structural.parser}:{structural.parser_version}:m1b-0.2.0".encode()
-                    ).hexdigest()[:32]
-                    snapshot = CanonicalMapper().map(structural, source_version, revision_id=revision_id,
-                                                     created_at=source_version.recorded_at,
-                                                     pdf_path=source if source_format is SourceFormat.PDF else None)
-                    CanonicalRepository(lambda: psycopg.connect(db_url())).append(
-                        snapshot, expected_latest_revision_id=None
+                    stored_source = canonical_repository.get_source(source_id)
+                    if stored_source:
+                        source_version = stored_source
+                    # The first verified receipt owns canonical asset storage on source replay.
+                    source_key = urlparse(source_version.storage_uri).path.strip("/").split("/")
+                    canonical_prefix = f"artifacts/{document_id}/{source_key[2]}"
+                    for item in structural.items:
+                        if item.asset_bytes:
+                            digest = sha256(item.asset_bytes).hexdigest()
+                            object_name = f"{canonical_prefix}/structural/assets/{digest}"
+                            item.asset_path = store_asset(client, bucket, object_name, item.asset_bytes,
+                                                          item.asset_mime or "application/octet-stream")
+                    snapshot, _ = persist_structural(
+                        canonical_repository, structural, source_version, spec=processing_spec(structural),
+                        pdf_path=source if source_format is SourceFormat.PDF else None,
+                        expected_latest_revision_id=expected_head,
                     )
                     canonical_persisted = True
                     structural_issues = snapshot.metadata["structural_parse"]["issues"]

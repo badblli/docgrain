@@ -6,8 +6,9 @@ import hashlib
 from collections.abc import Callable
 
 import psycopg
-from docgrain_domain.canonical import CanonicalKnowledgeSnapshot
+from docgrain_domain.canonical import CanonicalKnowledgeSnapshot, SourceVersion
 from docgrain_domain.canonical.identity import canonical_json_bytes
+from docgrain_domain.canonical.lineage import DerivedManifest, LineageGraph
 from psycopg import sql
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
@@ -78,7 +79,22 @@ class CanonicalRepository:
                 END
                 $body$
             """).format(sql.Identifier(self._schema, "reject_canonical_mutation")))
-            for name in ("source_versions", "knowledge_revisions"):
+            cursor.execute(sql.SQL("""
+                CREATE TABLE IF NOT EXISTS {} (
+                    id TEXT PRIMARY KEY,
+                    document_id TEXT NOT NULL REFERENCES {}(id),
+                    workspace_id TEXT NOT NULL,
+                    processing_revision_id TEXT NOT NULL REFERENCES {}(id),
+                    payload JSONB NOT NULL,
+                    payload_hash TEXT NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+            """).format(self._table("derived_revisions"), self._table("documents"),
+                         self._table("knowledge_revisions")))
+            cursor.execute(sql.SQL("CREATE INDEX IF NOT EXISTS {} ON {} (processing_revision_id)")
+                           .format(sql.Identifier("derived_revisions_processing_idx"),
+                                   self._table("derived_revisions")))
+            for name in ("source_versions", "knowledge_revisions", "derived_revisions"):
                 cursor.execute(sql.SQL("DROP TRIGGER IF EXISTS reject_mutation ON {}")
                                .format(self._table(name)))
                 cursor.execute(sql.SQL("""
@@ -205,3 +221,67 @@ class CanonicalRepository:
                            .format(self._table("knowledge_revisions")), (revision_id,))
             row = cursor.fetchone()
             return CanonicalKnowledgeSnapshot.model_validate(row["snapshot"]) if row else None
+
+    def get_source(self, source_id: str) -> SourceVersion | None:
+        with self._connect() as connection, connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(sql.SQL("SELECT payload FROM {} WHERE id = %s")
+                           .format(self._table("source_versions")), (source_id,))
+            row = cursor.fetchone()
+            return SourceVersion.model_validate(row["payload"]) if row else None
+
+    def _lineage(self, cursor, snapshot: CanonicalKnowledgeSnapshot) -> LineageGraph:
+        cursor.execute(sql.SQL("SELECT payload FROM {} WHERE processing_revision_id = %s")
+                       .format(self._table("derived_revisions")), (snapshot.knowledge_revision.id,))
+        manifests = [DerivedManifest.model_validate(row["payload"]) for row in cursor.fetchall()]
+        order = {"chunking": 0, "embedding": 1, "indexing": 2}
+        graph = LineageGraph(snapshot)
+        for manifest in sorted(manifests, key=lambda m: (order[m.revision.stage], m.revision.id)):
+            graph.extend(manifest)
+        return graph
+
+    def get_lineage(self, processing_revision_id: str) -> LineageGraph | None:
+        with self._connect() as connection, connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(sql.SQL("SELECT snapshot FROM {} WHERE id = %s")
+                           .format(self._table("knowledge_revisions")), (processing_revision_id,))
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            return self._lineage(cursor, CanonicalKnowledgeSnapshot.model_validate(row["snapshot"]))
+
+    def append_derived(self, manifest: DerivedManifest) -> bool:
+        """Atomic immutable manifest publication; validate registered dependencies under lock."""
+        manifest = DerivedManifest.model_validate(manifest.model_dump(mode="json"))
+        revision = manifest.revision
+        payload = manifest.model_dump(mode="json")
+        payload_hash = self._hash(payload)
+        with self._connect() as connection, connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(sql.SQL("SELECT * FROM {} WHERE document_id = %s FOR UPDATE")
+                           .format(self._table("document_knowledge_heads")), (revision.document_id,))
+            head = cursor.fetchone()
+            if head is None or head["workspace_id"] != revision.workspace_id:
+                raise CanonicalConflict("derived document/workspace scope mismatch")
+            cursor.execute(sql.SQL("SELECT snapshot FROM {} WHERE id = %s")
+                           .format(self._table("knowledge_revisions")), (revision.processing_revision_id,))
+            row = cursor.fetchone()
+            if row is None:
+                raise CanonicalConflict("derived processing revision not found")
+            snapshot = CanonicalKnowledgeSnapshot.model_validate(row["snapshot"])
+            if (snapshot.document_id, snapshot.workspace_id) != (revision.document_id, revision.workspace_id):
+                raise CanonicalConflict("derived processing revision scope mismatch")
+            cursor.execute(sql.SQL("SELECT payload_hash FROM {} WHERE id = %s")
+                           .format(self._table("derived_revisions")), (revision.id,))
+            existing = cursor.fetchone()
+            if existing:
+                if existing["payload_hash"] != payload_hash:
+                    raise CanonicalConflict("derived revision ID already has different immutable payload")
+                return False
+            graph = self._lineage(cursor, snapshot)
+            graph.extend(manifest)
+            cursor.execute(sql.SQL("""
+                INSERT INTO {} (id, document_id, workspace_id, processing_revision_id, payload, payload_hash)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """).format(self._table("derived_revisions")), (
+                revision.id, revision.document_id, revision.workspace_id,
+                revision.processing_revision_id, Jsonb(payload), payload_hash,
+            ))
+            return True

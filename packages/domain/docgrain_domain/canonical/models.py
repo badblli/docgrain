@@ -5,9 +5,18 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Annotated, Literal
 
-from pydantic import ConfigDict, Field, JsonValue, field_validator, model_validator
+from pydantic import (
+    ConfigDict,
+    Field,
+    JsonValue,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
-from .identity import IDENTITY_POLICY_VERSION
+from .identity import IDENTITY_POLICY_VERSION, deterministic_item_id
+from .lifecycle import ProcessingSpec, processing_revision_id, source_revision_id
 from .locations import Locator, StrictModel
 
 ReviewStatus = Literal["unreviewed", "proposed", "approved", "rejected", "overridden"]
@@ -60,6 +69,15 @@ class KnowledgeRevision(StrictModel):
     created_at: datetime
     producers: tuple[Producer, ...] = Field(min_length=1)
     coverage: str | None = None
+    processing: ProcessingSpec | None = None
+
+    @model_serializer(mode="wrap")
+    def serialize_revision(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
+        payload = handler(self)
+        if self.processing is None:
+            # Preserve historical snapshot bytes/hashes and their strict schema on replay.
+            payload.pop("processing", None)
+        return payload
 
     @field_validator("created_at")
     @classmethod
@@ -270,8 +288,8 @@ class DomainRecord(StrictModel):
 
 
 class CanonicalKnowledgeSnapshot(StrictModel):
-    schema_version: Literal["0.1.0", "0.2.0"] = "0.2.0"
-    identity_policy_version: Literal["0.1.0"] = IDENTITY_POLICY_VERSION
+    schema_version: Literal["0.1.0", "0.2.0", "0.3.0"] = "0.2.0"
+    identity_policy_version: Literal["0.1.0", "0.2.0"] = IDENTITY_POLICY_VERSION
     document_id: str = Field(min_length=1)
     workspace_id: str = Field(min_length=1)
     source_version: SourceVersion
@@ -290,6 +308,24 @@ class CanonicalKnowledgeSnapshot(StrictModel):
     def semantic_validation(self) -> CanonicalKnowledgeSnapshot:
         from .validation import validate_snapshot
 
+        processing = self.knowledge_revision.processing
+        if self.schema_version == "0.3.0":
+            if processing is None or self.identity_policy_version != processing.identity_policy_version:
+                raise ValueError("0.3.0 requires a processing spec and its identity policy")
+            if self.source_version.id != source_revision_id(
+                self.workspace_id, self.document_id, self.source_version.content_sha256
+            ):
+                raise ValueError("source revision ID differs from verified content identity")
+            if self.knowledge_revision.id != processing_revision_id(self.source_version.id, processing):
+                raise ValueError("processing revision ID differs from source/configuration")
+            if any(p.configuration_digest != processing.digest for p in self.knowledge_revision.producers):
+                raise ValueError("producer configuration must match processing spec")
+            if any(node.id != deterministic_item_id(self.document_id, node.kind, node.identity_key,
+                                                   policy_version=self.identity_policy_version)
+                   for node in self.structure):
+                raise ValueError("canonical node ID differs from document/key/policy")
+        elif processing is not None or self.identity_policy_version != "0.1.0":
+            raise ValueError("processing spec and identity policy 0.2.0 require schema_version 0.3.0")
         if self.schema_version == "0.1.0":
             for node in self.structure:
                 if isinstance(node, TableNode):

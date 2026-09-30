@@ -58,6 +58,7 @@ class StructuralParseResult:
     processed_areas: list[str]
     issues: list[ParseIssue]
     source_metadata: dict[str, Any] = field(default_factory=dict)
+    processing_options: dict[str, Any] = field(default_factory=dict)
 
     @property
     def coverage(self) -> dict[str, Any]:
@@ -137,6 +138,10 @@ def _docling(source: VerifiedSource, fmt: SourceFormat) -> StructuralParseResult
 
     options = {InputFormat.PDF: PdfFormatOption(pipeline_options=PdfPipelineOptions(do_ocr=False))} if fmt is SourceFormat.PDF else {}
     converter = DocumentConverter(allowed_formats=[InputFormat(fmt.value)], format_options=options)
+    processing_options = {
+        "pipeline": converter.format_to_options[InputFormat(fmt.value)].pipeline_options.model_dump(mode="json"),
+        "adapter_version": "m1b-1", "formula_evaluation": False,
+    }
     converted = converter.convert(source.path, raises_on_error=False)
     version = importlib.metadata.version("docling")
     if converted.document is None:
@@ -225,7 +230,8 @@ def _docling(source: VerifiedSource, fmt: SourceFormat) -> StructuralParseResult
         issues.append(_issue(fmt, "docling_partial", str(converted.errors)[:1000], impact="document"))
     status = "partial" if issues else "complete"
     return StructuralParseResult(fmt, "docling", version, status, items, expected, processed, issues,
-                                 {"docling_status": str(converted.status), "pages": pages})
+                                 {"docling_status": str(converted.status), "pages": pages},
+                                 processing_options=processing_options)
 
 
 def _reading_refs(body: dict[str, Any], raw: dict[str, Any], lookup: dict[str, Any]) -> list[str]:
@@ -452,4 +458,7 @@ class DocumentParser:
         if len(data) != source.byte_size or sha256(data).hexdigest() != source.content_sha256:
             raise ValueError("verified source bytes changed before parsing")
         verify_format(data, source_format)
-        return _txt(source) if source_format is SourceFormat.TXT else _docling(source, source_format)
+        result = _txt(source) if source_format is SourceFormat.TXT else _docling(source, source_format)
+        if source_format is SourceFormat.TXT:
+            result.processing_options = {"encoding": "utf-8-sig", "paragraph_strategy": "exact-spans-v1"}
+        return result

@@ -32,6 +32,7 @@ from docgrain_domain.canonical import (
     TextSpanLocator,
     deterministic_item_id,
 )
+from docgrain_domain.canonical.lifecycle import ProcessingSpec
 
 from .pdf_geometry import normalized_pdf_box
 from .structural import ParseIssue, StructuralParseResult
@@ -39,12 +40,19 @@ from .structural import ParseIssue, StructuralParseResult
 
 class CanonicalMapper:
     def map(self, result: StructuralParseResult, source: SourceVersion, *,
-            revision_id: str, created_at: datetime, pdf_path: Path | None = None) -> CanonicalKnowledgeSnapshot:
+            revision_id: str, created_at: datetime, pdf_path: Path | None = None,
+            processing: ProcessingSpec | None = None,
+            parent_revision_id: str | None = None) -> CanonicalKnowledgeSnapshot:
         if result.status == "failed":
             raise ValueError("failed structural parse cannot produce a canonical revision")
         document_id = source.document_id
+        policy = processing.identity_policy_version if processing else "0.1.0"
+        def item_id(document: str, kind: str, key: str) -> str:
+            return deterministic_item_id(document, kind, key, policy_version=policy)
+
+        occurrences: dict[tuple[str, str], int] = {}
         producer_id = "producer-structural-parser"
-        root_id = deterministic_item_id(document_id, "document", "root")
+        root_id = item_id(document_id, "document", "root")
         root = DocumentNode(id=root_id, identity_key="root", title=source.filename,
                             annotation=_annotation(producer_id, []))
         structure: list[Any] = [root]
@@ -80,7 +88,12 @@ class CanonicalMapper:
                     key = f"{source.id}:{item.anchor}:{locator.model_dump_json()}"
                     evidence_id = f"evidence_{sha256(key.encode()).hexdigest()[:32]}"
                     evidence.append(Evidence(id=evidence_id, source_version_id=source.id, locator=locator))
-                anchor = _identity_anchor(item, locator, section_stack)
+                anchor = (_stable_anchor(locator) if processing else _identity_anchor(item, locator, section_stack))
+                if anchor is not None and processing:
+                    pair = (item.kind, anchor)
+                    ordinal = occurrences.get(pair, 0)
+                    occurrences[pair] = ordinal + 1
+                    anchor = f"{anchor}:occurrence:{ordinal}"
                 if anchor is None:
                     issues.append(asdict(ParseIssue("identity_unresolved", "canonical_mapping", result.source_format,
                                                     None, item.anchor, "No stable source anchor", "item")))
@@ -88,7 +101,7 @@ class CanonicalMapper:
                 annotation = _annotation(producer_id, [evidence_id] if evidence_id else [])
                 if item.kind == "heading":
                     key = f"heading:{anchor}"
-                    node = SectionNode(id=deterministic_item_id(document_id, "section", key), identity_key=key,
+                    node = SectionNode(id=item_id(document_id, "section", key), identity_key=key,
                                        heading=item.text, level=item.level, annotation=annotation)
                     while section_stack and section_stack[-1].level >= node.level:
                         section_stack.pop()
@@ -101,12 +114,12 @@ class CanonicalMapper:
                     parent = section_stack[-1] if section_stack else root
                     if previous_list is None:
                         list_key = f"list:{anchor}"
-                        previous_list = ListNode(id=deterministic_item_id(document_id, "list", list_key),
+                        previous_list = ListNode(id=item_id(document_id, "list", list_key),
                                                  identity_key=list_key, annotation=annotation)
                         structure.append(previous_list)
                         parent.children.append(previous_list.id)
                     key = f"list-text:{anchor}"
-                    node = TextBlock(id=deterministic_item_id(document_id, "text_block", key),
+                    node = TextBlock(id=item_id(document_id, "text_block", key),
                                      identity_key=key, text=item.text, annotation=annotation)
                     previous_list.children.append(node.id)
                     structure.append(node)
@@ -122,7 +135,7 @@ class CanonicalMapper:
                                                          byte_size=len(item.asset_bytes),
                                                          mime_type=item.asset_mime or "application/octet-stream"))
                         key = f"asset:{anchor}"
-                        node = AssetNode(id=deterministic_item_id(document_id, "asset", key),
+                        node = AssetNode(id=item_id(document_id, "asset", key),
                                          identity_key=key, artifact_id=artifact_id, annotation=annotation)
                     elif item.kind == "table":
                         key = f"table:{anchor}"
@@ -145,15 +158,15 @@ class CanonicalMapper:
                                     annotation=_annotation(producer_id, [cell_evidence_id]) if cell_evidence_id else None,
                                 ))
                             rows.append(mapped_row)
-                        node = TableNode(id=deterministic_item_id(document_id, "table", key),
+                        node = TableNode(id=item_id(document_id, "table", key),
                                          identity_key=key, rows=rows, annotation=annotation)
                     elif item.kind == "chart":
                         key = f"chart:{anchor}"
-                        node = ChartNode(id=deterministic_item_id(document_id, "chart", key),
+                        node = ChartNode(id=item_id(document_id, "chart", key),
                                          identity_key=key, description=None, annotation=annotation)
                     else:
                         key = f"text:{anchor}"
-                        node = TextBlock(id=deterministic_item_id(document_id, "text_block", key),
+                        node = TextBlock(id=item_id(document_id, "text_block", key),
                                          identity_key=key, text=item.text, annotation=annotation)
                     parent.children.append(node.id)
                     structure.append(node)
@@ -165,11 +178,14 @@ class CanonicalMapper:
             coverage["status"] = "partial"
         revision = KnowledgeRevision(id=revision_id, document_id=document_id, workspace_id=source.workspace_id,
                                      source_version_id=source.id, created_at=created_at,
+                                     parent_revision_id=parent_revision_id, processing=processing,
                                      producers=(Producer(id=producer_id, name=result.parser,
-                                                         version=result.parser_version),),
+                                                         version=result.parser_version,
+                                                         configuration_digest=processing.digest if processing else None),),
                                      coverage=coverage["status"])
         return CanonicalKnowledgeSnapshot(
-            schema_version="0.2.0", document_id=document_id, workspace_id=source.workspace_id,
+            schema_version="0.3.0" if processing else "0.2.0", identity_policy_version=policy,
+            document_id=document_id, workspace_id=source.workspace_id,
             source_version=source, knowledge_revision=revision, root_node_id=root_id,
             structure=structure, evidence=evidence, artifacts=artifacts,
             metadata={"structural_parse": {"coverage": coverage, "issues": issues,
@@ -218,3 +234,20 @@ def _identity_anchor(item: Any, locator: Any | None, sections: list[SectionNode]
     if isinstance(locator, TextSpanLocator):
         return f"txt:{locator.start}:{locator.end}:{context}"
     return f"xlsx:{locator.sheet}:{locator.a1_range}:{context}"
+
+
+def _stable_anchor(locator: Any | None) -> str | None:
+    """Identity policy 0.2.0: source location, independent of text/ancestors/config."""
+    if locator is None:
+        return None
+    if isinstance(locator, PdfPageLocator):
+        if locator.bbox is None:
+            return f"pdf:{locator.page_number}:page-only"
+        box = locator.bbox
+        geometry = ":".join(f"{v:.4f}" for v in (box.x, box.y, box.width, box.height))
+        return f"pdf:{locator.page_number}:{geometry}"
+    if isinstance(locator, DocxBlockLocator):
+        return f"docx:{locator.part}:{locator.path}"
+    if isinstance(locator, TextSpanLocator):
+        return f"txt:{locator.start}"
+    return f"xlsx:{locator.sheet}:{locator.a1_range}"

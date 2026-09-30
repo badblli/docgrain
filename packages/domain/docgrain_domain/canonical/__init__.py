@@ -1,4 +1,4 @@
-"""Canonical knowledge v0.1 public contract. Legacy domain models remain separate."""
+"""Versioned canonical knowledge and lifecycle public contracts."""
 
 from .identity import (
     IDENTITY_POLICY_VERSION,
@@ -6,6 +6,16 @@ from .identity import (
     deterministic_item_id,
     new_canonical_id,
 )
+from .lifecycle import (
+    DerivedRevision,
+    ProcessingSpec,
+    chunk_id,
+    entity_id,
+    logical_document_id,
+    processing_revision_id,
+    source_revision_id,
+)
+from .lineage import DerivedManifest, LineageEdge, LineageGraph, LineageTrace, ObjectRef
 from .locations import (
     ArtifactObjectLocator,
     DocxBlockLocator,
@@ -48,11 +58,51 @@ def canonical_export_path(document_id: str, knowledge_revision_id: str) -> str:
 
 
 __all__ = [
-    "IDENTITY_POLICY_VERSION", "Annotation", "ArtifactObjectLocator", "ArtifactRef", "AssetNode",
-    "CanonicalKnowledgeSnapshot", "ChartNode", "DateRange", "DatetimeRange", "DocumentNode",
-    "DocxBlockLocator", "DomainRecord", "DomainSchemaRef", "DomainValidationResult", "Entity",
-    "Evidence", "KnowledgeRevision", "ListNode", "NormalizedBox", "PdfPageLocator", "Producer",
-    "Provenance", "Relation", "SectionNode", "SourceVersion", "SpreadsheetRangeLocator",
-    "TableCell", "TableNode", "TextBlock", "TextSpanLocator", "canonical_export_path", "canonical_json_bytes",
-    "deterministic_item_id", "new_canonical_id", "validate_snapshot",
+    "IDENTITY_POLICY_VERSION",
+    "Annotation",
+    "ArtifactObjectLocator",
+    "ArtifactRef",
+    "AssetNode",
+    "CanonicalKnowledgeSnapshot",
+    "ChartNode",
+    "DateRange",
+    "DatetimeRange",
+    "DerivedManifest",
+    "DerivedRevision",
+    "DocumentNode",
+    "DocxBlockLocator",
+    "DomainRecord",
+    "DomainSchemaRef",
+    "DomainValidationResult",
+    "Entity",
+    "Evidence",
+    "KnowledgeRevision",
+    "LineageEdge",
+    "LineageGraph",
+    "LineageTrace",
+    "ListNode",
+    "NormalizedBox",
+    "ObjectRef",
+    "PdfPageLocator",
+    "ProcessingSpec",
+    "Producer",
+    "Provenance",
+    "Relation",
+    "SectionNode",
+    "SourceVersion",
+    "SpreadsheetRangeLocator",
+    "TableCell",
+    "TableNode",
+    "TextBlock",
+    "TextSpanLocator",
+    "canonical_export_path",
+    "canonical_json_bytes",
+    "chunk_id",
+    "deterministic_item_id",
+    "entity_id",
+    "logical_document_id",
+    "new_canonical_id",
+    "processing_revision_id",
+    "source_revision_id",
+    "validate_snapshot",
 ]
