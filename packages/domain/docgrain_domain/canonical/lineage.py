@@ -3,18 +3,24 @@
 from __future__ import annotations
 
 from collections import deque
+from hashlib import sha256
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import (
+    Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+    model_validator,
+)
 
 from .lifecycle import DerivedRevision, scoped_id
 from .locations import StrictModel
 from .models import CanonicalKnowledgeSnapshot
 
-ObjectKind = Literal["source", "processing", "canonical", "chunk", "embedding", "index"]
-_ORDER = {"source": 0, "processing": 1, "canonical": 2, "chunk": 3, "embedding": 4, "index": 5}
-_OUTPUT = {"chunking": "chunk", "embedding": "embedding", "indexing": "index"}
-_INPUT = {"chunk": {"canonical"}, "embedding": {"chunk"}, "index": {"chunk", "embedding"}}
+ObjectKind = Literal["source", "processing", "canonical", "projection", "chunk", "embedding", "index"]
+_ORDER = {"source": 0, "processing": 1, "canonical": 2, "projection": 3, "chunk": 4, "embedding": 5, "index": 6}
+_OUTPUT = {"projection": "projection", "chunking": "chunk", "embedding": "embedding", "indexing": "index"}
+_INPUT = {"projection": {"canonical"}, "chunk": {"canonical", "projection"}, "embedding": {"chunk"}, "index": {"chunk", "embedding"}}
 
 
 class ObjectRef(StrictModel):
@@ -38,11 +44,33 @@ class LineageEdge(StrictModel):
         return self
 
 
+class ProjectionArtifact(StrictModel):
+    object_ref: ObjectRef
+    role: Literal["retrieval-text"] = "retrieval-text"
+    mime_type: Literal["application/json"] = "application/json"
+    content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    text: str
+
+    @model_validator(mode="after")
+    def verified_payload(self) -> ProjectionArtifact:
+        if self.object_ref.kind != "projection" or sha256(self.text.encode()).hexdigest() != self.content_sha256:
+            raise ValueError("projection artifact kind or content checksum mismatch")
+        return self
+
+
 class DerivedManifest(StrictModel):
-    schema_version: Literal["0.1.0"] = "0.1.0"
+    schema_version: Literal["0.1.0", "0.2.0"] = "0.1.0"
     revision: DerivedRevision
     objects: list[ObjectRef] = Field(min_length=1)
     edges: list[LineageEdge] = Field(min_length=1)
+    projections: list[ProjectionArtifact] = Field(default_factory=list)
+
+    @model_serializer(mode="wrap")
+    def serialize_manifest(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
+        payload = handler(self)
+        if not self.projections:
+            payload.pop("projections", None)
+        return payload
 
     @model_validator(mode="after")
     def validate_members(self) -> DerivedManifest:
@@ -50,6 +78,16 @@ class DerivedManifest(StrictModel):
         if len(keys) != len(self.objects):
             raise ValueError("duplicate derived objects")
         output_kind = _OUTPUT[self.revision.stage]
+        if self.schema_version == "0.1.0" and (
+            output_kind == "projection" or self.projections
+            or any(edge.upstream.kind == "projection" for edge in self.edges)
+        ):
+            raise ValueError("projections require derived manifest schema_version 0.2.0")
+        if output_kind == "projection":
+            if {artifact.object_ref.key for artifact in self.projections} != keys or len(self.projections) != len(keys):
+                raise ValueError("projection stage requires one verified artifact for every object")
+        elif self.projections:
+            raise ValueError("projection payloads require projection stage")
         if any(obj.kind != output_kind or obj.revision_id != self.revision.id for obj in self.objects):
             raise ValueError("derived object kind/revision must match manifest")
         upstreams: set[str] = set()

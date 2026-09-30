@@ -257,6 +257,77 @@ class Entity(StrictModel):
     validity: TemporalValidity | None = None
 
 
+EntityReviewStatus = Literal["extracted", "needs_review", "accepted", "rejected"]
+
+
+class EntityReviewEvent(StrictModel):
+    decision_id: str = Field(min_length=1)
+    from_status: EntityReviewStatus
+    to_status: EntityReviewStatus
+    reviewer_id: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+    occurred_at: datetime
+
+    @field_validator("occurred_at")
+    @classmethod
+    def aware_time(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("review timestamp must be timezone-aware")
+        return value
+
+
+class SchemaEntity(StrictModel):
+    """Schema-bound business JSON; never a retrieval text representation."""
+
+    kind: Literal["schema_entity"] = "schema_entity"
+    id: str = Field(min_length=1)
+    identity_key: str = Field(min_length=1)
+    type: str = Field(min_length=1)
+    label: str
+    schema_id: str = Field(min_length=1)
+    schema_version: str = Field(min_length=1)
+    data: dict[str, JsonValue]
+    annotation: Annotation
+    field_annotations: dict[str, Annotation]
+    validation: DomainValidationResult = Field(default_factory=DomainValidationResult)
+    review_status: EntityReviewStatus = "extracted"
+    review_events: list[EntityReviewEvent] = Field(default_factory=list)
+    validity: TemporalValidity | None = None
+
+    @model_validator(mode="after")
+    def fields_and_review(self) -> SchemaEntity:
+        from .entity_fields import leaf_pointers, resolve_pointer
+
+        for path, annotation in self.field_annotations.items():
+            resolve_pointer(self.data, path)
+            if not annotation.provenance.evidence_ids:
+                raise ValueError("entity field provenance requires source evidence")
+        if set(self.field_annotations) != leaf_pointers(self.data):
+            raise ValueError("entity field provenance must cover every JSON leaf exactly")
+        if not self.annotation.provenance.evidence_ids:
+            raise ValueError("entity provenance requires source evidence")
+        status = "extracted"
+        decisions: set[str] = set()
+        previous_time = None
+        allowed = {"extracted": {"needs_review"}, "needs_review": {"accepted", "rejected"}}
+        for event in self.review_events:
+            if event.from_status != status or event.to_status not in allowed.get(status, set()):
+                raise ValueError("invalid entity review transition")
+            if event.decision_id in decisions or (previous_time and event.occurred_at < previous_time):
+                raise ValueError("entity review decisions must be unique and chronological")
+            decisions.add(event.decision_id)
+            previous_time = event.occurred_at
+            status = event.to_status
+        if status != self.review_status:
+            raise ValueError("entity review state differs from its decision history")
+        if status == "accepted" and self.validation.status != "valid":
+            raise ValueError("only schema-valid entities can be accepted")
+        annotation_status = {"extracted": "proposed", "needs_review": "proposed", "accepted": "approved", "rejected": "rejected"}
+        if self.annotation.review_status != annotation_status[status]:
+            raise ValueError("entity annotation review state mismatch")
+        return self
+
+
 class Relation(StrictModel):
     id: str = Field(min_length=1)
     identity_key: str = Field(min_length=1)
@@ -288,7 +359,7 @@ class DomainRecord(StrictModel):
 
 
 class CanonicalKnowledgeSnapshot(StrictModel):
-    schema_version: Literal["0.1.0", "0.2.0", "0.3.0"] = "0.2.0"
+    schema_version: Literal["0.1.0", "0.2.0", "0.3.0", "0.4.0"] = "0.2.0"
     identity_policy_version: Literal["0.1.0", "0.2.0"] = IDENTITY_POLICY_VERSION
     document_id: str = Field(min_length=1)
     workspace_id: str = Field(min_length=1)
@@ -296,7 +367,7 @@ class CanonicalKnowledgeSnapshot(StrictModel):
     knowledge_revision: KnowledgeRevision
     root_node_id: str = Field(min_length=1)
     structure: list[StructuralNode] = Field(min_length=1)
-    entities: list[Entity] = Field(default_factory=list)
+    entities: list[Entity | SchemaEntity] = Field(default_factory=list)
     relations: list[Relation] = Field(default_factory=list)
     records: list[DomainRecord] = Field(default_factory=list)
     evidence: list[Evidence] = Field(default_factory=list)
@@ -309,9 +380,11 @@ class CanonicalKnowledgeSnapshot(StrictModel):
         from .validation import validate_snapshot
 
         processing = self.knowledge_revision.processing
-        if self.schema_version == "0.3.0":
+        if self.schema_version in {"0.3.0", "0.4.0"}:
             if processing is None or self.identity_policy_version != processing.identity_policy_version:
                 raise ValueError("0.3.0 requires a processing spec and its identity policy")
+            if processing.schema_version != self.schema_version:
+                raise ValueError("processing spec schema version mismatch")
             if self.source_version.id != source_revision_id(
                 self.workspace_id, self.document_id, self.source_version.content_sha256
             ):
@@ -326,6 +399,8 @@ class CanonicalKnowledgeSnapshot(StrictModel):
                 raise ValueError("canonical node ID differs from document/key/policy")
         elif processing is not None or self.identity_policy_version != "0.1.0":
             raise ValueError("processing spec and identity policy 0.2.0 require schema_version 0.3.0")
+        if self.schema_version != "0.4.0" and any(isinstance(entity, SchemaEntity) for entity in self.entities):
+            raise ValueError("schema entities require canonical schema_version 0.4.0")
         if self.schema_version == "0.1.0":
             for node in self.structure:
                 if isinstance(node, TableNode):

@@ -1,5 +1,14 @@
 # Geliştirme planı ve kalite kapıları
 
+## Güncel milestone sırası
+
+M2a identity/revisions/lineage ve M2b external-schema entities/field provenance yerel review için
+uygulandı. Sonraki iş M2c deterministic structure-aware chunk derivation. Güncel dependency sırası
+identity/lineage → entities → chunks → diff/invalidation → retrieval; selective Vision ayrı capability
+track'tir. Aşağıdaki M0–M8 tablo ilk planın tarihsel kaydıdır. Güncel contract ve kullanım:
+[ADR 0007](adr/0007-stable-identity-revisions-lineage.md),
+[ADR 0008](adr/0008-schema-entities-field-provenance.md), [M2b API](M2B_ENTITIES.md).
+
 ## M0 sınırı
 
 M0 live/demo ayrımını, doğru capability reporting'i, test collection'ı ve ürün scope'unu sabitler. Canonical Knowledge Model, yeni format parser'ları, retry/recovery altyapısı veya embedding implement etmez. Sonraki milestone için ayrı onay gerekir.

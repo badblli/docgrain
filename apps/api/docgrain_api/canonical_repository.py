@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Callable
 
 import psycopg
 from docgrain_domain.canonical import CanonicalKnowledgeSnapshot, SourceVersion
+from docgrain_domain.canonical.entities import RegisteredSchema, validate_entity_data
 from docgrain_domain.canonical.identity import canonical_json_bytes
 from docgrain_domain.canonical.lineage import DerivedManifest, LineageGraph
+from docgrain_domain.canonical.models import SchemaEntity
 from psycopg import sql
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
@@ -36,6 +39,16 @@ class CanonicalRepository:
     def initialize(self) -> None:
         """Additive DDL foundation, not a production migration lifecycle."""
         with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(sql.SQL("""
+                CREATE TABLE IF NOT EXISTS {} (
+                    workspace_id TEXT NOT NULL,
+                    schema_id TEXT NOT NULL,
+                    version TEXT NOT NULL,
+                    payload JSONB NOT NULL,
+                    payload_hash TEXT NOT NULL,
+                    PRIMARY KEY (workspace_id, schema_id, version)
+                )
+            """).format(self._table("domain_schema_registry")))
             cursor.execute(sql.SQL("""
                 CREATE TABLE IF NOT EXISTS {} (
                     id TEXT PRIMARY KEY,
@@ -94,7 +107,7 @@ class CanonicalRepository:
             cursor.execute(sql.SQL("CREATE INDEX IF NOT EXISTS {} ON {} (processing_revision_id)")
                            .format(sql.Identifier("derived_revisions_processing_idx"),
                                    self._table("derived_revisions")))
-            for name in ("source_versions", "knowledge_revisions", "derived_revisions"):
+            for name in ("source_versions", "knowledge_revisions", "derived_revisions", "domain_schema_registry"):
                 cursor.execute(sql.SQL("DROP TRIGGER IF EXISTS reject_mutation ON {}")
                                .format(self._table(name)))
                 cursor.execute(sql.SQL("""
@@ -127,6 +140,7 @@ class CanonicalRepository:
             document = cursor.fetchone()
             if document is None or document["workspace_id"] != snapshot.workspace_id:
                 raise CanonicalConflict("document/workspace scope mismatch")
+            self._validate_entities(cursor, snapshot)
 
             cursor.execute(sql.SQL("""
                 INSERT INTO {} (id, document_id, workspace_id, payload, payload_hash)
@@ -202,8 +216,11 @@ class CanonicalRepository:
             ):
                 raise CanonicalConflict("approved revision scope mismatch")
             snapshot = CanonicalKnowledgeSnapshot.model_validate(row["snapshot"])
+            self._validate_entities(cursor, snapshot)
             if any(record.validation.status == "invalid" for record in snapshot.records):
                 raise CanonicalConflict("revision contains invalid domain records")
+            if any(isinstance(entity, SchemaEntity) and entity.review_status != "accepted" for entity in snapshot.entities):
+                raise CanonicalConflict("revision contains schema entities awaiting acceptance or rejected")
             cursor.execute(sql.SQL("UPDATE {} SET approved_revision_id = %s WHERE document_id = %s")
                            .format(self._table("document_knowledge_heads")), (revision_id, document_id))
 
@@ -229,11 +246,58 @@ class CanonicalRepository:
             row = cursor.fetchone()
             return SourceVersion.model_validate(row["payload"]) if row else None
 
+    def register_schema(self, schema: RegisteredSchema) -> bool:
+        schema = RegisteredSchema.model_validate(schema.model_dump(mode="json"))
+        payload = schema.model_dump(mode="json")
+        payload_hash = self._hash(payload)
+        with self._connect() as connection, connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(sql.SQL("""
+                INSERT INTO {} (workspace_id, schema_id, version, payload, payload_hash)
+                VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING
+            """).format(self._table("domain_schema_registry")), (
+                schema.workspace_id, schema.reference.id, schema.reference.version, Jsonb(payload), payload_hash))
+            inserted = cursor.rowcount == 1
+            cursor.execute(sql.SQL("SELECT payload_hash FROM {} WHERE workspace_id=%s AND schema_id=%s AND version=%s")
+                           .format(self._table("domain_schema_registry")),
+                           (schema.workspace_id, schema.reference.id, schema.reference.version))
+            if cursor.fetchone()["payload_hash"] != payload_hash:
+                raise CanonicalConflict("schema ID/version already has different immutable content")
+            return inserted
+
+    def get_schema(self, workspace_id: str, schema_id: str, version: str) -> RegisteredSchema | None:
+        with self._connect() as connection, connection.cursor(row_factory=dict_row) as cursor:
+            return self._get_schema(cursor, workspace_id, schema_id, version)
+
+    def _get_schema(self, cursor, workspace_id, schema_id, version):
+        cursor.execute(sql.SQL("SELECT payload FROM {} WHERE workspace_id=%s AND schema_id=%s AND version=%s")
+                       .format(self._table("domain_schema_registry")), (workspace_id, schema_id, version))
+        row = cursor.fetchone()
+        return RegisteredSchema.model_validate(row["payload"]) if row else None
+
+    def _validate_entities(self, cursor, snapshot):
+        schemas = {ref.id: ref for ref in snapshot.domain_schemas}
+        for entity in snapshot.entities:
+            if not isinstance(entity, SchemaEntity):
+                continue
+            registered = self._get_schema(cursor, snapshot.workspace_id, entity.schema_id, entity.schema_version)
+            if registered is None or registered.reference != schemas[entity.schema_id]:
+                raise CanonicalConflict("entity schema is not registered with this checksum in this workspace")
+            actual = validate_entity_data(entity.data, registered)
+            if actual != entity.validation:
+                raise CanonicalConflict("entity validation differs from registered schema validation")
+
+    def get_derivation(self, revision_id: str) -> DerivedManifest | None:
+        with self._connect() as connection, connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(sql.SQL("SELECT payload FROM {} WHERE id = %s")
+                           .format(self._table("derived_revisions")), (revision_id,))
+            row = cursor.fetchone()
+            return DerivedManifest.model_validate(row["payload"]) if row else None
+
     def _lineage(self, cursor, snapshot: CanonicalKnowledgeSnapshot) -> LineageGraph:
         cursor.execute(sql.SQL("SELECT payload FROM {} WHERE processing_revision_id = %s")
                        .format(self._table("derived_revisions")), (snapshot.knowledge_revision.id,))
         manifests = [DerivedManifest.model_validate(row["payload"]) for row in cursor.fetchall()]
-        order = {"chunking": 0, "embedding": 1, "indexing": 2}
+        order = {"projection": 0, "chunking": 1, "embedding": 2, "indexing": 3}
         graph = LineageGraph(snapshot)
         for manifest in sorted(manifests, key=lambda m: (order[m.revision.stage], m.revision.id)):
             graph.extend(manifest)
@@ -268,6 +332,19 @@ class CanonicalRepository:
             snapshot = CanonicalKnowledgeSnapshot.model_validate(row["snapshot"])
             if (snapshot.document_id, snapshot.workspace_id) != (revision.document_id, revision.workspace_id):
                 raise CanonicalConflict("derived processing revision scope mismatch")
+            for artifact in manifest.projections:
+                dependencies = [edge.upstream for edge in manifest.edges if edge.downstream.key == artifact.object_ref.key]
+                entity = next((item for item in snapshot.entities if len(dependencies) == 1
+                               and dependencies[0].object_id == item.id
+                               and dependencies[0].revision_id == snapshot.knowledge_revision.id), None)
+                if not isinstance(entity, SchemaEntity) or entity.review_status != "accepted":
+                    raise CanonicalConflict("entity projection requires exactly one accepted schema entity")
+                try:
+                    projection_data = json.loads(artifact.text)
+                except ValueError as exc:
+                    raise CanonicalConflict("entity projection text is not valid JSON") from exc
+                if canonical_json_bytes(projection_data) != canonical_json_bytes(entity.data):
+                    raise CanonicalConflict("entity projection JSON differs from canonical entity data")
             cursor.execute(sql.SQL("SELECT payload_hash FROM {} WHERE id = %s")
                            .format(self._table("derived_revisions")), (revision.id,))
             existing = cursor.fetchone()

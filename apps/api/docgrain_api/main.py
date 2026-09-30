@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .canonical_repository import CanonicalRepository
 from .repository import initialize
-from .routers import chunks, documents, jobs, lineage, providers, versions
+from .routers import chunks, documents, entities, jobs, lineage, providers, versions
 from .settings import get_settings
 
 settings = get_settings()
@@ -67,7 +67,7 @@ async def identify_mode(request: Request, call_next):
     response.headers["X-Docgrain-Mode"] = "demo" if get_settings().use_fixtures else "live"
     return response
 
-for module in (documents, jobs, versions, chunks, providers, lineage):
+for module in (documents, jobs, versions, chunks, providers, lineage, entities):
     app.include_router(module.router)
 
 

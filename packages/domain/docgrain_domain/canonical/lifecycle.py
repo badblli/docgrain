@@ -41,7 +41,7 @@ class ProcessingSpec(StrictModel):
     dependencies: dict[str, str] = Field(default_factory=dict)
     options: dict[str, JsonValue] = Field(default_factory=dict)
     mapper_version: str = Field(default="m2a-1", min_length=1)
-    schema_version: Literal["0.3.0"] = "0.3.0"
+    schema_version: Literal["0.3.0", "0.4.0"] = "0.3.0"
     identity_policy_version: Literal["0.2.0"] = "0.2.0"
 
     @property
@@ -61,7 +61,7 @@ class DerivedRevision(StrictModel):
     workspace_id: str = Field(min_length=1)
     document_id: str = Field(min_length=1)
     processing_revision_id: str = Field(min_length=1)
-    stage: Literal["chunking", "embedding", "indexing"]
+    stage: Literal["projection", "chunking", "embedding", "indexing"]
     upstream_revision_ids: tuple[str, ...] = Field(min_length=1)
     strategy: str = Field(min_length=1)
     strategy_version: str = Field(min_length=1)
