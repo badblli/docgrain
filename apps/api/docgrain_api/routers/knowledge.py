@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+from urllib.parse import parse_qs, unquote, urlparse
+
 import psycopg
 from docgrain_domain.canonical import CanonicalKnowledgeSnapshot
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Response, status
+from minio.error import S3Error
 from pydantic import BaseModel
 
 from .. import repository
 from ..canonical_repository import CanonicalRepository
 from ..settings import get_settings
+from ..storage import storage_client
 
 document_router = APIRouter(prefix="/v1/documents", tags=["knowledge"])
 revision_router = APIRouter(prefix="/v1/knowledge", tags=["knowledge"])
@@ -63,3 +67,40 @@ def get_revision(revision_id: str) -> CanonicalKnowledgeSnapshot:
     if document is None or document.workspace_id != snapshot.workspace_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "canonical revision not found")
     return snapshot
+
+
+@revision_router.get("/revisions/{revision_id}/artifacts/{artifact_id}")
+def get_revision_artifact(revision_id: str, artifact_id: str) -> Response:
+    """Serve an immutable binary only when it is referenced by this revision."""
+    snapshot = _store().get_snapshot(revision_id)
+    if snapshot is None or snapshot.knowledge_revision.id != revision_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "canonical revision not found")
+    artifact = next((item for item in snapshot.artifacts if item.id == artifact_id), None)
+    if artifact is None or artifact.role != "source-image":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "canonical artifact not found")
+    parsed = urlparse(artifact.storage_uri)
+    source_uri = urlparse(snapshot.source_version.storage_uri)
+    settings = get_settings()
+    version_ids = parse_qs(parsed.query).get("versionId", [])
+    object_name = unquote(parsed.path.lstrip("/"))
+    source_parts = source_uri.path.lstrip("/").split("/")
+    if (source_uri.scheme != "s3" or source_uri.netloc != settings.s3_bucket or len(source_parts) != 4
+            or source_parts[0] != "uploads" or source_parts[1] != snapshot.document_id
+            or source_parts[3] != "original"):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "canonical artifact not found")
+    expected_prefix = f"artifacts/{snapshot.document_id}/{source_parts[2]}/structural/assets/"
+    if parsed.scheme != "s3" or parsed.netloc != settings.s3_bucket or not object_name.startswith(expected_prefix) or not version_ids:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "canonical artifact not found")
+    try:
+        stored = storage_client().get_object(settings.s3_bucket, object_name, version_id=version_ids[0])
+    except S3Error as exc:
+        if exc.code in {"NoSuchKey", "NoSuchVersion", "NoSuchBucket"}:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "canonical artifact not found") from exc
+        raise
+    try:
+        body = stored.read()
+    finally:
+        stored.close()
+        stored.release_conn()
+    return Response(body, media_type=artifact.mime_type,
+                    headers={"Cache-Control": "private, max-age=31536000, immutable"})

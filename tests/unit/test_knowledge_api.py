@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 from docgrain_api.main import app
 from docgrain_api.routers import knowledge
-from docgrain_domain.canonical import CanonicalKnowledgeSnapshot
+from docgrain_domain.canonical import ArtifactRef, CanonicalKnowledgeSnapshot
 from fastapi.testclient import TestClient
 
 client = TestClient(app)
@@ -56,6 +56,44 @@ def test_specific_immutable_revision_read(monkeypatch) -> None:
     response = client.get(f"/v1/knowledge/revisions/{snapshot.knowledge_revision.id}")
     assert response.status_code == 200
     assert response.json()["knowledge_revision"]["id"] == snapshot.knowledge_revision.id
+
+
+def test_revision_asset_is_served_only_from_referenced_versioned_object(monkeypatch) -> None:
+    snapshot, store = setup_live(monkeypatch)
+    artifact = ArtifactRef(id="artifact-image", role="source-image",
+                           storage_uri=f"s3://docgrain/artifacts/{snapshot.document_id}/dver-1/structural/assets/hash?versionId=obj-1",
+                           content_sha256="a" * 64, byte_size=4, mime_type="image/png")
+    store.snapshot = snapshot.model_copy(update={
+        "source_version": snapshot.source_version.model_copy(update={
+            "storage_uri": f"s3://docgrain/uploads/{snapshot.document_id}/dver-1/original",
+        }),
+        "artifacts": [artifact],
+    })
+    seen = {}
+
+    class Stored:
+        def read(self):
+            return b"PNG!"
+
+        def close(self):
+            pass
+
+        def release_conn(self):
+            pass
+
+    class Storage:
+        def get_object(self, bucket, name, *, version_id):
+            seen.update(bucket=bucket, name=name, version_id=version_id)
+            return Stored()
+
+    monkeypatch.setattr(knowledge, "storage_client", lambda: Storage())
+    response = client.get(f"/v1/knowledge/revisions/{snapshot.knowledge_revision.id}/artifacts/{artifact.id}")
+    assert response.status_code == 200
+    assert response.content == b"PNG!"
+    assert response.headers["content-type"] == "image/png"
+    assert seen == {"bucket": "docgrain", "name": f"artifacts/{snapshot.document_id}/dver-1/structural/assets/hash",
+                    "version_id": "obj-1"}
+    assert client.get(f"/v1/knowledge/revisions/{snapshot.knowledge_revision.id}/artifacts/not-referenced").status_code == 404
 
 
 def test_missing_document_and_revision(monkeypatch) -> None:

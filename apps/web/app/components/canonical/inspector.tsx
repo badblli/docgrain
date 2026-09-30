@@ -56,6 +56,7 @@ export type Knowledge = {
   snapshot: Snapshot;
 };
 export type CanonicalTab = "overview" | "structure" | "tables" | "assets" | "issues" | "provenance" | "raw";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 const kindLabel: Record<string, string> = {
   document: "Document", section: "Section", text_block: "TextBlock", list: "List",
@@ -329,6 +330,7 @@ export function Assets({ snapshot, versionId }: { snapshot: Snapshot; versionId?
         return <section className="ci-card ci-asset" key={node.id}><span className={`ci-kind ci-kind-${node.kind}`}>{kindLabel[node.kind]}</span>
           <h3>{node.description || node.caption || "Detected picture"}</h3>
           <p>{artifact ? `${artifact.mime_type} · ${artifact.byte_size.toLocaleString("tr-TR")} bytes` : "Binary extraction unavailable"}</p>
+          {artifact?.role === "source-image" && <img className="ci-page-image" src={`${API_BASE}/v1/knowledge/revisions/${encodeURIComponent(snapshot.knowledge_revision.id)}/artifacts/${encodeURIComponent(artifact.id)}`} alt={node.description || node.caption || "Extracted document image"} loading="lazy" />}
           <code>{node.id}</code><p>{refs.map((item) => locatorText(item.locator)).join(" · ") || "Locator unavailable"}</p>
           {refs.map((item) => <EvidenceView key={item.id} evidence={item} snapshot={snapshot} versionId={versionId} />)}
         </section>;

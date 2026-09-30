@@ -135,7 +135,9 @@ def _docling(source: VerifiedSource, fmt: SourceFormat) -> StructuralParseResult
     from docling.datamodel.pipeline_options import PdfPipelineOptions
     from docling.document_converter import DocumentConverter, PdfFormatOption
 
-    options = {InputFormat.PDF: PdfFormatOption(pipeline_options=PdfPipelineOptions(do_ocr=False))} if fmt is SourceFormat.PDF else {}
+    options = {InputFormat.PDF: PdfFormatOption(
+        pipeline_options=PdfPipelineOptions(do_ocr=False, generate_picture_images=True)
+    )} if fmt is SourceFormat.PDF else {}
     converter = DocumentConverter(allowed_formats=[InputFormat(fmt.value)], format_options=options)
     converted = converter.convert(source.path, raises_on_error=False)
     version = importlib.metadata.version("docling")
