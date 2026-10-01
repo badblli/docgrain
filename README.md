@@ -8,7 +8,7 @@ Docgrain genel amaçlıdır. LUWI gelecekteki tüketicilerinden biridir; core i�
 
 Hedef mimaride **canonical structured knowledge kaynak doğrusudur**. Markdown, chunks, embeddings ve uygulamaya özel görünümler bu modelden türetilir. Orijinal belgeler ve ham extraction sonuçları kanıt olarak korunur. Core schema ile kullanıcı/domain JSON Schema ayrı kalır.
 
-**Durum: pre-alpha / M2c canonical chunks (local review).** M1b multi-format parsing, M2a stable identity/revision/lineage ve M2b external-schema entities üstüne M2c deterministic structure-aware chunk derivation eklendi. Canonical 0.4.0 authoritative JSON, derived manifest 0.3.0 chunk payload/evidence/context sözleşmesini taşır; tarihsel schema dosyaları korunur. Chunking explicit API çağrısıdır; ingestion henüz otomatik üretmez. [M2b API](docs/M2B_ENTITIES.md), [M2c API/örnek](docs/M2C_CHUNKS.md) ve [ADR dizini](docs/adr/README.md).
+**Durum: pre-alpha / M2d incremental lifecycle (local review).** M1b parsing, M2a identity/lineage, M2b entities ve M2c chunks üzerine canonical diff, scoped embedding checkpoint reuse ve atomic PostgreSQL index generation lifecycle eklendi. Canonical 0.4.0 authoritative JSON ve tarihsel schema/manifest hash'leri korunur. Chunking explicit API çağrısı, indeks üretimi caller-supplied adapter ile explicit worker çağrısıdır; ingestion otomatik üretmez. [M2b API](docs/M2B_ENTITIES.md), [M2c API](docs/M2C_CHUNKS.md), [M2d lifecycle](docs/M2D_LIFECYCLE.md) ve [ADR dizini](docs/adr/README.md).
 
 | Alan | Bugünkü implementasyon |
 | --- | --- |
@@ -22,7 +22,8 @@ Hedef mimaride **canonical structured knowledge kaynak doğrusudur**. Markdown, 
 | Canonical structure | Docling-first PDF/DOCX/XLSX, deterministik TXT, format-aware evidence ve ayrı canonical PostgreSQL revision; yalnız object version ID varsa |
 | Entities | Dış schema kaydı, explicit candidate publication, leaf-level JSON Pointer evidence, extracted → needs_review → accepted/rejected ve ayrı JSON retrieval projection; otomatik semantik extraction henüz yok |
 | Canonical chunks | Bölüm/list context, lossless text slices, atomik table rows ve accepted entity JSON; explicit revision-scoped API, karakter bütçesi ve kaynak kanıtları |
-| Henüz yok | Canonical artifact publication, Vision reconciliation, processing manifest, genel table/asset catalog, otomatik chunking job stage, embedding, indexing, Structured Knowledge Patch, stage retry, crash recovery |
+| Incremental lifecycle | Exact canonical JSON diff, lineage invalidation candidates, selective embedding checkpoints, immutable PostgreSQL generations ve atomic head/CAS; explicit injected adapter, boş generation ile removal ve full rebuild |
+| Henüz yok | Canonical artifact publication, Vision reconciliation, processing manifest, genel table/asset catalog, otomatik chunking/index job stage, live model/Qdrant adapter, retrieval ranking, Structured Knowledge Patch, stage retry, ingestion crash recovery |
 
 `document.json` içeriği kullanılan parser'a bağlıdır; canonical knowledge sözleşmesi değildir. `pages.json` yalnızca render boyutlarını içerir; processing manifest değildir. Job `done`, mevcut extraction yolunun tamamlandığını ifade eder; hedef pipeline'ın tamamlandığı anlamına gelmez.
 

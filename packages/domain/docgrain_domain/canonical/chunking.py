@@ -49,7 +49,28 @@ def _json(value, *, pretty=False):
                       **({"indent": 2} if pretty else {"separators": (",", ":")}))
 
 
+class ChunkSet(StrictModel):
+    """Complete derivation, including a valid empty result; not a historical manifest."""
+
+    revision: DerivedRevision
+    chunks: list[ChunkPayload]
+    chunk_omissions: list[ChunkOmission]
+
+    def manifest(self) -> DerivedManifest:
+        if not self.chunks:
+            raise ValueError("canonical revision has no extractable chunk content")
+        return DerivedManifest(schema_version="0.3.0", revision=self.revision,
+                               objects=[chunk.object_ref for chunk in self.chunks],
+                               edges=[LineageEdge(upstream=p, downstream=c.object_ref)
+                                      for c in self.chunks for p in c.parents],
+                               chunks=self.chunks, chunk_omissions=self.chunk_omissions)
+
+
 def derive_chunks(snapshot: CanonicalKnowledgeSnapshot, spec: ChunkingSpec) -> DerivedManifest:
+    return derive_chunk_set(snapshot, spec).manifest()
+
+
+def derive_chunk_set(snapshot: CanonicalKnowledgeSnapshot, spec: ChunkingSpec) -> ChunkSet:
     """Pure derivation; legacy canonical snapshots can also be previewed without migration."""
     snapshot = CanonicalKnowledgeSnapshot.model_validate(snapshot.model_dump(mode="json"))
     spec = ChunkingSpec.model_validate(spec.model_dump(mode="json"))
@@ -201,11 +222,7 @@ def derive_chunks(snapshot: CanonicalKnowledgeSnapshot, spec: ChunkingSpec) -> D
                  [ChunkSource(object_ref=ref(entity), kind="entity_fields", field_pointers=fields,
                               evidence_ids=list(dict.fromkeys(r for path in fields
                                                              for r in entity.field_annotations[path].provenance.evidence_ids)))])
-    if not chunks:
-        raise ValueError("canonical revision has no extractable chunk content")
-    return DerivedManifest(schema_version="0.3.0", revision=revision, objects=[chunk.object_ref for chunk in chunks],
-                            edges=[LineageEdge(upstream=parent, downstream=chunk.object_ref) for chunk in chunks for parent in chunk.parents],
-                            chunks=chunks, chunk_omissions=omissions)
+    return ChunkSet(revision=revision, chunks=chunks, chunk_omissions=omissions)
 
 
 def cell_row(row):

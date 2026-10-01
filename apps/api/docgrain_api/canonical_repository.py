@@ -114,6 +114,9 @@ class CanonicalRepository:
                     CREATE TRIGGER reject_mutation BEFORE UPDATE OR DELETE ON {}
                     FOR EACH ROW EXECUTE FUNCTION {}()
                 """).format(self._table(name), sql.Identifier(self._schema, "reject_canonical_mutation")))
+            from .index_repository import initialize_index_tables
+
+            initialize_index_tables(self, cursor)
 
     @staticmethod
     def _hash(payload: dict[str, object]) -> str:
@@ -297,9 +300,20 @@ class CanonicalRepository:
         cursor.execute(sql.SQL("SELECT payload FROM {} WHERE processing_revision_id = %s")
                        .format(self._table("derived_revisions")), (snapshot.knowledge_revision.id,))
         manifests = [DerivedManifest.model_validate(row["payload"]) for row in cursor.fetchall()]
+        from docgrain_domain.canonical.indexing import IndexGeneration
+
+        cursor.execute(sql.SQL("SELECT payload FROM {} WHERE processing_revision_id = %s")
+                       .format(self._table("index_generations")), (snapshot.knowledge_revision.id,))
+        manifests.extend(manifest for row in cursor.fetchall()
+                         for manifest in IndexGeneration.model_validate(row["payload"]).manifests())
+        unique = {}
+        for manifest in manifests:
+            if manifest.revision.id in unique and unique[manifest.revision.id] != manifest:
+                raise CanonicalConflict("registered lineage manifests disagree")
+            unique[manifest.revision.id] = manifest
         order = {"projection": 0, "chunking": 1, "embedding": 2, "indexing": 3}
         graph = LineageGraph(snapshot)
-        for manifest in sorted(manifests, key=lambda m: (order[m.revision.stage], m.revision.id)):
+        for manifest in sorted(unique.values(), key=lambda m: (order[m.revision.stage], m.revision.id)):
             graph.extend(manifest)
         return graph
 

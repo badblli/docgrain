@@ -3,12 +3,13 @@
 ## Güncel milestone sırası
 
 M2a identity/revisions/lineage, M2b external-schema entities/field provenance ve M2c deterministic
-structure-aware chunk derivation yerel review için uygulandı. Sonraki iş M2d canonical diff/invalidation. Güncel dependency sırası
+structure-aware chunk derivation ve M2d canonical diff/incremental index lifecycle yerel review için uygulandı. Sonraki iş M2e structured/lexical/vector/hybrid retrieval. Güncel dependency sırası
 identity/lineage → entities → chunks → diff/invalidation → retrieval; selective Vision ayrı capability
 track'tir. Aşağıdaki M0–M8 tablo ilk planın tarihsel kaydıdır. Güncel contract ve kullanım:
 [ADR 0007](adr/0007-stable-identity-revisions-lineage.md),
 [ADR 0008](adr/0008-schema-entities-field-provenance.md), [M2b API](M2B_ENTITIES.md),
-[ADR 0009](adr/0009-structure-aware-chunk-derivation.md), [M2c API](M2C_CHUNKS.md).
+[ADR 0009](adr/0009-structure-aware-chunk-derivation.md), [M2c API](M2C_CHUNKS.md),
+[ADR 0010](adr/0010-canonical-diff-incremental-lifecycle.md), [M2d lifecycle](M2D_LIFECYCLE.md).
 
 ## M0 sınırı
 

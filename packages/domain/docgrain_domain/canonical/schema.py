@@ -60,3 +60,12 @@ def generated_lineage_schema_text(version: str = "0.1.0") -> str:
         schema["$defs"]["ObjectRef"]["properties"]["kind"]["enum"].remove("projection")
         schema["$defs"]["DerivedRevision"]["properties"]["stage"]["enum"].remove("projection")
     return json.dumps(schema, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
+
+
+def generated_index_schema_text() -> str:
+    from .indexing import IndexGeneration
+
+    schema = IndexGeneration.model_json_schema(mode="validation")
+    schema["$schema"] = DIALECT
+    schema["$id"] = "urn:docgrain:index-generation:0.1.0"
+    return json.dumps(schema, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
