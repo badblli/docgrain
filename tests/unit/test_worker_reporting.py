@@ -52,3 +52,13 @@ def test_failure_is_attributed_to_the_operation_that_failed(worker, failed_stage
     assert len(failures) == 1
     assert failures[0]["stage"] == failed_stage
     assert failures[0]["error"] == "storage or provider failed"
+
+
+def test_published_output_reports_real_normalize_and_chunk_but_no_embeddings(worker):
+    stages = worker.stage_update([{"stage":stage.value} for stage in JobStage],
+        canonical_persisted=True,outputs_published=True,chunk_count=3,output_revision_id="projection-test")
+    by_stage = {stage["stage"]:stage for stage in stages}
+    assert by_stage["normalize"]["status"] == by_stage["chunk"]["status"] == "done"
+    assert by_stage["chunk"]["attributes"]["chunk_count"] == 3
+    assert by_stage["embed"]["status"] == by_stage["enrich"]["status"] == "skipped"
+    assert "ai.json" in by_stage["publish"]["summary"]

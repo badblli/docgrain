@@ -28,6 +28,7 @@ from minio import Minio
 from .canonical_assets import store_asset
 from .canonical_writer import persist_structural, processing_spec
 from .quality import missing_extraction_pages, page_failures
+from .output_writer import publish_outputs
 from .structural import (
     DocumentParser,
     ParseIssue,
@@ -78,8 +79,13 @@ def stage_update(
     structural_status: str | None = None,
     structural_issues: list[dict[str, object]] | None = None,
     canonical_persisted: bool = False,
+    outputs_published: bool = False,
+    chunk_count: int = 0,
+    output_revision_id: str | None = None,
 ) -> list[dict[str, object]]:
     done = {"register", "render", "extract", "quality", "publish"}
+    if outputs_published:
+        done.update({"normalize", "chunk"})
     missing_pages = missing_pages or []
     for stage in stages:
         name = str(stage["stage"])
@@ -112,12 +118,18 @@ def stage_update(
                 else f"{len(missing_pages)} pages failed; stage replay is not implemented."
             ))
             stage["attributes"] = {"failed_pages": missing_pages, "structural_issues": structural_issues or []}
-        if name in {"normalize", "chunk", "enrich", "embed"}:
+        if name in {"normalize", "chunk"} and outputs_published and not failed:
+            stage["summary"] = ("Common ai.json + canonical JSON/Markdown and verified manifest published; semantic content is not verified."
+                                if name == "normalize" else f"{chunk_count} canonical chunks published; no embedding performed.")
+            stage["attributes"] = {"output_revision_id":output_revision_id,"chunk_count":chunk_count}
+        elif name in {"normalize", "chunk", "enrich", "embed"}:
             stage["summary"] = "Not implemented."
         elif name == "vision":
             stage["summary"] = "No separate enrichment stage; configured Vision runs under extract."
         elif name == "publish" and not failed:
-            stage["summary"] = ("Canonical revision persisted; no canonical artifact/manifest or index was produced."
+            stage["summary"] = ("Verified canonical.json, ai.json, canonical.md, chunks.jsonl and manifest published; no index produced."
+                                if outputs_published else
+                                "Canonical revision persisted; no canonical artifact/manifest or index was produced."
                                 if canonical_persisted else
                                 ("Structural extraction completed; no canonical revision or PDF artifacts were published."
                                  if non_pdf else "Extraction JSON/Markdown stored; no canonical manifest or index was produced."))
@@ -284,6 +296,9 @@ def process(job_id: str) -> None:
             if structural.status == "failed" and source_format is not SourceFormat.PDF:
                 raise ValueError("structural parser failed: " + "; ".join(i.reason for i in structural.issues))
             canonical_persisted = False
+            outputs_published = False
+            chunk_count = 0
+            output_revision_id = None
             structural_issues = [i.__dict__ for i in structural.issues]
             if os.getenv("CANONICAL_PERSISTENCE_ENABLED", "false").lower() == "true":
                 if storage_version and storage_version != "null" and structural.status != "failed":
@@ -357,12 +372,18 @@ def process(job_id: str) -> None:
                 parser = structural.parser
                 vision_provider = None
                 extraction_provider = structural.parser
+            if canonical_persisted:
+                active_stage = "publish"
+                output, publication, _ = publish_outputs(canonical_repository,snapshot,client,bucket)
+                outputs_published = True
+                chunk_count = output.quality.measurements["chunks"]
+                output_revision_id = publication.revision.id
             final_status = "partial" if failures or structural_issues or not canonical_persisted else "done"
         with closing(psycopg.connect(db_url())) as conn, conn.cursor() as cur:
             cur.execute(
                 """UPDATE document_versions
                 SET status=%s, parser=%s, vision_provider=%s, content_sha256=%s,
-                    page_count=%s, table_count=%s, asset_count=%s, published_at=NOW()
+                    page_count=%s, table_count=%s, asset_count=%s, chunk_count=%s, published_at=NOW()
                 WHERE id=%s""",
                 (
                     final_status,
@@ -372,6 +393,7 @@ def process(job_id: str) -> None:
                     rendered_page_count,
                     table_count,
                     asset_count,
+                    chunk_count,
                     version_id,
                 ),
             )
@@ -393,6 +415,9 @@ def process(job_id: str) -> None:
                             structural_status=structural.status,
                             structural_issues=structural_issues,
                             canonical_persisted=canonical_persisted,
+                            outputs_published=outputs_published,
+                            chunk_count=chunk_count,
+                            output_revision_id=output_revision_id,
                         )
                     ),
                     json.dumps(failures),

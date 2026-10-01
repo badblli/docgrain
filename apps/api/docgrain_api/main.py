@@ -24,6 +24,7 @@ from .routers import (
     jobs,
     knowledge,
     lineage,
+    outputs,
     providers,
     retrieval,
     versions,
@@ -50,10 +51,10 @@ app = FastAPI(
     description=(
         "Document-to-knowledge engine under development. Current live ingestion accepts "
         "PDF, DOCX, TXT and XLSX. PDF retains page rendering and provider-specific legacy extraction. "
-        "Versioned sources can produce structural canonical DB revisions; canonical artifact publication, "
+        "Versioned sources automatically publish canonical JSON, common ai.json, readable Markdown, chunks and a verified manifest. "
         "Vision reconciliation, live embedding/Qdrant adapters and ingestion crash recovery are not implemented. "
         "Explicit worker index lifecycle supports checkpoint reuse and atomic PostgreSQL generations; HTTP lifecycle inspection is read-only. "
-        "Canonical chunks use explicit revision-scoped derivation; ingestion does not generate them automatically. "
+        "Canonical chunk derivation runs at ingestion write time; queries read immutable artifacts. "
         "USE_FIXTURES enables read-only demo data; X-Docgrain-Mode identifies responses."
     ),
     lifespan=lifespan,
@@ -83,7 +84,7 @@ async def identify_mode(request: Request, call_next):
     response.headers["X-Docgrain-Mode"] = "demo" if get_settings().use_fixtures else "live"
     return response
 
-for module in (documents, jobs, versions, chunks, providers, lineage, entities, canonical_chunks, incremental, retrieval):
+for module in (documents, jobs, versions, chunks, providers, lineage, entities, canonical_chunks, incremental, retrieval, outputs):
     app.include_router(module.router)
 app.include_router(knowledge.document_router)
 app.include_router(knowledge.revision_router)

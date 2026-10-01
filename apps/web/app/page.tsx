@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import "./canonical.css";
+import { AIOutputView } from "./components/canonical/ai-output";
 import { Assets as CanonicalAssets, Issues as CanonicalIssues, Overview as CanonicalOverview,
   ProvenanceView, Raw as CanonicalRaw, Structure as CanonicalStructure, Tables as CanonicalTables,
   type Knowledge } from "./components/canonical/inspector";
@@ -9,7 +10,7 @@ import { Assets as CanonicalAssets, Issues as CanonicalIssues, Overview as Canon
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const WORKSPACE = process.env.NEXT_PUBLIC_WORKSPACE_ID ?? "ws_local";
 type Screen = "documents" | "jobs" | "providers" | "contract" | "detail";
-type DetailTab = "overview" | "structure" | "tables" | "assets" | "issues" | "provenance" | "pages" | "pipeline" | "versions" | "raw";
+type DetailTab = "ai-output" | "overview" | "structure" | "tables" | "assets" | "issues" | "provenance" | "pages" | "pipeline" | "versions" | "raw";
 type UploadPhase =
   | "idle"
   | "registering"
@@ -113,11 +114,11 @@ const stageMeta: Record<string, { name: string; via: string }> = {
   extract: { name: "Çıkarım", via: "Gemini veya Docling" },
   quality: { name: "Temel kontrol", via: "Sayfa hataları / response doğrulama" },
   vision: { name: "Vision enrichment", via: "Ayrı aşama uygulanmadı" },
-  normalize: { name: "Normalization", via: "Henüz uygulanmadı" },
-  chunk: { name: "Chunking", via: "Henüz uygulanmadı" },
+  normalize: { name: "Normalization", via: "Canonical AI çıktısı" },
+  chunk: { name: "Chunking", via: "Canonical structure-aware chunks" },
   enrich: { name: "Chunk enrichment", via: "Henüz uygulanmadı" },
   embed: { name: "Embedding / index", via: "Henüz uygulanmadı" },
-  publish: { name: "Revision / artifact kaydı", via: "Canonical DB revision; legacy extraction dosyaları" },
+  publish: { name: "Revision / artifact kaydı", via: "Canonical revision ve doğrulanmış çıktı paketi" },
 };
 type Mode = "live" | "demo";
 
@@ -321,9 +322,9 @@ function Sidebar({
         Veri sözleşmesi
       </button>
       <div className="railfoot">
-        M1 · Canonical knowledge inspector
+        Ortak doküman çıktıları
         <br />
-        Structural revision PostgreSQL’de saklanır. Derived outputs sonraki milestone’larda geliştirilecek.
+        Metin, tablolar ve kaynak kanıtları tek biçimde. Görsel anlamı için açık eksikleri inceleyin.
       </div>
     </aside>
   );
@@ -660,7 +661,7 @@ function Contract() {
           <p>Canonical structured knowledge kaynak doğrusu olacak; Markdown, chunks, embeddings ve uygulama görünümleri ondan türetilecek.</p>
           <p>Bugün: PDF, DOCX, TXT ve XLSX upload → parser → PostgreSQL canonical revision. PDF page render ve legacy extraction artifact’ları da mevcuttur.</p>
           <p>Core schema ile kullanıcı/domain schema ayrı kalacak. LUWI gelecekteki tüketicilerden biridir.</p>
-          <p>Canonical model ve structural revision kalıcılığı mevcut. Vision reconciliation, semantic extraction, canonical artifact publication, chunking, indexing, structured patch ve crash recovery henüz yok.</p>
+          <p>Canonical revision, ortak AI JSON/Markdown, chunks ve checksum manifest yayını mevcut. Vision reconciliation, otomatik semantic extraction/indexing, structured patch ve crash recovery henüz yok.</p>
           <p>Jev, LangChain/LangGraph, çoklu provider, hybrid retrieval ve connectors ertelendi.</p>
           <a href={`${API}/docs`} target="_blank" rel="noreferrer">OpenAPI sözleşmesini aç</a>
         </section>
@@ -680,6 +681,7 @@ function DetailHead({
   knowledge: Knowledge | null;
 }) {
   const tabs: [DetailTab, string, string][] = [
+    ["ai-output", "AI çıktısı", ""],
     ["overview", "Overview", ""],
     ["structure", "Structure", String(knowledge?.snapshot.structure.length ?? "—")],
     ["tables", "Tables", String(knowledge?.snapshot.structure.filter((n) => n.kind === "table").length ?? "—")],
@@ -809,8 +811,9 @@ function Pipeline({ job }: { job: Job | null }) {
       <div className="explain">
         <b>Aşama kaydı:</b> Mevcut worker aşama özetlerini işlem sonunda kaydeder.
         Ayrıntılı canlı aşama ilerlemesi, stage retry ve crash recovery henüz yok.
-        Publish aşaması canonical DB revision’ını kaydedebilir; canonical manifest veya index üretmez.
-        M0 öncesi kayıtlar geçmiş durum özetleridir ve uygulanmamış aşamalar için yanıltıcı değerler içerebilir.
+        Yeni işler canonical revision, ortak AI çıktısı, chunks ve checksum manifesti yayımlar.
+        Bu görünüm işin çalıştırıldığı tarihteki aşamaları gösterir; sonradan üretilen çıktı geçmiş job kaydını değiştirmez.
+        Güncel yayımlanmış paketi AI çıktısı sekmesinden inceleyebilirsiniz. Embedding ve index otomatik üretilmez.
       </div>
     </div>
   );
@@ -980,6 +983,7 @@ function Detail({
   return (
     <>
       <DetailHead doc={doc} tab={tab} setTab={setTab} knowledge={knowledge} />
+      {tab === "ai-output" && (canonical ? <AIOutputView key={canonical.knowledge_revision.id} snapshot={canonical} versionId={doc.versionId} /> : canonicalUnavailable)}
       {tab === "overview" && (knowledge ? <CanonicalOverview knowledge={knowledge} status={doc.status} /> : canonicalUnavailable)}
       {tab === "structure" && (canonical ? <CanonicalStructure snapshot={canonical} versionId={doc.versionId} /> : canonicalUnavailable)}
       {tab === "tables" && (canonical ? <CanonicalTables snapshot={canonical} versionId={doc.versionId} /> : canonicalUnavailable)}
@@ -998,7 +1002,7 @@ function Detail({
 
 export default function Home() {
   const [screen, setScreen] = useState<Screen>("documents"),
-    [tab, setTab] = useState<DetailTab>("overview"),
+    [tab, setTab] = useState<DetailTab>("ai-output"),
     [mode, setMode] = useState<Mode | null>(null),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
@@ -1050,7 +1054,7 @@ export default function Home() {
 
   async function open(d: DocumentRow) {
     const request = ++requestId.current;
-    setSelected(d); setTab("overview"); setScreen("detail");
+    setSelected(d); setTab("ai-output"); setScreen("detail");
     setJob(null); setPages([]); setVersions([]); setMarkdown("");
     setKnowledge(null); setKnowledgeState("");
     setDetailError(""); setDetailLoading(true);
@@ -1207,7 +1211,7 @@ export default function Home() {
       <main>
         <div className="modeNotice" role="status">
           {mode === "demo" ? "DEMO — salt okunur sentetik veriler. Canonical knowledge bu modda mevcut değil."
-            : mode === "live" ? "LIVE — canonical knowledge PostgreSQL revision kayıtlarından okunur. Derived outputs sonraki milestone’larda eklenecek." : "API çalışma modu bekleniyor."}
+            : mode === "live" ? "LIVE — canonical revision ve ortak AI çıktıları okunur. Görsel yorumlama ve kaynak bütünlüğü eksikleri açıkça gösterilir." : "API çalışma modu bekleniyor."}
           <button className="btn sm" onClick={() => void refresh()} disabled={loading || ["registering", "uploading", "confirming", "queued", "running"].includes(uploadState.phase)}>Listeyi yenile</button>
         </div>
         {loading ? <EmptyState title="Yükleniyor" text="API çalışma modu ve kayıtlar alınıyor." />

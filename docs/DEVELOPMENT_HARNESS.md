@@ -14,8 +14,13 @@ track'tir. Aşağıdaki M0–M8 tablo ilk planın tarihsel kaydıdır. Güncel c
 [M2e retrieval](M2E_RETRIEVAL.md), [M2f evaluation](M2F_EVALUATION.md),
 [latency benchmark](RETRIEVAL_BENCHMARK.md), [M2g source adapters](M2G_LIVE_SOURCES.md).
 
-Sıradaki ürün entegrasyonu: gerçek embedding/Qdrant seçimi ve ölçümü, ingestion job stage/recovery
-wiring, selective enrichment ve consumer kabulü. Foundations tamamlanması v1 release kabulü değildir.
+2026-10-01: Inspector/image + M2 foundations yerelde birleşti; otomatik canonical/AI JSON,
+Markdown, chunks, checksum manifest ve binary ekleriyle ZIP yayını uygulandı. Normalize/chunk
+job stage'leri yalnız gerçek yayın sonrası done olur. [Embedding öncesi çıktı kabulü](PRE_EMBEDDING_OUTPUT.md)
+ve [ADR 0015](adr/0015-pre-embedding-ai-output.md). Gerçek worker/PostgreSQL/MinIO/Docling suite 208 geçti.
+Sıradaki kalite kapısı kaynak↔çıktı fidelity incelemesi, selective OCR/Vision ve evidence
+reconciliation; ardından gerçek embedding/Qdrant seçimi/ölçümü ve recovery wiring.
+Foundations veya tek format tamamlanması v1 release / evrensel semantik kabul değildir.
 
 ## M0 sınırı
 
