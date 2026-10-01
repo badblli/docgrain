@@ -8,7 +8,7 @@ Docgrain genel amaçlıdır. LUWI gelecekteki tüketicilerinden biridir; core i�
 
 Hedef mimaride **canonical structured knowledge kaynak doğrusudur**. Markdown, chunks, embeddings ve uygulamaya özel görünümler bu modelden türetilir. Orijinal belgeler ve ham extraction sonuçları kanıt olarak korunur. Core schema ile kullanıcı/domain JSON Schema ayrı kalır.
 
-**Durum: pre-alpha / M2b entity contracts (local review).** M1b multi-format parsing üstüne M2a stable identity/revision/lineage ve M2b external JSON Schema, alan kanıtları, entity review lifecycle ve ayrı retrieval projection eklendi. Canonical 0.4.0 yeni entity contract'ını taşır; tarihsel schema dosyaları korunur. Canonical revision yalnız doğrulanmış, sürümlenmiş kaynak nesnesiyle persist edilir; `canonical.json` henüz publish edilmez. [M2b API ve gerçek tablo örneği](docs/M2B_ENTITIES.md), [ADR 0007](docs/adr/0007-stable-identity-revisions-lineage.md) ve [ADR 0008](docs/adr/0008-schema-entities-field-provenance.md).
+**Durum: pre-alpha / M2c canonical chunks (local review).** M1b multi-format parsing, M2a stable identity/revision/lineage ve M2b external-schema entities üstüne M2c deterministic structure-aware chunk derivation eklendi. Canonical 0.4.0 authoritative JSON, derived manifest 0.3.0 chunk payload/evidence/context sözleşmesini taşır; tarihsel schema dosyaları korunur. Chunking explicit API çağrısıdır; ingestion henüz otomatik üretmez. [M2b API](docs/M2B_ENTITIES.md), [M2c API/örnek](docs/M2C_CHUNKS.md) ve [ADR dizini](docs/adr/README.md).
 
 | Alan | Bugünkü implementasyon |
 | --- | --- |
@@ -21,7 +21,8 @@ Hedef mimaride **canonical structured knowledge kaynak doğrusudur**. Markdown, 
 | Console | API kayıtları, page render, doküman düzeyinde extraction Markdown; açık demo modu |
 | Canonical structure | Docling-first PDF/DOCX/XLSX, deterministik TXT, format-aware evidence ve ayrı canonical PostgreSQL revision; yalnız object version ID varsa |
 | Entities | Dış schema kaydı, explicit candidate publication, leaf-level JSON Pointer evidence, extracted → needs_review → accepted/rejected ve ayrı JSON retrieval projection; otomatik semantik extraction henüz yok |
-| Henüz yok | Canonical artifact publication, Vision reconciliation, processing manifest, genel table/asset catalog, chunking, embedding, indexing, Structured Knowledge Patch, stage retry, crash recovery |
+| Canonical chunks | Bölüm/list context, lossless text slices, atomik table rows ve accepted entity JSON; explicit revision-scoped API, karakter bütçesi ve kaynak kanıtları |
+| Henüz yok | Canonical artifact publication, Vision reconciliation, processing manifest, genel table/asset catalog, otomatik chunking job stage, embedding, indexing, Structured Knowledge Patch, stage retry, crash recovery |
 
 `document.json` içeriği kullanılan parser'a bağlıdır; canonical knowledge sözleşmesi değildir. `pages.json` yalnızca render boyutlarını içerir; processing manifest değildir. Job `done`, mevcut extraction yolunun tamamlandığını ifade eder; hedef pipeline'ın tamamlandığı anlamına gelmez.
 
@@ -52,7 +53,7 @@ M1 contract'ı `packages/domain/docgrain_domain/canonical/` altındadır. Eski 0
 - Console modu API'den alır; API erişilemiyorsa hata gösterir. Demo verisiyle devam etmez.
 - Demo chunk, similarity ve ileri pipeline örnekleri simülasyondur. Gerçek embedding veya extraction sonucu değildir.
 - Stage retry her iki modda `501` döndürür; herhangi bir iş planlamaz.
-- Live chunk lookup/neighbors ve boundary analysis `501` döndürür. Mevcut live version'ın table/asset/chunk listeleri boş döner.
+- Legacy live chunk lookup/neighbors ve boundary analysis `501` döndürür. Canonical chunk üretim/okuma için [revision-scoped API](docs/M2C_CHUNKS.md) kullanılır. Legacy live version listeleri bu chunk revision'larını temsil etmez.
 - Live version diff yalnızca aynı dokümana ait sürümlerin sayaç farkıdır; semantic diff veya patch değildir.
 - Provider envanteri bağlantı testi yapmaz. `healthy: null` kontrol edilmedi, `false` yapılandırılmadı/implement edilmedi anlamındadır. Live page `confidence: null` ölçülmedi demektir.
 

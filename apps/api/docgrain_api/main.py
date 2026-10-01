@@ -15,7 +15,16 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .canonical_repository import CanonicalRepository
 from .repository import initialize
-from .routers import chunks, documents, entities, jobs, lineage, providers, versions
+from .routers import (
+    canonical_chunks,
+    chunks,
+    documents,
+    entities,
+    jobs,
+    lineage,
+    providers,
+    versions,
+)
 from .settings import get_settings
 
 settings = get_settings()
@@ -39,7 +48,8 @@ app = FastAPI(
         "Document-to-knowledge engine under development. Current live ingestion accepts "
         "PDF, DOCX, TXT and XLSX. PDF retains page rendering and provider-specific legacy extraction. "
         "Versioned sources can produce structural canonical DB revisions; canonical artifact publication, "
-        "Vision reconciliation, chunking, indexing and crash recovery are not implemented. "
+        "Vision reconciliation, embedding/indexing and crash recovery are not implemented. "
+        "Canonical chunks use explicit revision-scoped derivation; ingestion does not generate them automatically. "
         "USE_FIXTURES enables read-only demo data; X-Docgrain-Mode identifies responses."
     ),
     lifespan=lifespan,
@@ -48,6 +58,7 @@ app = FastAPI(
         {"name": "jobs", "description": "Job status; stage retry is not implemented."},
         {"name": "versions", "description": "Page renders and counts; demo-only tables/assets/chunks."},
         {"name": "chunks", "description": "Demo-only chunk and simulated neighbor inspection."},
+        {"name": "canonical-chunks", "description": "Revision-scoped canonical derivation and reads; Unicode character budgets."},
         {"name": "providers", "description": "Configuration inventory, not connectivity probes."},
     ],
 )
@@ -67,7 +78,7 @@ async def identify_mode(request: Request, call_next):
     response.headers["X-Docgrain-Mode"] = "demo" if get_settings().use_fixtures else "live"
     return response
 
-for module in (documents, jobs, versions, chunks, providers, lineage, entities):
+for module in (documents, jobs, versions, chunks, providers, lineage, entities, canonical_chunks):
     app.include_router(module.router)
 
 

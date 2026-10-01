@@ -58,18 +58,96 @@ class ProjectionArtifact(StrictModel):
         return self
 
 
+class ChunkContext(StrictModel):
+    object_ref: ObjectRef
+    kind: Literal["document", "section", "list", "table_caption", "entity_label"]
+    text: str
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class ChunkSource(StrictModel):
+    object_ref: ObjectRef
+    kind: Literal["whole", "text", "rows", "entity_fields"]
+    evidence_ids: list[str] = Field(default_factory=list)
+    start: int | None = Field(default=None, ge=0)
+    end: int | None = Field(default=None, ge=0)
+    field_pointers: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def slice_contract(self) -> ChunkSource:
+        if self.object_ref.kind != "canonical":
+            raise ValueError("chunk source must be canonical")
+        if self.kind in {"text", "rows"}:
+            if self.start is None or self.end is None or self.end <= self.start:
+                raise ValueError("chunk source slice must be a nonempty half-open interval")
+        elif self.start is not None or self.end is not None:
+            raise ValueError("whole/entity sources cannot carry slice offsets")
+        if (self.kind == "entity_fields") != bool(self.field_pointers):
+            raise ValueError("only entity sources require field pointers")
+        if len(self.evidence_ids) != len(set(self.evidence_ids)):
+            raise ValueError("duplicate chunk source evidence")
+        return self
+
+
+def contextualize_chunk(text: str, context: list[ChunkContext]) -> str:
+    prefix = "\n".join(item.text for item in context if item.text)
+    return prefix + "\n\n" + text if prefix else text
+
+
+class ChunkPayload(StrictModel):
+    object_ref: ObjectRef
+    kind: Literal["text", "table", "entity", "description"]
+    order: int = Field(ge=0)
+    ordinal: int = Field(ge=0)
+    text: str = Field(min_length=1)
+    retrieval_text: str = Field(min_length=1)
+    content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    character_count: int = Field(ge=1)
+    oversized: bool = False
+    split_fallback: bool = False
+    parents: list[ObjectRef] = Field(min_length=1)
+    context: list[ChunkContext] = Field(default_factory=list)
+    sources: list[ChunkSource] = Field(min_length=1)
+    evidence_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def verified_payload(self) -> ChunkPayload:
+        if self.object_ref.kind != "chunk" or self.retrieval_text != contextualize_chunk(self.text, self.context):
+            raise ValueError("chunk kind or contextualized text mismatch")
+        if self.character_count != len(self.retrieval_text) or sha256(self.retrieval_text.encode()).hexdigest() != self.content_sha256:
+            raise ValueError("chunk size or checksum mismatch")
+        parents = {parent.key for parent in self.parents}
+        required = {item.object_ref.key for item in [*self.context, *self.sources]}
+        if len(parents) != len(self.parents) or parents != required or any(p.kind != "canonical" for p in self.parents):
+            raise ValueError("chunk parents must cover context and sources exactly")
+        evidence = {ref for item in [*self.context, *self.sources] for ref in item.evidence_ids}
+        if len(self.evidence_ids) != len(set(self.evidence_ids)) or set(self.evidence_ids) != evidence:
+            raise ValueError("chunk evidence must cover context and sources exactly")
+        return self
+
+
+class ChunkOmission(StrictModel):
+    object_ref: ObjectRef
+    reason: Literal["empty_text", "no_description", "unaccepted_entity", "invalid_entity", "legacy_entity", "entity_disabled"]
+
+
 class DerivedManifest(StrictModel):
-    schema_version: Literal["0.1.0", "0.2.0"] = "0.1.0"
+    schema_version: Literal["0.1.0", "0.2.0", "0.3.0"] = "0.1.0"
     revision: DerivedRevision
     objects: list[ObjectRef] = Field(min_length=1)
     edges: list[LineageEdge] = Field(min_length=1)
     projections: list[ProjectionArtifact] = Field(default_factory=list)
+    chunks: list[ChunkPayload] = Field(default_factory=list)
+    chunk_omissions: list[ChunkOmission] = Field(default_factory=list)
 
     @model_serializer(mode="wrap")
     def serialize_manifest(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
         payload = handler(self)
         if not self.projections:
             payload.pop("projections", None)
+        for field in ("chunks", "chunk_omissions"):
+            if not getattr(self, field):
+                payload.pop(field, None)
         return payload
 
     @model_validator(mode="after")
@@ -78,6 +156,18 @@ class DerivedManifest(StrictModel):
         if len(keys) != len(self.objects):
             raise ValueError("duplicate derived objects")
         output_kind = _OUTPUT[self.revision.stage]
+        if self.schema_version != "0.3.0" and (self.chunks or self.chunk_omissions):
+            raise ValueError("chunk payloads require derived manifest schema_version 0.3.0")
+        if self.schema_version == "0.3.0" and output_kind == "chunk":
+            if [chunk.object_ref for chunk in self.chunks] != self.objects:
+                raise ValueError("chunk stage requires ordered payloads for every object")
+            if [chunk.order for chunk in self.chunks] != list(range(len(self.chunks))):
+                raise ValueError("chunk reading order must be contiguous")
+            expected_edges = {(parent.key, chunk.object_ref.key) for chunk in self.chunks for parent in chunk.parents}
+            if {(edge.upstream.key, edge.downstream.key) for edge in self.edges} != expected_edges:
+                raise ValueError("chunk lineage must cover payload parents exactly")
+        elif self.chunks or self.chunk_omissions:
+            raise ValueError("chunk payloads require chunking stage")
         if self.schema_version == "0.1.0" and (
             output_kind == "projection" or self.projections
             or any(edge.upstream.kind == "projection" for edge in self.edges)

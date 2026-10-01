@@ -332,6 +332,12 @@ class CanonicalRepository:
             snapshot = CanonicalKnowledgeSnapshot.model_validate(row["snapshot"])
             if (snapshot.document_id, snapshot.workspace_id) != (revision.document_id, revision.workspace_id):
                 raise CanonicalConflict("derived processing revision scope mismatch")
+            if manifest.schema_version == "0.3.0" and revision.stage == "chunking":
+                from docgrain_domain.canonical.chunking import ChunkingSpec, derive_chunks
+
+                expected = derive_chunks(snapshot, ChunkingSpec.model_validate(revision.configuration))
+                if canonical_json_bytes(expected.model_dump(mode="json")) != canonical_json_bytes(payload):
+                    raise CanonicalConflict("chunk manifest differs from canonical strategy derivation")
             for artifact in manifest.projections:
                 dependencies = [edge.upstream for edge in manifest.edges if edge.downstream.key == artifact.object_ref.key]
                 entity = next((item for item in snapshot.entities if len(dependencies) == 1

@@ -8,4 +8,5 @@ Public contract veya mimari sınır değişikliklerinde küçük, açık bir ADR
 
 M2a: [ADR 0007 — stable identity, revisions and lineage](0007-stable-identity-revisions-lineage.md).
 M2b: [ADR 0008 — schema entities and field provenance](0008-schema-entities-field-provenance.md).
+M2c: [ADR 0009 — deterministic structure-aware chunks](0009-structure-aware-chunk-derivation.md).
 Güncel dependency sırası identity/lineage → entities → chunks → diff/invalidation → retrieval.

@@ -43,12 +43,17 @@ def generated_core_schema_text(version: str = "0.2.0") -> str:
 def generated_lineage_schema_text(version: str = "0.1.0") -> str:
     from .lineage import DerivedManifest
 
-    if version not in {"0.1.0", "0.2.0"}:
+    if version not in {"0.1.0", "0.2.0", "0.3.0"}:
         raise ValueError("unsupported derived manifest schema version")
     schema = DerivedManifest.model_json_schema(mode="validation")
     schema["$schema"] = DIALECT
     schema["$id"] = f"urn:docgrain:derived-manifest:{version}"
     schema["properties"]["schema_version"] = {"const": version, "default": version, "title": "Schema Version", "type": "string"}
+    if version != "0.3.0":
+        for name in ("chunks", "chunk_omissions"):
+            schema["properties"].pop(name)
+        for name in ("ChunkPayload", "ChunkSource", "ChunkContext", "ChunkOmission"):
+            schema["$defs"].pop(name)
     if version == "0.1.0":
         schema["properties"].pop("projections")
         schema["$defs"].pop("ProjectionArtifact")

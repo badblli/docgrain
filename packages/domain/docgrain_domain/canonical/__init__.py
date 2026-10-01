@@ -16,6 +16,10 @@ from .lifecycle import (
     source_revision_id,
 )
 from .lineage import (
+    ChunkContext,
+    ChunkOmission,
+    ChunkPayload,
+    ChunkSource,
     DerivedManifest,
     LineageEdge,
     LineageGraph,
@@ -74,6 +78,10 @@ __all__ = [
     "AssetNode",
     "CanonicalKnowledgeSnapshot",
     "ChartNode",
+    "ChunkContext",
+    "ChunkOmission",
+    "ChunkPayload",
+    "ChunkSource",
     "DateRange",
     "DatetimeRange",
     "DerivedManifest",

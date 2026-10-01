@@ -14,7 +14,8 @@ router = APIRouter(prefix="/v1/chunks", tags=["chunks"])
 @router.get("/{chunk_id}", response_model=Chunk)
 def get_chunk(chunk_id: str) -> Chunk:
     if not get_settings().use_fixtures:
-        raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "chunk generation is not implemented")
+        raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED,
+                            "legacy chunk lookup is unavailable; use revision-scoped /v1/knowledge/revisions/{revision_id}/chunks")
     chunk = next((c for c in fixtures.CHUNKS if c.id == chunk_id), None)
     if chunk is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "chunk not found")
