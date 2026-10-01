@@ -22,6 +22,7 @@ from .routers import (
     entities,
     incremental,
     jobs,
+    knowledge,
     lineage,
     providers,
     retrieval,
@@ -60,6 +61,7 @@ app = FastAPI(
         {"name": "documents", "description": "Registration, listing, versions."},
         {"name": "jobs", "description": "Job status; stage retry is not implemented."},
         {"name": "versions", "description": "Page renders and counts; demo-only tables/assets/chunks."},
+        {"name": "knowledge", "description": "Read-only canonical knowledge revisions."},
         {"name": "chunks", "description": "Demo-only chunk and simulated neighbor inspection."},
         {"name": "canonical-chunks", "description": "Revision-scoped canonical derivation and reads; Unicode character budgets."},
         {"name": "providers", "description": "Configuration inventory, not connectivity probes."},
@@ -83,6 +85,8 @@ async def identify_mode(request: Request, call_next):
 
 for module in (documents, jobs, versions, chunks, providers, lineage, entities, canonical_chunks, incremental, retrieval):
     app.include_router(module.router)
+app.include_router(knowledge.document_router)
+app.include_router(knowledge.revision_router)
 
 
 @app.get("/healthz", tags=["ops"])

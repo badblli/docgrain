@@ -82,6 +82,12 @@ def test_pdf_provenance_and_low_text(corpus):
 @pytest.mark.parametrize("name", ["table", "multicolumn", "rotated90", "rotated180", "rotated270", "cropped", "image-heavy"])
 def test_pdf_corpus_mapping(corpus, name):
     result, verified = parse(corpus[name], SourceFormat.PDF)
+    pictures = [item for item in result.items if item.kind == "picture"]
+    if name == "image-heavy":
+        assert pictures and all(item.asset_bytes for item in pictures)
+        assert not any(issue.code == "unextracted_picture" for issue in result.issues)
+        for picture in pictures:
+            picture.asset_path = "fixture://source-image"
     if name == "table":
         assert any(item.kind == "table" and item.cells[1][1]["value"] == "2" for item in result.items)
         assert any(issue.code == "docling_missed_table" for issue in result.issues)
@@ -92,5 +98,8 @@ def test_pdf_corpus_mapping(corpus, name):
     snapshot = CanonicalMapper().map(result, source, revision_id=f"revision-{name}",
                                      created_at=source.recorded_at, pdf_path=verified.path)
     assert snapshot.structure and snapshot.evidence
+    if name == "image-heavy":
+        assert sum(node.kind == "asset" for node in snapshot.structure) == len(pictures)
+        assert len(snapshot.artifacts) == len(pictures)
     assert all(box.bbox is None or 0 <= box.bbox.x <= 1 for box in
                (e.locator for e in snapshot.evidence if e.locator.kind == "pdf_page"))

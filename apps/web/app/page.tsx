@@ -1,11 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import "./canonical.css";
+import { Assets as CanonicalAssets, Issues as CanonicalIssues, Overview as CanonicalOverview,
+  ProvenanceView, Raw as CanonicalRaw, Structure as CanonicalStructure, Tables as CanonicalTables,
+  type Knowledge } from "./components/canonical/inspector";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const WORKSPACE = process.env.NEXT_PUBLIC_WORKSPACE_ID ?? "ws_local";
 type Screen = "documents" | "jobs" | "providers" | "contract" | "detail";
-type DetailTab = "pipeline" | "pages" | "chunks" | "assets" | "versions";
+type DetailTab = "overview" | "structure" | "tables" | "assets" | "issues" | "provenance" | "pages" | "pipeline" | "versions" | "raw";
 type UploadPhase =
   | "idle"
   | "registering"
@@ -33,11 +37,8 @@ type DocumentRow = {
   status: string;
   version: string;
   pages: number;
-  chunks: number;
   updated: string;
   versionCount: number;
-  tables: number;
-  assets: number;
 };
 type Stage = {
   stage: string;
@@ -74,42 +75,6 @@ type Page = {
   confidence: number | null;
   quality_flags: string[];
   derived_content: boolean;
-};
-type Chunk = {
-  id: string;
-  text: string;
-  embedding_text: string;
-  heading_path: string[];
-  page_numbers: number[];
-  token_count: number;
-  table_ids: string[];
-  asset_ids: string[];
-  access_scope: string;
-  split_strategy: string;
-  derived: boolean;
-  metadata?: Record<string, unknown>;
-};
-type Neighbor = { chunk_id: string; score: number };
-type TableArtifact = {
-  id: string;
-  page_number: number;
-  title: string;
-  row_count: number;
-  column_count: number;
-  confidence: number;
-  header: string[];
-  rows: string[][];
-};
-type Asset = {
-  id: string;
-  page_number: number;
-  caption?: string;
-  caption_is_derived: boolean;
-  mime_type: string;
-  width?: number;
-  height?: number;
-  byte_size?: number;
-  sha256?: string;
 };
 type Version = {
   id: string;
@@ -152,9 +117,13 @@ const stageMeta: Record<string, { name: string; via: string }> = {
   chunk: { name: "Chunking", via: "Henüz uygulanmadı" },
   enrich: { name: "Chunk enrichment", via: "Henüz uygulanmadı" },
   embed: { name: "Embedding / index", via: "Henüz uygulanmadı" },
-  publish: { name: "Çıktı kaydı", via: "Extraction JSON / Markdown" },
+  publish: { name: "Revision / artifact kaydı", via: "Canonical DB revision; legacy extraction dosyaları" },
 };
 type Mode = "live" | "demo";
+
+class HttpError extends Error {
+  constructor(readonly status: number, message: string) { super(message); }
+}
 
 async function apiJson<T>(url: string, init?: RequestInit, expectedMode?: Mode): Promise<T> {
   const response = await fetch(url, init);
@@ -169,7 +138,7 @@ async function apiJson<T>(url: string, init?: RequestInit, expectedMode?: Mode):
     } catch {
       // Keep the HTTP status when the response is not JSON.
     }
-    throw new Error(detail);
+    throw new HttpError(response.status, detail);
   }
   return response.json();
 }
@@ -187,7 +156,6 @@ const documentRow = ({
   status: v?.status ?? "processing",
   version: v ? `v${v.revision}` : "—",
   pages: v?.page_count ?? 0,
-  chunks: v?.chunk_count ?? 0,
   updated: new Date(d.updated_at).toLocaleString("tr-TR", {
     day: "2-digit",
     month: "short",
@@ -196,8 +164,6 @@ const documentRow = ({
     minute: "2-digit",
   }),
   versionCount: d.version_count ?? 1,
-  tables: v?.table_count ?? 0,
-  assets: v?.asset_count ?? 0,
 });
 const duration = (ms = 0) =>
   ms >= 60000
@@ -355,10 +321,9 @@ function Sidebar({
         Veri sözleşmesi
       </button>
       <div className="railfoot">
-        M0 · PDF extraction prototipi
+        M1 · Canonical knowledge inspector
         <br />
-        Ekranlar <code>/v1</code> sözleşmesine göre çizildi; her başlıktaki mavi
-        rozet o ekranı besleyen uç noktadır.
+        Structural revision PostgreSQL’de saklanır. Derived outputs sonraki milestone’larda geliştirilecek.
       </div>
     </aside>
   );
@@ -427,10 +392,9 @@ function Documents({
             <Icon name="upload" />
           </div>
           <div>
-            <h3>PDF yükle</h3>
+            <h3>Kaynak doküman yükle</h3>
             <p>
-              Şu anda yalnızca PDF işlenir. DOCX, TXT ve XLSX ilk ürün kapsamındadır,
-              ancak henüz desteklenmez. Demo modu salt okunurdur.
+              PDF, DOCX, TXT ve XLSX kaynakları işlenebilir. Demo modu salt okunurdur.
             </p>
             {uploadState.phase !== "idle" && (
               <div className={`uploadState upload-${uploadState.phase}`} role="status">
@@ -445,7 +409,7 @@ function Documents({
             ref={input}
             type="file"
             hidden
-            accept=".pdf,application/pdf"
+            accept=".pdf,.docx,.txt,.xlsx,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             disabled={busy}
             onChange={(event) => {
               const file = event.target.files?.[0];
@@ -460,14 +424,14 @@ function Documents({
             onClick={() => input.current?.click()}
             disabled={busy}
           >
-            {mode === "demo" ? "Demo: yükleme kapalı" : mode === null ? "API bekleniyor" : busy ? "İşleniyor…" : "PDF seç"}
+            {mode === "demo" ? "Demo: yükleme kapalı" : mode === null ? "API bekleniyor" : busy ? "İşleniyor…" : "Dosya seç"}
           </button>
         </section>
         <section className="card">
           <header>
             <h2>Tüm dokümanlar</h2>
             <p className="note">
-              Satıra tıkla → sürüm, pipeline ve çıkarılan içerik.
+              Satıra tıkla → canonical knowledge, provenance ve kaynak sayfalar.
             </p>
             <span className="sp">
               <Ep>GET /v1/documents?limit=50</Ep>
@@ -481,20 +445,19 @@ function Documents({
                   <th>Durum</th>
                   <th>Sürüm</th>
                   <th>Sayfa</th>
-                  <th>Chunk</th>
                   <th>Son işlem</th>
                   <th />
                 </tr>
               </thead>
               <tbody>
-                {!docs.length && <tr><td colSpan={7}>Henüz doküman yok.</td></tr>}
+                {!docs.length && <tr><td colSpan={6}>Henüz doküman yok.</td></tr>}
                 {docs.map((d) => (
                   <tr key={d.id} className="click" onClick={() => open(d)}>
                     <td>
                       <span className="fname">
                         <span className="ftype">{d.type}</span>
                         <span>
-                          {d.title} <small>{d.file}</small>
+                          {d.title} <small>{d.file} · {d.id}</small>
                         </span>
                       </span>
                     </td>
@@ -503,7 +466,6 @@ function Documents({
                     </td>
                     <td>{d.version}</td>
                     <td>{d.pages || "—"}</td>
-                    <td>{d.chunks || "—"}</td>
                     <td className="mono muted">{d.updated}</td>
                     <td>
                       <button
@@ -690,16 +652,15 @@ function Providers({ items }: { items: Provider[] }) {
 function Contract() {
   return (
     <>
-      <Head section="Referans" title="Mevcut API ve hedef yön" sub="M0 kapsamı; Canonical Knowledge Model henüz uygulanmadı." endpoint="GET /docs" />
+      <Head section="Referans" title="Mevcut API ve hedef yön" sub="M1 canonical revision kayıtları ve read-only inspection." endpoint="GET /docs" />
       <div className="wrap">
         <section className="card pad">
           <h2>Canonical-first document-to-knowledge engine</h2>
           <p>Hedef: document → structural parse → Vision enrichment → reconciliation → canonical knowledge → projections.</p>
           <p>Canonical structured knowledge kaynak doğrusu olacak; Markdown, chunks, embeddings ve uygulama görünümleri ondan türetilecek.</p>
-          <p>Bugün: PDF upload → page render → Gemini veya Docling → provider-specific document.json / document.md.</p>
-          <p>PDF, DOCX, TXT ve XLSX ilk ürün kapsamıdır. Şu anda yalnızca PDF ingestion desteklenir.</p>
+          <p>Bugün: PDF, DOCX, TXT ve XLSX upload → parser → PostgreSQL canonical revision. PDF page render ve legacy extraction artifact’ları da mevcuttur.</p>
           <p>Core schema ile kullanıcı/domain schema ayrı kalacak. LUWI gelecekteki tüketicilerden biridir.</p>
-          <p>Canonical model, normalization, manifest, chunking, indexing, structured patch ve crash recovery henüz yok.</p>
+          <p>Canonical model ve structural revision kalıcılığı mevcut. Vision reconciliation, semantic extraction, canonical artifact publication, chunking, indexing, structured patch ve crash recovery henüz yok.</p>
           <p>Jev, LangChain/LangGraph, çoklu provider, hybrid retrieval ve connectors ertelendi.</p>
           <a href={`${API}/docs`} target="_blank" rel="noreferrer">OpenAPI sözleşmesini aç</a>
         </section>
@@ -711,17 +672,27 @@ function DetailHead({
   doc,
   tab,
   setTab,
+  knowledge,
 }: {
   doc: DocumentRow;
   tab: DetailTab;
   setTab: (t: DetailTab) => void;
+  knowledge: Knowledge | null;
 }) {
   const tabs: [DetailTab, string, string][] = [
-    ["pipeline", "Pipeline", "10 aşama"],
-    ["pages", "Sayfalar", String(doc.pages)],
-    ["chunks", "Chunk’lar", String(doc.chunks)],
-    ["assets", "Tablo & Görsel", String(doc.tables + doc.assets)],
-    ["versions", "Sürümler", String(doc.versionCount)],
+    ["overview", "Overview", ""],
+    ["structure", "Structure", String(knowledge?.snapshot.structure.length ?? "—")],
+    ["tables", "Tables", String(knowledge?.snapshot.structure.filter((n) => n.kind === "table").length ?? "—")],
+    ["assets", "Assets", String(knowledge ? Math.max(
+      knowledge.snapshot.structure.filter((n) => n.kind === "asset" || n.kind === "chart").length,
+      knowledge.snapshot.metadata.structural_parse?.coverage?.item_counts?.picture ?? 0,
+    ) : "—")],
+    ["issues", "Issues", String(knowledge?.snapshot.metadata.structural_parse?.issues?.length ?? "—")],
+    ["provenance", "Provenance", String(knowledge?.snapshot.evidence.length ?? "—")],
+    ["pages", "Pages", String(doc.pages)],
+    ["pipeline", "Pipeline", ""],
+    ["versions", "Versions", String(doc.versionCount)],
+    ["raw", "Raw", ""],
   ];
   return (
     <header className="head">
@@ -741,7 +712,7 @@ function DetailHead({
         </div>
         <div className="headact">
           <Status status={doc.status} />
-          <Ep>GET /v1/documents/{doc.id}</Ep>
+          <Ep>GET /v1/documents/{doc.id}/knowledge</Ep>
         </div>
       </div>
       <div className="tabs" role="tablist">
@@ -754,7 +725,7 @@ function DetailHead({
             onClick={() => setTab(t[0])}
           >
             {t[1]}
-            <i>{t[2]}</i>
+            {t[2] && <i>{t[2]}</i>}
           </button>
         ))}
       </div>
@@ -838,7 +809,7 @@ function Pipeline({ job }: { job: Job | null }) {
       <div className="explain">
         <b>Aşama kaydı:</b> Mevcut worker aşama özetlerini işlem sonunda kaydeder.
         Ayrıntılı canlı aşama ilerlemesi, stage retry ve crash recovery henüz yok.
-        “Çıktı kaydı” extraction dosyalarını ifade eder; canonical manifest veya index üretmez.
+        Publish aşaması canonical DB revision’ını kaydedebilir; canonical manifest veya index üretmez.
         M0 öncesi kayıtlar geçmiş durum özetleridir ve uygulanmamış aşamalar için yanıltıcı değerler içerebilir.
       </div>
     </div>
@@ -865,18 +836,13 @@ function PageSheet({
 
 function PagesView({
   pages,
-  tables,
-  chunks,
   markdown,
 }: {
   pages: Page[];
-  tables: TableArtifact[];
-  chunks: Chunk[];
   markdown: string;
 }) {
   const [n, setN] = useState(pages[0]?.page_number ?? 1),
-    p = pages.find((x) => x.page_number === n),
-    table = tables.find((t) => t.page_number === n);
+    p = pages.find((x) => x.page_number === n);
   if (!pages.length) {
     return (
       <EmptyState
@@ -913,9 +879,6 @@ function PagesView({
               güven <b>{p?.confidence == null ? "ölçülmedi" : p.confidence.toFixed(2)}</b>
             </code>
             <code className="chip">{p?.parser ?? "bilinmiyor"}</code>
-            <label className="switch">
-              <input type="checkbox" disabled /> kaynak kutuları (henüz yok)
-            </label>
           </div>
           <PageSheet page={n} src={p?.render_uri} />
           <code className="mono muted">{p?.render_uri}</code>
@@ -923,11 +886,8 @@ function PagesView({
         <div className="extract">
           <div className="minitabs">
             <button className="minitab" aria-selected>
-              Doküman Markdown
+              Legacy extraction Markdown
             </button>
-            <button className="minitab" disabled>JSON (API üzerinden)</button>
-            <button className="minitab" disabled>Tablolar</button>
-            <button className="minitab" disabled>Görseller</button>
           </div>
           <div className="flags">
             {(p?.quality_flags ?? []).map((f) => (
@@ -943,290 +903,14 @@ function PagesView({
             ) : (
               <p>Bu sürüm için extraction Markdown mevcut değil. Demo modunda dosya üretilmez.</p>
             )}
-            {table && (
-              <table>
-                <thead>
-                  <tr>
-                    {table.header.map((h) => (
-                      <th key={h}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {table.rows.map((r, i) => (
-                    <tr key={i}>
-                      {r.map((c, j) => (
-                        <td key={j}>{c}</td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-          <div className="sourceChunks">
-            <span>Bu sayfadan üretilen chunk’lar</span>
-            <div>
-              {chunks
-                .filter((c) => c.page_numbers.includes(n))
-                .map((c) => (
-                  <button className="chip" key={c.id}>
-                    {c.id} · {c.token_count} tok
-                  </button>
-                ))}
-            </div>
           </div>
         </div>
       </section>
       <div className="explain">
         <b>Extraction önizlemesi:</b> Solda seçilen sayfa, sağda dokümanın tamamının
         Markdown çıktısı bulunur. Bu çıktı henüz canonical knowledge değildir.
-        Sayfa hataları job kaydında tutulur; confidence ölçülmez.
+        Sayfa hataları job kaydında tutulur; confidence ölçülmez. Canonical yapı ve evidence için Structure/Provenance sekmelerini kullanın.
       </div>
-    </div>
-  );
-}
-function ChunkView({ chunks }: { chunks: Chunk[] }) {
-  const [selected, setSelected] = useState(
-      chunks.find((c) => c.id === "chk_06") ?? chunks[0],
-    ),
-    [neighbors, setNeighbors] = useState<Neighbor[]>([]),
-    [neighborError, setNeighborError] = useState("");
-  useEffect(() => {
-    let active = true;
-    setNeighbors([]); setNeighborError("");
-    if (selected) apiJson<Neighbor[]>(`${API}/v1/chunks/${selected.id}/neighbors?limit=5`, undefined, "demo")
-      .then((items) => { if (active) setNeighbors(items); })
-      .catch((error) => { if (active) setNeighborError(String(error)); });
-    return () => { active = false; };
-  }, [selected]);
-  if (!selected)
-    return (
-      <EmptyState
-        title="Chunk üretimi bu sürümde çalıştırılmadı"
-        text="Gerçek pipeline’da chunk aşaması etkinleştirildiğinde indekslenen parçalar burada görünecek."
-      />
-    );
-  return (
-    <div className="wrap">
-      <section className="card chunkgrid">
-        <div className="chunklist">
-          {chunks.map((c) => (
-            <button
-              className="crow"
-              aria-current={selected.id === c.id}
-              key={c.id}
-              onClick={() => setSelected(c)}
-            >
-              <span className="id">{c.id}</span>
-              <div className="hp">{c.heading_path.at(-1)}</div>
-              <div className="mt">
-                <span>s.{c.page_numbers.join("–")}</span>
-                <span>{c.token_count} tok</span>
-                {c.table_ids.length > 0 && (
-                  <span>{c.table_ids.length} tablo</span>
-                )}
-                {c.asset_ids.length > 0 && (
-                  <span>{c.asset_ids.length} görsel</span>
-                )}
-              </div>
-            </button>
-          ))}
-        </div>
-        <div className="chunkdet">
-          <div className="chunkTitle">
-            <Ep>{selected.id}</Ep>
-            <span>… › {selected.heading_path.slice(-2).join(" › ")}</span>
-            <span className="sp">
-              <Ep>GET /v1/chunks/{selected.id}</Ep>
-            </span>
-          </div>
-          <div>
-            <label className="fieldLabel">text — indekslenen ham metin</label>
-            <div className="ctext">{selected.text}</div>
-          </div>
-          <div>
-            <label className="fieldLabel">
-              embedding_text — gömmeye giden metin
-            </label>
-            <div className="embtext">
-              <u>{selected.heading_path.join(" > ")}</u>
-              <br />
-              <br />
-              {selected.text}
-            </div>
-            <p className="helper">
-              Başlık yolu metnin başına eklenir; böylece bağlamsız bir cümle
-              bile hangi bölüme ait olduğunu vektör uzayında taşır.
-            </p>
-          </div>
-          <div className="chunkBottom">
-            <dl className="kv">
-              <dt>pages</dt>
-              <dd>
-                [{selected.page_numbers.join(", ")}]{" "}
-                <span>Kaynak sayfa numaraları</span>
-              </dd>
-              <dt>token</dt>
-              <dd>{selected.token_count}</dd>
-              <dt>strateji</dt>
-              <dd>
-                {selected.split_strategy.replace(
-                  "token_fallback",
-                  "heading + token fallback (overlap 80)",
-                )}
-              </dd>
-              <dt>table_ids</dt>
-              <dd>[{selected.table_ids.join(", ") || "—"}]</dd>
-              <dt>asset_ids</dt>
-              <dd>[{selected.asset_ids.join(", ") || "—"}]</dd>
-              <dt>access_scope</dt>
-              <dd>{selected.access_scope}</dd>
-            </dl>
-            <div>
-              <label className="fieldLabel">Demo komşuları — simülasyon, gerçek embedding değil</label>
-              {neighborError && <p role="alert">{neighborError}</p>}
-              <div className="nb">
-                {neighbors.map((n) => (
-                  <div className="nbRow" key={n.chunk_id}>
-                    <button
-                      onClick={() => {
-                        const c = chunks.find((x) => x.id === n.chunk_id);
-                        if (c) setSelected(c);
-                      }}
-                    >
-                      {n.chunk_id}
-                    </button>
-                    <div className="bar">
-                      <i style={{ width: `${n.score * 100}%` }} />
-                    </div>
-                    <span className="sc">{n.score.toFixed(3)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-      <div className="explain">
-        Chunk üretimi ve embedding benzerliği henüz uygulanmadı.
-        Demo modunda gösterilen chunk ve komşular sentetik örneklerdir.
-      </div>
-    </div>
-  );
-}
-function AssetsView({
-  tables,
-  assets,
-}: {
-  tables: TableArtifact[];
-  assets: Asset[];
-}) {
-  if (!tables.length && !assets.length) {
-    return (
-      <EmptyState
-        title="Tablo veya bağımsız görsel üretilmedi"
-        text="Live pipeline bağımsız tablo/görsel catalog üretmiyor. Extraction JSON içindeki parser verileri ayrı catalog değildir."
-      />
-    );
-  }
-  return (
-    <div className="wrap">
-      <section className="card">
-        <header>
-          <h2>Tablolar</h2>
-          <p className="note">
-            Tablo, metne düzleştirilmez; yapısal JSON olarak saklanır ve
-            chunk’lara table_ids ile bağlanır.
-          </p>
-          <span className="sp">
-            <Ep>GET /v1/versions/dver_2/tables</Ep>
-          </span>
-        </header>
-        <div className="tableStack">
-          {tables.map((t) => (
-            <div className="dataTable" key={t.id}>
-              <div className="dataTitle">
-                <b>{t.title}</b>
-                <button className="chip">sayfa {t.page_number} →</button>
-                <code className="chip">{t.id}</code>
-                <code className="chip">
-                  {t.row_count}×{t.column_count}
-                </code>
-                <code className="chip">
-                  güven <b>{t.confidence}</b>
-                </code>
-              </div>
-              <table className="grid">
-                <thead>
-                  <tr>
-                    {t.header.map((h) => (
-                      <th key={h}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {t.rows.map((r, i) => (
-                    <tr key={i}>
-                      {r.map((c, j) => (
-                        <td key={j}>{c}</td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ))}
-        </div>
-      </section>
-      <section className="card">
-        <header>
-          <h2>Görseller</h2>
-          <p className="note">
-            Her görsel sayfa numarası, bbox, MIME, checksum ve depolama
-            URI’siyle saklanır. Mor rozet, açıklamanın model tarafından
-            üretildiğini söyler.
-          </p>
-          <span className="sp">
-            <Ep>GET /v1/versions/dver_2/assets</Ep>
-          </span>
-        </header>
-        <div className="gal pad">
-          {assets.map((a, i) => (
-            <button className="gcard" key={a.id}>
-              <div className={`frame assetArt a${i + 1}`}>
-                <div>
-                  {i < 2 ? (
-                    <>
-                      <i />
-                      <i />
-                      <i />
-                      <i />
-                    </>
-                  ) : (
-                    <PageSheet page={a.page_number} small />
-                  )}
-                </div>
-              </div>
-              <div className="meta">
-                <div className="flags">
-                  <Ep>{a.id}</Ep>
-                  <code className="chip">s.{a.page_number}</code>
-                  {a.caption_is_derived && (
-                    <span className="pill p-der">türetilmiş</span>
-                  )}
-                </div>
-                <span className="cap">{a.caption}</span>
-                <span className="sm">
-                  {a.mime_type} · {a.width}×{a.height} ·{" "}
-                  {a.byte_size ? Math.round(a.byte_size / 1024) : 0} KB · sha{" "}
-                  {a.sha256?.slice(0, 9)}
-                </span>
-              </div>
-            </button>
-          ))}
-        </div>
-      </section>
     </div>
   );
 }
@@ -1254,12 +938,6 @@ function VersionBox({ v, current }: { v: Version; current?: boolean }) {
       <dl className="kv">
         <dt>sayfa</dt>
         <dd>{v.page_count}</dd>
-        <dt>chunk</dt>
-        <dd>{v.chunk_count}</dd>
-        <dt>tablo</dt>
-        <dd>{v.table_count}</dd>
-        <dt>görsel</dt>
-        <dd>{v.asset_count}</dd>
         <dt>durum</dt>
         <dd>{v.status}</dd>
       </dl>
@@ -1271,7 +949,7 @@ function VersionsView({ versions }: { versions: Version[] }) {
   const sorted = [...versions].sort((a, b) => a.revision - b.revision);
   return <div className="wrap">
     {sorted.map((v, i) => <VersionBox key={v.id} v={v} current={i === sorted.length - 1} />)}
-    <div className="explain">Bunlar kayıtlı sürüm sayaçlarıdır. Live diff endpoint’i yalnızca sayaç farkı verir.
+    <div className="explain">Bunlar source/version kayıtlarıdır; canonical revision kimliği Overview’de gösterilir. Live diff endpoint’i yalnızca legacy sayaç farkı verir.
       İçerik diff’i, Structured Knowledge Patch ve aynı dokümana yeni sürüm yükleme henüz uygulanmadı.</div>
   </div>;
 }
@@ -1281,32 +959,38 @@ function Detail({
   setTab,
   job,
   pages,
-  chunks,
-  tables,
-  assets,
   versions,
   markdown,
+  knowledge,
+  knowledgeState,
 }: {
   doc: DocumentRow;
   tab: DetailTab;
   setTab: (t: DetailTab) => void;
   job: Job | null;
   pages: Page[];
-  chunks: Chunk[];
-  tables: TableArtifact[];
-  assets: Asset[];
   versions: Version[];
   markdown: string;
+  knowledge: Knowledge | null;
+  knowledgeState: string;
 }) {
+  const canonical = knowledge?.snapshot;
+  const canonicalUnavailable = <div className="ci-wrap"><div className="ci-empty"><strong>Canonical knowledge unavailable</strong>
+    <p>{knowledgeState || "Bu doküman için henüz canonical revision üretilmedi."}</p></div></div>;
   return (
     <>
-      <DetailHead doc={doc} tab={tab} setTab={setTab} />
-      {tab === "pipeline" && <Pipeline job={job} />}{" "}
+      <DetailHead doc={doc} tab={tab} setTab={setTab} knowledge={knowledge} />
+      {tab === "overview" && (knowledge ? <CanonicalOverview knowledge={knowledge} status={doc.status} /> : canonicalUnavailable)}
+      {tab === "structure" && (canonical ? <CanonicalStructure snapshot={canonical} versionId={doc.versionId} /> : canonicalUnavailable)}
+      {tab === "tables" && (canonical ? <CanonicalTables snapshot={canonical} versionId={doc.versionId} /> : canonicalUnavailable)}
+      {tab === "assets" && (canonical ? <CanonicalAssets snapshot={canonical} versionId={doc.versionId} /> : canonicalUnavailable)}
+      {tab === "issues" && (canonical ? <CanonicalIssues snapshot={canonical} /> : canonicalUnavailable)}
+      {tab === "provenance" && (canonical ? <ProvenanceView snapshot={canonical} versionId={doc.versionId} /> : canonicalUnavailable)}
+      {tab === "raw" && (canonical ? <CanonicalRaw snapshot={canonical} /> : canonicalUnavailable)}
+      {tab === "pipeline" && <Pipeline job={job} />}
       {tab === "pages" && (
-        <PagesView pages={pages} tables={tables} chunks={chunks} markdown={markdown} />
-      )}{" "}
-      {tab === "chunks" && <ChunkView chunks={chunks} />}{" "}
-      {tab === "assets" && <AssetsView tables={tables} assets={assets} />}{" "}
+        <PagesView pages={pages} markdown={markdown} />
+      )}
       {tab === "versions" && <VersionsView versions={versions} />}
     </>
   );
@@ -1314,7 +998,7 @@ function Detail({
 
 export default function Home() {
   const [screen, setScreen] = useState<Screen>("documents"),
-    [tab, setTab] = useState<DetailTab>("pipeline"),
+    [tab, setTab] = useState<DetailTab>("overview"),
     [mode, setMode] = useState<Mode | null>(null),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
@@ -1326,11 +1010,10 @@ export default function Home() {
     [selected, setSelected] = useState<DocumentRow | null>(null),
     [job, setJob] = useState<Job | null>(null),
     [pages, setPages] = useState<Page[]>([]),
-    [chunks, setChunks] = useState<Chunk[]>([]),
-    [tables, setTables] = useState<TableArtifact[]>([]),
-    [assets, setAssets] = useState<Asset[]>([]),
     [versions, setVersions] = useState<Version[]>([]),
     [markdown, setMarkdown] = useState(""),
+    [knowledge, setKnowledge] = useState<Knowledge | null>(null),
+    [knowledgeState, setKnowledgeState] = useState(""),
     [uploadState, setUploadState] = useState<UploadState>({ phase: "idle" }),
     [toast, setToast] = useState("");
   const requestId = useRef(0);
@@ -1367,29 +1050,33 @@ export default function Home() {
 
   async function open(d: DocumentRow) {
     const request = ++requestId.current;
-    setSelected(d); setTab("pipeline"); setScreen("detail");
-    setJob(null); setPages([]); setChunks([]); setTables([]); setAssets([]); setVersions([]); setMarkdown("");
+    setSelected(d); setTab("overview"); setScreen("detail");
+    setJob(null); setPages([]); setVersions([]); setMarkdown("");
+    setKnowledge(null); setKnowledgeState("");
     setDetailError(""); setDetailLoading(true);
     try {
       if (!mode) throw new Error("API modu doğrulanamadı.");
-      if (!d.versionId) throw new Error("Bu dokümanın sürüm kaydı yok.");
-      const [j, p, c, t, a, v] = await Promise.all([
-        d.jobId ? apiJson<Job>(`${API}/v1/jobs/${d.jobId}`, undefined, mode) : null,
-        apiJson<Page[]>(`${API}/v1/versions/${d.versionId}/pages`, undefined, mode),
-        apiJson<Chunk[]>(`${API}/v1/versions/${d.versionId}/chunks`, undefined, mode),
-        apiJson<TableArtifact[]>(`${API}/v1/versions/${d.versionId}/tables`, undefined, mode),
-        apiJson<Asset[]>(`${API}/v1/versions/${d.versionId}/assets`, undefined, mode),
+      const [canonicalResult, jobResult, pagesResult, versionsResult, markdownResult] = await Promise.allSettled([
+        apiJson<Knowledge>(`${API}/v1/documents/${d.id}/knowledge`, undefined, mode),
+        d.jobId ? apiJson<Job>(`${API}/v1/jobs/${d.jobId}`, undefined, mode) : Promise.resolve(null),
+        d.versionId ? apiJson<Page[]>(`${API}/v1/versions/${d.versionId}/pages`, undefined, mode) : Promise.resolve([]),
         apiJson<Version[]>(`${API}/v1/documents/${d.id}/versions`, undefined, mode),
+        mode === "live" && d.versionId ? fetch(`${API}/v1/documents/${d.id}/versions/${d.versionId}/artifacts/document.md`).then(async (response) => {
+          if (response.headers.get("X-Docgrain-Mode") !== "live") throw new Error("API modu değişti; listeyi yenileyin.");
+          return response.ok ? response.text() : "";
+        }) : Promise.resolve(""),
       ]);
-      let md = "";
-      if (mode === "live") {
-        const response = await fetch(`${API}/v1/documents/${d.id}/versions/${d.versionId}/artifacts/document.md`);
-        if (response.headers.get("X-Docgrain-Mode") !== "live") throw new Error("API modu değişti; listeyi yenileyin.");
-        if (response.ok) md = await response.text();
-        else if (response.status !== 404) throw new Error(`Markdown okunamadı: HTTP ${response.status}`);
-      }
       if (request !== requestId.current) return;
-      setJob(j); setPages(mode === "demo" ? p.map((page) => ({ ...page, render_uri: "" })) : p); setChunks(c); setTables(t); setAssets(a); setVersions(v); setMarkdown(md);
+      setKnowledge(canonicalResult.status === "fulfilled" ? canonicalResult.value : null);
+      setKnowledgeState(canonicalResult.status === "rejected" ?
+        (mode === "demo" ? "Demo modunda canonical snapshot üretilmez." :
+          canonicalResult.reason instanceof HttpError && canonicalResult.reason.status === 404 ?
+            (canonicalResult.reason.message.includes("unavailable") ? "Canonical storage unavailable." : "Bu doküman için henüz canonical revision üretilmedi.") :
+            `Canonical snapshot okunamadı: ${String(canonicalResult.reason)}`) : "");
+      setJob(jobResult.status === "fulfilled" ? jobResult.value : null);
+      setPages(pagesResult.status === "fulfilled" ? (mode === "demo" ? pagesResult.value.map((page) => ({ ...page, render_uri: "" })) : pagesResult.value) : []);
+      setVersions(versionsResult.status === "fulfilled" ? versionsResult.value : []);
+      setMarkdown(markdownResult.status === "fulfilled" ? markdownResult.value : "");
     } catch (cause) {
       if (request === requestId.current) setDetailError(String(cause));
     } finally {
@@ -1519,8 +1206,8 @@ export default function Home() {
       />
       <main>
         <div className="modeNotice" role="status">
-          {mode === "demo" ? "DEMO — salt okunur sentetik veriler. Stage, chunk, tablo, görsel ve diff örnekleri gerçek işlem sonucu değildir."
-            : mode === "live" ? "LIVE — gerçek kayıtlar. PDF extraction mevcut; canonical model, chunking, index ve recovery henüz yok." : "API çalışma modu bekleniyor."}
+          {mode === "demo" ? "DEMO — salt okunur sentetik veriler. Canonical knowledge bu modda mevcut değil."
+            : mode === "live" ? "LIVE — canonical knowledge PostgreSQL revision kayıtlarından okunur. Derived outputs sonraki milestone’larda eklenecek." : "API çalışma modu bekleniyor."}
           <button className="btn sm" onClick={() => void refresh()} disabled={loading || ["registering", "uploading", "confirming", "queued", "running"].includes(uploadState.phase)}>Listeyi yenile</button>
         </div>
         {loading ? <EmptyState title="Yükleniyor" text="API çalışma modu ve kayıtlar alınıyor." />
@@ -1549,11 +1236,10 @@ export default function Home() {
             setTab={setTab}
             job={job}
             pages={pages}
-            chunks={chunks}
-            tables={tables}
-            assets={assets}
             versions={versions}
             markdown={markdown}
+            knowledge={knowledge}
+            knowledgeState={knowledgeState}
           />
         ) : null}
       </main>
