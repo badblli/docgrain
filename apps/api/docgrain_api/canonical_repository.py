@@ -117,6 +117,9 @@ class CanonicalRepository:
             from .index_repository import initialize_index_tables
 
             initialize_index_tables(self, cursor)
+            from .retrieval_repository import initialize_contexts
+
+            initialize_contexts(self, cursor)
 
     @staticmethod
     def _hash(payload: dict[str, object]) -> str:
@@ -192,6 +195,9 @@ class CanonicalRepository:
                 revision.id, snapshot.document_id, snapshot.workspace_id, source.id,
                 revision.parent_revision_id, Jsonb(snapshot_payload), snapshot_hash,
             ))
+            from .retrieval_repository import append_context
+
+            append_context(self, cursor, snapshot)
             cursor.execute(sql.SQL("""
                 UPDATE {} SET latest_revision_id = %s WHERE document_id = %s
             """).format(self._table("document_knowledge_heads")),

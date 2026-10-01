@@ -24,6 +24,7 @@ from .routers import (
     jobs,
     lineage,
     providers,
+    retrieval,
     versions,
 )
 from .settings import get_settings
@@ -80,7 +81,7 @@ async def identify_mode(request: Request, call_next):
     response.headers["X-Docgrain-Mode"] = "demo" if get_settings().use_fixtures else "live"
     return response
 
-for module in (documents, jobs, versions, chunks, providers, lineage, entities, canonical_chunks, incremental):
+for module in (documents, jobs, versions, chunks, providers, lineage, entities, canonical_chunks, incremental, retrieval):
     app.include_router(module.router)
 
 
