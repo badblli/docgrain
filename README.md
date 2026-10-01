@@ -8,7 +8,7 @@ Docgrain genel amaçlıdır. LUWI gelecekteki tüketicilerinden biridir; core i�
 
 Hedef mimaride **canonical structured knowledge kaynak doğrusudur**. Markdown, chunks, embeddings ve uygulamaya özel görünümler bu modelden türetilir. Orijinal belgeler ve ham extraction sonuçları kanıt olarak korunur. Core schema ile kullanıcı/domain JSON Schema ayrı kalır.
 
-**Durum: pre-alpha / M2d incremental lifecycle (local review).** M1b parsing, M2a identity/lineage, M2b entities ve M2c chunks üzerine canonical diff, scoped embedding checkpoint reuse ve atomic PostgreSQL index generation lifecycle eklendi. Canonical 0.4.0 authoritative JSON ve tarihsel schema/manifest hash'leri korunur. Chunking explicit API çağrısı, indeks üretimi caller-supplied adapter ile explicit worker çağrısıdır; ingestion otomatik üretmez. [M2b API](docs/M2B_ENTITIES.md), [M2c API](docs/M2C_CHUNKS.md), [M2d lifecycle](docs/M2D_LIFECYCLE.md) ve [ADR dizini](docs/adr/README.md).
+**Durum: pre-alpha / M2a–M2g foundations (local review).** Canonical identity/entities/chunks ve incremental index lifecycle üzerine scoped structured/direct/lexical/vector/hybrid retrieval, evidence-labeled değerlendirme, koşullu reranking, gerçek HTTP gecikme ölçümü ve durable source observation/outbox eklendi. Canonical 0.4.0 authoritative JSON ve tarihsel hash'ler korunur. İndeks üretimi ve source sync caller-supplied adapter ile explicit çağrıdır; ingestion otomatik üretmez. [M2e API](docs/M2E_RETRIEVAL.md), [M2f eval](docs/M2F_EVALUATION.md), [gecikme ölçümü](docs/RETRIEVAL_BENCHMARK.md), [M2g kaynak takibi](docs/M2G_LIVE_SOURCES.md) ve [ADR dizini](docs/adr/README.md).
 
 | Alan | Bugünkü implementasyon |
 | --- | --- |
@@ -23,7 +23,10 @@ Hedef mimaride **canonical structured knowledge kaynak doğrusudur**. Markdown, 
 | Entities | Dış schema kaydı, explicit candidate publication, leaf-level JSON Pointer evidence, extracted → needs_review → accepted/rejected ve ayrı JSON retrieval projection; otomatik semantik extraction henüz yok |
 | Canonical chunks | Bölüm/list context, lossless text slices, atomik table rows ve accepted entity JSON; explicit revision-scoped API, karakter bütçesi ve kaynak kanıtları |
 | Incremental lifecycle | Exact canonical JSON diff, lineage invalidation candidates, selective embedding checkpoints, immutable PostgreSQL generations ve atomic head/CAS; explicit injected adapter, boş generation ile removal ve full rebuild |
-| Henüz yok | Canonical artifact publication, Vision reconciliation, processing manifest, genel table/asset catalog, otomatik chunking/index job stage, live model/Qdrant adapter, retrieval ranking, Structured Knowledge Patch, stage retry, ingestion crash recovery |
+| Retrieval | Tek scoped API; accepted JSON exact filters, precomputed direct context, BM25/cosine/RRF; conditional phrase baseline veya explicit reranker adapter. Vektörler caller-supplied; production semantic model seçilmiş değil |
+| Evaluation | Golden source/evidence labels, recall/MRR/nDCG, no-answer checks; tiny/small/medium/large cold/warm/concurrent HTTP p50/p95/p99. Production SLO belirlenmedi |
+| Live source foundation | Explicit filesystem/versioned object scan → PostgreSQL cursor/CAS/outbox → idempotent callback/ack; source deletion tüm current retrieval yollarını kapatır, history korunur. Pathway spike sonrası runtime dependency eklenmedi |
+| Henüz yok | Canonical artifact publication, Vision reconciliation, processing manifest, otomatik semantic extraction/chunk/index job stage, live model/Qdrant adapter, adaptive router/knowledge profile, registered background connectors/webhook receiver, Structured Knowledge Patch, stage retry, ingestion crash recovery |
 
 `document.json` içeriği kullanılan parser'a bağlıdır; canonical knowledge sözleşmesi değildir. `pages.json` yalnızca render boyutlarını içerir; processing manifest değildir. Job `done`, mevcut extraction yolunun tamamlandığını ifade eder; hedef pipeline'ın tamamlandığı anlamına gelmez.
 
@@ -40,7 +43,7 @@ source → Docling structural parsing → quality/routing → Vision enrichment
                              → optional embeddings / Qdrant
 ```
 
-M1b canonical structural yolunda Docling PDF/DOCX/XLSX için ana parser, TXT için deterministik decoder'dır. Mevcut PDF legacy JSON/Markdown akışı Gemini-or-Docling olarak kalır; Gemini sonucu canonical snapshot'a eklenmez. Güncel dependency sırası M2a identity/lineage → M2b entities → M2c chunks → M2d diff/invalidation → retrieval; selective Vision/reconciliation ayrı capability track'tir.
+M1b canonical structural yolunda Docling PDF/DOCX/XLSX için ana parser, TXT için deterministik decoder'dır. Mevcut PDF legacy JSON/Markdown akışı Gemini-or-Docling olarak kalır; Gemini sonucu canonical snapshot'a eklenmez. Güncel dependency sırası identity/lineage → entities → chunks → diff/invalidation → retrieval → evaluation → live-source spike tamamlandı; selective Vision/reconciliation ayrı capability track'tir. Bu local branch seti çalışan Inspector/image runtime'ına henüz deploy edilmedi; localhost sonucu bu yeni backend contract'larını temsil etmez.
 
 Hedef artifact seti: `canonical.json`, `canonical.md`, `manifest.json`, `assets/`, `chunks.jsonl`; embeddings ve Qdrant opsiyoneldir. Bu artifact seti bugün üretilmez. Gelecekteki canonical export path sözleşmesi `documents/{document_id}/knowledge/{knowledge_revision_id}/canonical.json`; M1 bu nesneyi yazmaz ve mevcut raw artifact path'lerini değiştirmez.
 

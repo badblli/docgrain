@@ -46,3 +46,21 @@ budgets remain design targets; **production SLO is null** in the measured report
 `X-Docgrain-Serialization-Ms` measures the single actual server JSON serialization;
 `X-Docgrain-Service-Ms` includes it. Client transport/decoding is a residual measured separately.
 [ADR 0013](adr/0013-retrieval-latency-benchmark.md).
+
+## Final M2g visibility-guard regression — 2026-10-01
+
+After adding the deletion visibility check (one extra metadata SQL read), repeated the same
+72-cell / 8-sample / concurrency-4 matrix. All controlled quality checks remained 1.0; maximum
+matrix p95 **1114 ms**. Artifact `data/reviews/retrieval-latency-m2g.json` supersedes the baseline
+above for the final stacked branch. Warm p95:
+
+| Profile | Structured | Direct | Lexical | Vector | Hybrid | Rerank |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Tiny | 11.61 ms | 12.20 ms | 13.94 ms | 13.25 ms | 13.90 ms | 12.86 ms |
+| Small | 16.43 ms | 15.02 ms | 20.26 ms | 23.13 ms | 50.80 ms | 55.77 ms |
+| Medium | 24.31 ms | 24.79 ms | 123.53 ms | 105.88 ms | 116.49 ms | 96.58 ms |
+| Large | 122.77 ms | 105.41 ms | 247.88 ms | 309.71 ms | 264.80 ms | 347.80 ms |
+
+Run-to-run variation and this small synthetic sample prevent any claim of a causal performance
+improvement/regression. Large direct/dense paths can exceed design budgets; production SLO
+remains null. Evidence/candidate sizes and correctness criteria were retained.

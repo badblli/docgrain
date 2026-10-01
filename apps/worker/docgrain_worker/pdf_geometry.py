@@ -27,7 +27,8 @@ def normalized_pdf_box(raw: dict[str, Any] | None, docling_size: tuple[float, fl
         crop = page.cropbox
         media = page.mediabox
         visible = page.rect
-        same = lambda a, b: abs(a - b) <= 1.0
+        def same(a, b):
+            return abs(a - b) <= 1.0
         crop_frame = same(width, crop.width) and same(height, crop.height)
         media_frame = same(width, media.width) and same(height, media.height)
         rotated_frame = same(width, visible.width) and same(height, visible.height)

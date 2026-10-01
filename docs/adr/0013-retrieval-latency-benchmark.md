@@ -19,3 +19,8 @@ view-cache miss (not OS/database cache flush). Distinguish first miss from warm/
 Latency targets are shown as comparison columns, never promoted to SLO from this local sample.
 No quality/evidence reduction to make timings pass. Document the reference adapter's measured
 limits and retain the same consumer retrieval contract.
+
+Final M2g deletion visibility check adds one SQL metadata read. The repeated 72-cell regression
+retained all controlled quality checks; maximum observed p95 1114 ms. Baseline/final artifacts
+and warm-path matrix: [benchmark report](../RETRIEVAL_BENCHMARK.md). Production SLO remains null;
+synthetic fixtures/low sample counts do not establish an operating SLA or semantic quality.

@@ -7,6 +7,7 @@ from psycopg import sql
 from psycopg.rows import dict_row
 
 from .canonical_repository import CanonicalConflict, CanonicalRepository
+from .source_repository import check_source_visibility
 
 
 def initialize_contexts(repository, cursor):
@@ -55,6 +56,7 @@ class RetrievalRepository(CanonicalRepository):
             return self._cached_views(request, ranked)
         with self._connect() as connection, connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+            check_source_visibility(self, cursor, request)
             if ranked:
                 cursor.execute(sql.SQL("""
                     SELECT d.document_id, r.snapshot, g.payload AS generation, NULL AS context
@@ -86,6 +88,7 @@ class RetrievalRepository(CanonicalRepository):
         from docgrain_domain.canonical.retrieval import CapabilityUnavailable
         with self._connect() as connection, connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+            check_source_visibility(self, cursor, request)
             cursor.execute(sql.SQL("""
                 SELECT d.document_id,d.latest_revision_id,h.generation_id,g.processing_revision_id
                 FROM {} d LEFT JOIN {} h ON h.document_id=d.document_id AND h.workspace_id=d.workspace_id AND h.index_name=%s

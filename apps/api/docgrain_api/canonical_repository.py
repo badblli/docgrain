@@ -120,6 +120,9 @@ class CanonicalRepository:
             from .retrieval_repository import initialize_contexts
 
             initialize_contexts(self, cursor)
+            from .source_repository import initialize_source_visibility
+
+            initialize_source_visibility(self, cursor)
 
     @staticmethod
     def _hash(payload: dict[str, object]) -> str:
