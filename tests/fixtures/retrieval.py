@@ -13,9 +13,9 @@ from tests.fixtures.incremental import index_spec
 from tests.unit.test_m2c_chunking import rich_snapshot
 
 
-def view(snapshot=None, vector_for=None):
+def view(snapshot=None, vector_for=None, spec=None):
     snapshot = snapshot or rich_snapshot()
-    spec = index_spec()
+    spec = spec or index_spec()
     chunks = derive_chunk_set(snapshot, spec.chunking)
     embedding, indexing = generation_revision(chunks, spec, None, False)
     entries = []

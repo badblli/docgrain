@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter
+from time import perf_counter
 from typing import Literal
 
 from pydantic import Field, JsonValue, StrictFloat, model_validator
@@ -15,6 +16,7 @@ from .indexing import EmbeddingSpec, IndexGeneration
 from .lineage import ObjectRef
 from .locations import StrictModel
 from .models import CanonicalKnowledgeSnapshot, Evidence, SchemaEntity
+from .reranking import RerankSpec, rerank
 
 
 class CapabilityUnavailable(ValueError):
@@ -105,6 +107,7 @@ class RetrievalQuery(StrictModel):
     limit: int = Field(default=10, ge=1, le=100)
     candidate_limit: int = Field(default=100, ge=1, le=1000)
     direct_max_chars: int = Field(default=32000, ge=1, le=1000000)
+    reranking: RerankSpec | None = None
 
     @model_validator(mode="after")
     def usable(self):
@@ -146,6 +149,7 @@ class RetrievalResult(StrictModel):
     pinned_generations: dict[str, str]
     hits: list[RetrievalHit]
     timings_ms: dict[str, float] = Field(default_factory=dict)
+    reranker_used: str | None = None
 
 
 class DocumentView(StrictModel):
@@ -207,7 +211,7 @@ def cosine(left, right):
     return max(-1.0, min(1.0, math.fsum((u / na) * (v / nb) for u, v in zip(x, y, strict=True))))
 
 
-def retrieve(views: list[DocumentView], request: RetrievalQuery) -> RetrievalResult:
+def retrieve(views: list[DocumentView], request: RetrievalQuery, *, reranker=None) -> RetrievalResult:
     request = RetrievalQuery.model_validate(request.model_dump(mode="json"))
     scoped = [v for v in views if v.snapshot.workspace_id == request.workspace_id
               and v.snapshot.document_id in request.document_ids
@@ -278,7 +282,13 @@ def retrieve(views: list[DocumentView], request: RetrievalQuery) -> RetrievalRes
         hit.score_kind = "rrf" if request.mode == "hybrid" else ("bm25" if lexical else "cosine")
         hit.score = sum(1 / (60 + rank) for rank in components.values()) if request.mode == "hybrid" else next(iter(hit.component_scores.values()))
         hits.append(hit)
-    result.hits = sorted(hits, key=lambda hit: (-hit.score, key(hit)))[:request.limit]
+    ordered = sorted(hits, key=lambda hit: (-hit.score, key(hit)))
+    if request.reranking:
+        started = perf_counter()
+        ordered = rerank(ordered[:request.candidate_limit], request.text, request.reranking, reranker)
+        result.timings_ms["rerank"] = (perf_counter()-started)*1000
+        result.reranker_used = request.reranking.strategy + ":" + request.reranking.version
+    result.hits = ordered[:request.limit]
     return result
 
 

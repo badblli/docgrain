@@ -1,0 +1,11 @@
+{
+  "version": "1",
+  "corpus": "rich-synthetic-canonical",
+  "vector_kind": "test-only-controlled-intent-vectors",
+  "queries": [
+    {"id": "section-beta", "text": "Beta", "source_identity_key": "third", "grade": 3},
+    {"id": "table", "text": "Counts", "source_identity_key": "table", "grade": 2},
+    {"id": "list", "text": "List entry", "source_identity_key": "list-item", "grade": 2},
+    {"id": "no-answer", "text": "absent_needle_12345", "source_identity_key": null, "grade": 0}
+  ]
+}

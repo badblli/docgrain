@@ -33,5 +33,5 @@ def retrieve_knowledge(request: RetrievalQuery):
         raise HTTPException(422, str(exc)) from exc
     finished = perf_counter()
     result.timings_ms = {"backend": (loaded-started)*1000, "query": (finished-loaded)*1000,
-                         "embed": 0, "rerank": 0, "service": (finished-started)*1000}
+                         "embed": 0, "rerank": result.timings_ms.get("rerank", 0), "service": (finished-started)*1000}
     return result

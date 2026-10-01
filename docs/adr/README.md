@@ -11,4 +11,5 @@ M2b: [ADR 0008 — schema entities and field provenance](0008-schema-entities-fi
 M2c: [ADR 0009 — deterministic structure-aware chunks](0009-structure-aware-chunk-derivation.md).
 M2d: [ADR 0010 — canonical diff and atomic index generations](0010-canonical-diff-incremental-lifecycle.md).
 M2e: [ADR 0011 — explicit retrieval capabilities](0011-retrieval-capabilities.md).
+M2f: [ADR 0012 — retrieval evaluation and conditional reranking](0012-retrieval-evaluation-reranking.md).
 Güncel dependency sırası identity/lineage → entities → chunks → diff/invalidation → retrieval.
