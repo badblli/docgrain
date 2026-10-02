@@ -15,4 +15,5 @@ M2f: [ADR 0012 — retrieval evaluation and conditional reranking](0012-retrieva
 Latency: [ADR 0013 — measured matrix and revision cache](0013-retrieval-latency-benchmark.md).
 M2g: [ADR 0014 — durable source observations and Pathway decision](0014-live-source-change-adapters.md).
 Output integration: [ADR 0015 — common pre-embedding output with fidelity gaps](0015-pre-embedding-ai-output.md).
+Source acceptance: [ADR 0016 — independent source checks and selective visual proposals](0016-source-fidelity-acceptance.md).
 Güncel dependency sırası identity/lineage → entities → chunks → diff/invalidation → retrieval.

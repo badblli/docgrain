@@ -111,3 +111,17 @@ seçer ve worker Gemini key'ini boş bırakır. `.env` credential'ları korunur.
 Sıradaki kalite kapısı kaynak↔çıktı golden karşılaştırması ve ihtiyaç olan
 görseller/sayfalar için selective OCR/Vision + evidence reconciliation'dır.
 Sonrasında embedding kararı verilebilir.
+
+## Kaynak doğrulaması / seçili Gemini turu — 2026-10-02
+
+Kullanıcının mevcut Gemini anahtarını seçilmiş alanlarda kullanma onayıyla dört
+Corendon oda planı ve Dobedan sayfa 2 üst tablo için beş gerçek çağrı yapıldı.
+Önceki kabul turunun model çağrısı içermediği bilgisi o tur için geçerlidir.
+Kaynak karşılaştırması ve ayrıntılı sonuçlar:
+[Source fidelity review](SOURCE_FIDELITY_REVIEW.md).
+
+Yeni sonuçlar halen **öneri / inceleme çıktısıdır**; ana UI ve yayımlanmış paketler
+eski immutable revision'ı gösterir. Kaynakta doğrulanan üç hücre düzeltmesi ayrı
+önizlemede hazırdır. Modelin kaynakta olmayan harf eklemesi reddedildi. Oda planı
+açıklamalarındaki belirsizlikler korunur. Bir sonraki adım kanıtlı alan değişikliklerini
+yeni review/processing revision'a uygulayıp yeni paketi yayımlamaktır.
