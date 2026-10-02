@@ -121,7 +121,8 @@ def worker_store(output_bucket,monkeypatch):
 
 
 @pytest.mark.parametrize("name,mime",[("table","application/pdf"),("image-heavy","application/pdf"),("docx-headings","application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
-                                     ("txt-multilingual","text/plain"),("xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")])
+                                     ("txt-multilingual","text/plain"),("xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+                                     ("png-printed","image/png"),("jpeg-printed","image/jpeg")])
 def test_real_worker_automatically_publishes_same_ai_contract(worker_store,real_corpus,name,mime,monkeypatch):
     worker,repo,client,bucket,connect = worker_store
     path = real_corpus[name]
@@ -149,6 +150,12 @@ def test_real_worker_automatically_publishes_same_ai_contract(worker_store,real_
     jsonschema.Draft202012Validator(AIOutput.model_json_schema()).validate(json.loads(files["ai.json"]))
     assert {n.id:n.model_dump(mode="json") for n in output.content} == {n.id:n.model_dump(mode="json") for n in snapshot.structure}
     assert output.evidence == snapshot.evidence
+    if name in {"png-printed", "jpeg-printed"}:
+        assert output.version == "1.1.0"
+        assert snapshot.schema_version == "0.5.0"
+        assert any(a.content_sha256 == sha256(data).hexdigest() for a in snapshot.artifacts)
+        assert all(e.locator.kind == "image_region" for e in snapshot.evidence)
+        assert "OCR" in files["ai.json"].decode() or "ocr" in files["ai.json"].decode()
     assert publication.version == "1.0.0"
     if name == "image-heavy":
         assert not chunks.chunks and not output.quality.text_only_complete
@@ -169,7 +176,7 @@ def test_real_worker_automatically_publishes_same_ai_contract(worker_store,real_
     monkeypatch.setattr(outputs,"_store",lambda:repo)
     monkeypatch.setattr(outputs,"storage_client",lambda:client)
     response = TestClient(app).get(f"/v1/knowledge/revisions/{head}/outputs")
-    assert response.status_code == 200 and response.json()["output"]["version"] == "1.0.0"
+    assert response.status_code == 200 and response.json()["output"]["version"] == output.version
     package = TestClient(app).get(f"/v1/knowledge/revisions/{head}/package")
     assert package.status_code == 200
     from zipfile import ZipFile

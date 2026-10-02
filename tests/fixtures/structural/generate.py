@@ -16,6 +16,14 @@ from PIL import Image
 def create_corpus(root: Path) -> dict[str, Path]:
     root.mkdir(parents=True, exist_ok=True)
     files: dict[str, Path] = {}
+    printed = Path(__file__).with_name("printed-tr-en.png")
+    files["png-printed"] = printed
+    with Image.open(printed) as original_image:
+        exif = Image.Exif()
+        exif[274] = 6
+        jpeg = root / "printed-exif.jpg"
+        original_image.transpose(Image.Transpose.ROTATE_90).save(jpeg, quality=98, exif=exif)
+        files["jpeg-printed"] = jpeg
     image = root / "red-square.png"
     Image.new("RGB", (40, 40), (220, 40, 40)).save(image)
 

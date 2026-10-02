@@ -30,6 +30,7 @@ from .lineage import (
 from .locations import (
     ArtifactObjectLocator,
     DocxBlockLocator,
+    ImageRegionLocator,
     NormalizedBox,
     PdfPageLocator,
     SpreadsheetRangeLocator,
@@ -88,6 +89,7 @@ __all__ = [
     "DerivedRevision",
     "DocumentNode",
     "DocxBlockLocator",
+    "ImageRegionLocator",
     "DomainRecord",
     "DomainSchemaRef",
     "DomainValidationResult",

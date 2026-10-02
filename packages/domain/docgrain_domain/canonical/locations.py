@@ -33,6 +33,16 @@ class PdfPageLocator(StrictModel):
     bbox: NormalizedBox | None = None
 
 
+class ImageRegionLocator(StrictModel):
+    """Original encoded image pixels, before EXIF orientation; top-left normalized bbox."""
+
+    kind: Literal["image_region"] = "image_region"
+    width_px: int = Field(gt=0)
+    height_px: int = Field(gt=0)
+    exif_orientation: int = Field(ge=1, le=8)
+    bbox: NormalizedBox
+
+
 class DocxBlockLocator(StrictModel):
     kind: Literal["docx_block"] = "docx_block"
     part: str = Field(min_length=1, description="DOCX package part, e.g. word/document.xml")
@@ -90,6 +100,6 @@ class ArtifactObjectLocator(StrictModel):
 
 
 Locator = Annotated[
-    PdfPageLocator | DocxBlockLocator | TextSpanLocator | SpreadsheetRangeLocator | ArtifactObjectLocator,
+    PdfPageLocator | DocxBlockLocator | TextSpanLocator | SpreadsheetRangeLocator | ArtifactObjectLocator | ImageRegionLocator,
     Field(discriminator="kind"),
 ]

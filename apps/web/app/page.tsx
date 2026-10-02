@@ -395,7 +395,7 @@ function Documents({
           <div>
             <h3>Kaynak doküman yükle</h3>
             <p>
-              PDF, DOCX, TXT ve XLSX kaynakları işlenebilir. Demo modu salt okunurdur.
+              PDF, DOCX, TXT, XLSX, PNG ve JPEG kaynakları yüklenebilir. OCR ve görsel yorumları kaynakla doğrulanmalıdır. Demo modu salt okunurdur.
             </p>
             {uploadState.phase !== "idle" && (
               <div className={`uploadState upload-${uploadState.phase}`} role="status">
@@ -410,7 +410,7 @@ function Documents({
             ref={input}
             type="file"
             hidden
-            accept=".pdf,.docx,.txt,.xlsx,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            accept=".pdf,.docx,.txt,.xlsx,.png,.jpg,.jpeg,application/pdf,text/plain,image/png,image/jpeg,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             disabled={busy}
             onChange={(event) => {
               const file = event.target.files?.[0];
@@ -659,7 +659,7 @@ function Contract() {
           <h2>Canonical-first document-to-knowledge engine</h2>
           <p>Hedef: document → structural parse → Vision enrichment → reconciliation → canonical knowledge → projections.</p>
           <p>Canonical structured knowledge kaynak doğrusu olacak; Markdown, chunks, embeddings ve uygulama görünümleri ondan türetilecek.</p>
-          <p>Bugün: PDF, DOCX, TXT ve XLSX upload → parser → PostgreSQL canonical revision. PDF page render ve legacy extraction artifact’ları da mevcuttur.</p>
+          <p>PDF, DOCX, TXT, XLSX, PNG ve JPEG → canonical JSON. Taranmış PDF ve görsellerde yerel Türkçe/İngilizce OCR kullanılır; sonuç kaynak incelemesi gerektirir. PDF sayfa render’ları ve özgün görsel dosyaları korunur.</p>
           <p>Core schema ile kullanıcı/domain schema ayrı kalacak. LUWI gelecekteki tüketicilerden biridir.</p>
           <p>Canonical revision, ortak AI JSON/Markdown, chunks ve checksum manifest yayını mevcut. Vision reconciliation, otomatik semantic extraction/indexing, structured patch ve crash recovery henüz yok.</p>
           <p>Jev, LangChain/LangGraph, çoklu provider, hybrid retrieval ve connectors ertelendi.</p>
@@ -709,7 +709,8 @@ function DetailHead({
         <div>
           <h1>{doc.title}</h1>
           <p className="sub mono">
-            {doc.file} · {doc.pages} sayfa · sürüm {doc.version}
+            {doc.file} · {doc.type === "PDF" ? `${doc.pages} sayfa` :
+              ["PNG", "JPG", "JPEG"].includes(doc.type) ? "Kaynak görseli" : doc.type} · sürüm {doc.version}
           </p>
         </div>
         <div className="headact">

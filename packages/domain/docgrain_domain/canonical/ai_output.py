@@ -4,7 +4,7 @@ import json
 from hashlib import sha256
 from typing import Literal
 
-from pydantic import Field, JsonValue
+from pydantic import Field, JsonValue, model_validator
 
 from .chunking import ChunkSet, ChunkingSpec, derive_chunk_set
 from .identity import canonical_json_bytes
@@ -41,7 +41,7 @@ class OutputQuality(StrictModel):
 
 class AIOutput(StrictModel):
     format: Literal["docgrain.ai-document"] = "docgrain.ai-document"
-    version: Literal["1.0.0"] = "1.0.0"
+    version: Literal["1.0.0", "1.1.0"] = "1.0.0"
     document_id: str
     workspace_id: str
     canonical_revision_id: str
@@ -62,6 +62,13 @@ class AIOutput(StrictModel):
                          "semantic verification. Undescribed image/chart content is unavailable to a text-only "
                          "model; attach its binary to a multimodal model. Unreviewed entities are proposals. "
                          "Do not infer missing values or treat parser coverage as proof of source completeness.")
+
+
+    @model_validator(mode="after")
+    def versioned_locations(self):
+        if self.version == "1.0.0" and any(e.locator.kind == "image_region" for e in self.evidence):
+            raise ValueError("standalone image evidence requires AI output 1.1.0")
+        return self
 
 
 class OutputFile(StrictModel):
@@ -129,7 +136,8 @@ def project_ai(snapshot: CanonicalKnowledgeSnapshot, chunks: ChunkSet) -> AIOutp
             "visual_nodes":sum(isinstance(n,(AssetNode,ChartNode)) for n in ordered),
             "evidence":len(snapshot.evidence), "chunks":len(chunks.chunks),
             "chunk_omissions":len(chunks.chunk_omissions)})
-    return AIOutput(document_id=snapshot.document_id, workspace_id=snapshot.workspace_id,
+    return AIOutput(version="1.1.0" if snapshot.schema_version == "0.5.0" else "1.0.0",
+        document_id=snapshot.document_id, workspace_id=snapshot.workspace_id,
         canonical_revision_id=snapshot.knowledge_revision.id, canonical_schema_version=snapshot.schema_version,
         source=snapshot.source_version, processing_revision=snapshot.knowledge_revision,
         domain_schemas=snapshot.domain_schemas, root_node_id=snapshot.root_node_id, content=ordered,
@@ -161,6 +169,21 @@ def readable(output: AIOutput) -> str:
     return "\n\n".join(lines) + "\n"
 
 
+def output_schema(version: str = "1.0.0") -> dict:
+    from .schema import without_image_locations
+
+    if version not in {"1.0.0", "1.1.0"}:
+        raise ValueError("unsupported AI document version")
+    schema = AIOutput.model_json_schema()
+    if version == "1.0.0":
+        without_image_locations(schema)
+        schema["$defs"]["ProcessingSpec"]["properties"]["schema_version"]["enum"].remove("0.5.0")
+    schema["properties"]["version"].pop("enum")
+    schema["properties"]["version"]["const"] = version
+    schema["properties"]["version"]["default"] = version
+    return schema
+
+
 def output_bundle(snapshot: CanonicalKnowledgeSnapshot):
     # JSONB can reorder dictionaries. Normalize nested JSON values before any readable
     # string serialization so a freshly mapped revision and its stored replay agree.
@@ -169,11 +192,11 @@ def output_bundle(snapshot: CanonicalKnowledgeSnapshot):
     output = project_ai(snapshot, chunks)
     revision = DerivedRevision.create(workspace_id=snapshot.workspace_id,document_id=snapshot.document_id,
         processing_revision_id=snapshot.knowledge_revision.id,stage="projection",
-        upstream_revision_ids=(snapshot.knowledge_revision.id,),strategy="ai-document",strategy_version="1.0.0",
+        upstream_revision_ids=(snapshot.knowledge_revision.id,),strategy="ai-document",strategy_version=output.version,
         configuration={"chunking":ChunkingSpec().model_dump(mode="json")})
     files = {"canonical.json":canonical_json_bytes(snapshot.model_dump(mode="json")),
              "ai.json":canonical_json_bytes(output.model_dump(mode="json")),
-             "ai.schema.json":canonical_json_bytes(AIOutput.model_json_schema()),
+             "ai.schema.json":canonical_json_bytes(output_schema(output.version)),
              "canonical.md":readable(output).encode(),
              "chunks.jsonl":b"".join(canonical_json_bytes(c.model_dump(mode="json"))+b"\n" for c in chunks.chunks)}
     manifest = {"format":"docgrain.output-manifest", "version":"1.0.0", "revision":revision.model_dump(mode="json"),

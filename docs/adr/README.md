@@ -16,4 +16,6 @@ Latency: [ADR 0013 — measured matrix and revision cache](0013-retrieval-latenc
 M2g: [ADR 0014 — durable source observations and Pathway decision](0014-live-source-change-adapters.md).
 Output integration: [ADR 0015 — common pre-embedding output with fidelity gaps](0015-pre-embedding-ai-output.md).
 Source acceptance: [ADR 0016 — independent source checks and selective visual proposals](0016-source-fidelity-acceptance.md).
-Güncel dependency sırası identity/lineage → entities → chunks → diff/invalidation → retrieval.
+Güncel ürün scope/öncelik: [ADR 0017 — normalization first, embeddings last](0017-normalization-first-scope.md).
+N1 uygulaması: [ADR 0018 — original image evidence and local OCR](0018-image-evidence-local-ocr.md).
+Güncel dependency sırası N0 scope → N1 OCR/image → N2 source fidelity → N3 visual proposals → N4 reconciliation/review → N5 source acceptance → optional embedding.

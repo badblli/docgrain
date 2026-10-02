@@ -41,7 +41,7 @@ class ProcessingSpec(StrictModel):
     dependencies: dict[str, str] = Field(default_factory=dict)
     options: dict[str, JsonValue] = Field(default_factory=dict)
     mapper_version: str = Field(default="m2a-1", min_length=1)
-    schema_version: Literal["0.3.0", "0.4.0"] = "0.3.0"
+    schema_version: Literal["0.3.0", "0.4.0", "0.5.0"] = "0.3.0"
     identity_policy_version: Literal["0.2.0"] = "0.2.0"
 
     @property

@@ -283,7 +283,8 @@ def process(job_id: str) -> None:
                 heads = canonical_repository.get_heads(document_id)
                 expected_head = heads[0] if heads else None
             try:
-                structural = DocumentParser().parse(VerifiedSource(source, content_hash, len(source_bytes)), source_format)
+                structural = DocumentParser(ocr_enabled=os.getenv("DOCGRAIN_OCR_ENABLED", "true").lower() == "true").parse(
+                    VerifiedSource(source, content_hash, len(source_bytes)), source_format)
             except Exception as exc:
                 if source_format is not SourceFormat.PDF:
                     raise
@@ -349,14 +350,18 @@ def process(job_id: str) -> None:
                     vision_provider = gemini_model
                     extraction_provider = gemini_model
                 else:
-                    document = document_converter().convert(source).document
-                    markdown = document.export_to_markdown().encode()
-                    structured_dict = document.export_to_dict()
+                    if structural.legacy_json is not None and structural.legacy_markdown is not None:
+                        markdown = structural.legacy_markdown
+                        structured_dict = json.loads(structural.legacy_json)
+                    else:
+                        document = document_converter().convert(source).document
+                        markdown = document.export_to_markdown().encode()
+                        structured_dict = document.export_to_dict()
                     structured = json.dumps(structured_dict, ensure_ascii=False).encode()
                     missing_pages = missing_extraction_pages(structured_dict, rendered_page_count)
                     failures = page_failures(missing_pages)
-                    table_count = len(getattr(document, "tables", []))
-                    asset_count = len(getattr(document, "pictures", []))
+                    table_count = len(structured_dict.get("tables", []))
+                    asset_count = len(structured_dict.get("pictures", []))
                     parser = "docling-fallback"
                     vision_provider = None
                     extraction_provider = "docling-fallback"
@@ -368,7 +373,7 @@ def process(job_id: str) -> None:
                 missing_pages = []
                 failures = []
                 table_count = sum(i.kind == "table" for i in structural.items)
-                asset_count = 0
+                asset_count = sum(i.kind == "picture" and bool(i.asset_bytes) for i in structural.items)
                 parser = structural.parser
                 vision_provider = None
                 extraction_provider = structural.parser

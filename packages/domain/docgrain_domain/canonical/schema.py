@@ -10,14 +10,35 @@ SCHEMA_ID = "urn:docgrain:canonical-knowledge:0.2.0"
 DIALECT = "https://json-schema.org/draft/2020-12/schema"
 
 
+def without_image_locations(schema: dict) -> dict:
+    """Keep historical locator unions byte-for-byte stable when generating old schemas."""
+    def walk(value):
+        if isinstance(value, dict):
+            for key in ("oneOf", "anyOf"):
+                if key in value:
+                    value[key] = [item for item in value[key] if item.get("$ref") != "#/$defs/ImageRegionLocator"]
+            discriminator = value.get("discriminator", {})
+            discriminator.get("mapping", {}).pop("image_region", None)
+            for child in value.values():
+                walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+    schema.get("$defs", {}).pop("ImageRegionLocator", None)
+    walk(schema)
+    return schema
+
+
 def generated_core_schema(version: str = "0.2.0") -> dict[str, object]:
-    if version not in {"0.2.0", "0.3.0", "0.4.0"}:
+    if version not in {"0.2.0", "0.3.0", "0.4.0", "0.5.0"}:
         raise ValueError("unsupported generated schema version")
     schema = CanonicalKnowledgeSnapshot.model_json_schema(mode="validation")
+    if version != "0.5.0":
+        without_image_locations(schema)
     schema["$schema"] = DIALECT
     schema["$id"] = f"urn:docgrain:canonical-knowledge:{version}"
     schema["properties"]["schema_version"] = {"const": version, "title": "Schema Version", "type": "string"}
-    if version != "0.4.0":
+    if version not in {"0.4.0", "0.5.0"}:
         schema["properties"]["entities"]["items"] = {"$ref": "#/$defs/Entity"}
         for name in ("SchemaEntity", "EntityReviewEvent"):
             schema["$defs"].pop(name)

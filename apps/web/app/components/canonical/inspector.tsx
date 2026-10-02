@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 export type Box = { x: number; y: number; width: number; height: number };
 export type Locator =
   | { kind: "pdf_page"; page_number: number; bbox: Box | null }
+  | { kind: "image_region"; width_px: number; height_px: number; exif_orientation: number; bbox: Box }
   | { kind: "docx_block"; part: string; path: string }
   | { kind: "text_span"; start: number; end: number }
   | { kind: "spreadsheet_range"; sheet: string; a1_range: string }
@@ -41,7 +42,7 @@ export type Snapshot = {
     producers: { id: string; name: string; version: string | null }[];
   };
   root_node_id: string; structure: Node[]; evidence: Evidence[];
-  artifacts: { id: string; role: string; storage_uri: string; mime_type: string; byte_size: number }[];
+  artifacts: { id: string; role: string; storage_uri: string; mime_type: string; byte_size: number; content_sha256: string }[];
   metadata: {
     structural_parse?: {
       parser?: string; parser_version?: string; source_format?: string;
@@ -75,6 +76,7 @@ const nodeEvidence = (node: Node) => Array.from(new Set([
 const locatorText = (locator: Locator) => {
   switch (locator.kind) {
     case "pdf_page": return `PDF · sayfa ${locator.page_number}${locator.bbox ? " · bbox" : " · bbox yok"}`;
+    case "image_region": return `Görsel · ${locator.width_px} × ${locator.height_px} px · kaynak bbox`;
     case "docx_block": return `DOCX · ${locator.part} · ${locator.path}`;
     case "text_span": return `TXT · [${locator.start}, ${locator.end})`;
     case "spreadsheet_range": return `XLSX · ${locator.sheet}!${locator.a1_range}`;
@@ -82,6 +84,20 @@ const locatorText = (locator: Locator) => {
   }
 };
 const dateText = (value: string) => new Date(value).toLocaleString("tr-TR");
+
+function displayedImageBox(box: Box, orientation: number): Box {
+  const point = (x: number, y: number): [number, number] => {
+    switch (orientation) {
+      case 2: return [1-x, y]; case 3: return [1-x, 1-y]; case 4: return [x, 1-y];
+      case 5: return [y, x]; case 6: return [1-y, x]; case 7: return [1-y, 1-x]; case 8: return [y, 1-x];
+      default: return [x, y];
+    }
+  };
+  const corners = [point(box.x, box.y), point(box.x+box.width, box.y),
+    point(box.x, box.y+box.height), point(box.x+box.width, box.y+box.height)];
+  const x = Math.min(...corners.map(([x]) => x)), y = Math.min(...corners.map(([, y]) => y));
+  return { x, y, width: Math.max(...corners.map(([x]) => x))-x, height: Math.max(...corners.map(([, y]) => y))-y };
+}
 
 function Empty({ title, detail }: { title: string; detail: string }) {
   return <div className="ci-empty"><strong>{title}</strong><p>{detail}</p></div>;
@@ -114,6 +130,8 @@ export function EvidenceView({ evidence, snapshot, versionId }: {
   const producerIds = Array.from(new Set(provenance.map((item) => item.producer_id)));
   const methods = Array.from(new Set(provenance.map((item) => item.method)));
   const derivations = Array.from(new Set(provenance.map((item) => item.derivation)));
+  const sourceImage = snapshot.artifacts.find((item) => item.content_sha256 === snapshot.source_version.content_sha256);
+  const imageBox = locator.kind === "image_region" ? displayedImageBox(locator.bbox, locator.exif_orientation) : null;
   return <div className="ci-evidence-detail">
     <div className="ci-panel-title"><span className="ci-kicker">SOURCE TRACE</span><h3>{locatorText(locator)}</h3></div>
     <dl className="ci-fields">
@@ -122,6 +140,8 @@ export function EvidenceView({ evidence, snapshot, versionId }: {
       <Field label="Locator" value={locator.kind} />
       {locator.kind === "pdf_page" && <><Field label="Page" value={locator.page_number} />
         <Field label="BBox" value={locator.bbox ? JSON.stringify(locator.bbox) : "Unavailable"} /></>}
+      {locator.kind === "image_region" && <><Field label="Özgün piksel boyutu" value={`${locator.width_px} × ${locator.height_px}`} />
+        <Field label="EXIF orientation" value={locator.exif_orientation} /><Field label="Özgün piksel çerçevesi / bbox" value={JSON.stringify(locator.bbox)} /></>}
       {locator.kind === "docx_block" && <><Field label="Part" value={locator.part} /><Field label="Path" value={locator.path} /></>}
       {locator.kind === "text_span" && <Field label="Unicode span" value={`[${locator.start}, ${locator.end})`} />}
       {locator.kind === "spreadsheet_range" && <><Field label="Sheet" value={locator.sheet} /><Field label="A1 range" value={locator.a1_range} /></>}
@@ -131,8 +151,19 @@ export function EvidenceView({ evidence, snapshot, versionId }: {
       <Field label="Linked methods" value={methods.join(", ") || "—"} />
       <Field label="Linked derivations" value={derivations.join(", ") || "—"} />
       <Field label="Producer refs" value={producerIds.join(", ") || "—"} />
+      {provenance.some((item) => item.confidence_method?.startsWith("easyocr")) && <Field label="OCR · kaynak doğrulaması bekliyor"
+        value={provenance.map((item) => `${item.confidence_method ?? "native"} · ${item.confidence ?? "—"}`).join(", ")} />}
       {evidence.note && <Field label="Note" value={evidence.note} />}
     </dl>
+    {locator.kind === "image_region" && <div className="ci-render">
+      {sourceImage && imageBox ? <div className="ci-page-image">
+        <img src={`${API_BASE}/v1/knowledge/revisions/${snapshot.knowledge_revision.id}/artifacts/${sourceImage.id}`} alt="Özgün kaynak görseli" />
+        <div className="ci-bbox" aria-label="Original image bounding box" style={{
+          left: `${imageBox.x * 100}%`, top: `${imageBox.y * 100}%`, width: `${imageBox.width * 100}%`, height: `${imageBox.height * 100}%`,
+        }} />
+      </div> : <Empty title="Kaynak görseli yok" detail="Özgün binary artifact bulunamadı." />}
+      <p className="ci-muted">Çerçeve özgün görseldeki kaynak konumudur; görüntüleme sırasında EXIF yönü uygulanır.</p>
+    </div>}
     {locator.kind === "pdf_page" && <div className="ci-render">
       {versionId ? <div className="ci-page-image">
         <img src={`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}/v1/versions/${versionId}/pages/${locator.page_number}/render`}

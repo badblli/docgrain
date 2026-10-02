@@ -123,6 +123,7 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.7-flash}
       CANONICAL_PERSISTENCE_ENABLED: ${CANONICAL_PERSISTENCE_ENABLED:-true}
+      DOCGRAIN_OCR_ENABLED: ${DOCGRAIN_OCR_ENABLED:-true}
     restart: unless-stopped
     depends_on:
       api:

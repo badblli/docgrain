@@ -16,9 +16,20 @@ const gapLabels: Record<string, [string, string]> = {
   missing_visual_description: ["Görsel açıklaması eksik", "Resim dosyası korundu; içeriği henüz metne aktarılmadı. OCR veya görsel yorumlama gerekiyor."],
   formula_result_unavailable: ["Formül sonucu mevcut değil", "Formül korundu ancak dosyada hesaplanmış değeri bulunmuyor; sonuç üretilmedi."],
   no_text_or_table_content: ["Metin veya tablo çıkarılamadı", "Kaynak için OCR veya görsel inceleme gerekiyor."],
-  structural_coverage_incomplete: ["Yapısal kapsam tamamlanmadı", "Kaynağın tamamı çıkarılamadı. Parser kapsam kaydını ve kaynak belgeyi inceleyin."],
+  structural_coverage_incomplete: ["Kapsam veya kaynak doğrulaması açık", "Çıkarım eksikleri veya doğrulanmamış OCR kayıtları var. Ayrıntıları kaynak belgeyle karşılaştırın."],
   parser_issue: ["Parser çıkarım sorunu", "Kaynakta çıkarım sırasında kaydedilen bir sorun var."],
 };
+function gapLabel(gap: { code: string; detail: string }): [string, string] {
+  if (gap.code === "parser_issue") {
+    try {
+      const issue = JSON.parse(gap.detail);
+      if (issue.code === "ocr_needs_review") return ["OCR metni doğrulanmadı", "Görselden okunan metin korundu. Sayı ve harfleri kaynakla karşılaştırmadan onaylanmış bilgi sayılmaz."];
+      if (issue.code === "ocr_low_confidence") return ["OCR okuması belirsiz", "Bazı satırların tanıma puanı düşük. Özgün görseli açıp özellikle sayı ve Türkçe karakterleri kontrol edin."];
+      if (issue.code === "no_ocr_text") return ["Görselde metin bulunamadı", "Özgün dosya korundu; boş görsel, fotoğraf, plan veya okunamayan metin olabilir. Görsel anlamı henüz yorumlanmadı."];
+    } catch { /* Existing parser issues can be plain text. */ }
+  }
+  return gapLabels[gap.code] ?? [gap.code, gap.detail];
+}
 
 export function AIOutputView({ snapshot, versionId }: { snapshot: Snapshot; versionId?: string }) {
   const revision = snapshot.knowledge_revision.id;
@@ -44,7 +55,7 @@ export function AIOutputView({ snapshot, versionId }: { snapshot: Snapshot; vers
   const evidence = snapshot.evidence.find(e => e.id === selectedEvidence);
   const visualGaps = output.quality.gaps.filter(g => g.code === "missing_visual_description").length;
   return <div className="ci-wrap ai-output">
-    <div className="ci-hero"><div><p className="ci-eyebrow">PDF · DOCX · TXT · XLSX → aynı sözleşme</p>
+    <div className="ci-hero"><div><p className="ci-eyebrow">PDF · DOCX · TXT · XLSX · PNG · JPEG → ortak model</p>
       <h2>AI için ortak doküman çıktısı</h2><p>Metin, tablo ve kaynak kanıtları tek JSON biçiminde. Resimler bu paketin dosya ekleridir.</p></div>
       <a className="ci-copy" href={`${base}/package`}>Tüm paketi indir · ZIP</a></div>
     <div className={`ai-readiness ${output.quality.text_only_complete ? "ai-ready" : "ai-review"}`}>
@@ -62,8 +73,8 @@ export function AIOutputView({ snapshot, versionId }: { snapshot: Snapshot; vers
     <div className="ci-filters ai-tabs">{[["content","İçerik"],["gaps",`Eksikler (${output.quality.gaps.length})`],["json","Ortak JSON"]].map(([key,label]) =>
       <button key={key} aria-pressed={view === key} onClick={() => setView(key)}>{label}</button>)}</div>
     {view === "gaps" && <div className="ci-issue-list">{output.quality.gaps.length ? output.quality.gaps.map((gap,index) =>
-      <div className="ci-issue" key={`${gap.object_id}-${index}`}><strong>{gapLabels[gap.code]?.[0] ?? gap.code}</strong>
-        <p>{gapLabels[gap.code]?.[1] ?? gap.detail}</p><details><summary>Kayıt ayrıntısı</summary><code>{gap.code}</code><p>{gap.detail}</p>{gap.object_id && <code>{gap.object_id}</code>}</details></div>) :
+      <div className="ci-issue" key={`${gap.object_id}-${index}`}><strong>{gapLabel(gap)[0]}</strong>
+        <p>{gapLabel(gap)[1]}</p><details><summary>Kayıt ayrıntısı</summary><code>{gap.code}</code><p>{gap.detail}</p>{gap.object_id && <code>{gap.object_id}</code>}</details></div>) :
       <div className="ci-empty"><strong>Kayıtlı çıkarım eksiği yok</strong><p>Bu durum kaynak belgedeki bütün bilginin bağımsız doğrulaması değildir.</p></div>}</div>}
     {view === "json" && <><button className="ci-copy" onClick={async () => {
       try { await navigator.clipboard.writeText(JSON.stringify(output,null,2)); setCopyState("Kopyalandı"); }
@@ -74,6 +85,8 @@ export function AIOutputView({ snapshot, versionId }: { snapshot: Snapshot; vers
       const ids = Array.from(new Set([...node.annotation.provenance.evidence_ids,
         ...(node.rows ?? []).flatMap(row => row.flatMap(c => c.annotation?.provenance.evidence_ids ?? []))]));
       return <article className="ai-block" key={node.id}>
+        {node.annotation.provenance.confidence_method?.startsWith("easyocr") && <p className="ci-muted">
+          {node.annotation.provenance.confidence_method.endsWith(":mixed") ? "Native metin + OCR" : "OCR metni"} · kaynakla doğrulanmadı</p>}
         {node.kind === "section" && <h3>{node.heading}</h3>}
         {node.kind === "text_block" && <p className="ai-text">{node.text}</p>}
         {node.kind === "table" && <><h3>{node.caption || "Tablo"} <small>{node.rows?.length} satır</small></h3>

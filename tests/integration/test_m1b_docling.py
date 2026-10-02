@@ -77,6 +77,7 @@ def test_pdf_provenance_and_low_text(corpus):
     scanned, _ = parse(corpus["scanned-low-text"], SourceFormat.PDF)
     assert scanned.status == "partial"
     assert any(issue.code == "low_text_page" for issue in scanned.issues)
+    assert next(issue for issue in scanned.issues if issue.code == "low_text_page").reason == "No structural text/table on page; OCR is outside M1b"
 
 
 @pytest.mark.parametrize("name", ["table", "multicolumn", "rotated90", "rotated180", "rotated270", "cropped", "image-heavy"])

@@ -18,6 +18,7 @@ from docgrain_domain.canonical import (
     DocumentNode,
     DocxBlockLocator,
     Evidence,
+    ImageRegionLocator,
     KnowledgeRevision,
     ListNode,
     PdfPageLocator,
@@ -98,7 +99,7 @@ class CanonicalMapper:
                     issues.append(asdict(ParseIssue("identity_unresolved", "canonical_mapping", result.source_format,
                                                     None, item.anchor, "No stable source anchor", "item")))
                     continue
-                annotation = _annotation(producer_id, [evidence_id] if evidence_id else [])
+                annotation = _extraction_annotation(item.text_origin, item.ocr_confidence, [evidence_id] if evidence_id else [])
                 if item.kind == "heading":
                     key = f"heading:{anchor}"
                     node = SectionNode(id=item_id(document_id, "section", key), identity_key=key,
@@ -155,7 +156,8 @@ class CanonicalMapper:
                                     value=cell.get("value"), formula=cell.get("formula"),
                                     cached_value=cell.get("cached_value"), display_text=cell.get("display_text"),
                                     row_span=cell.get("row_span", 1), col_span=cell.get("col_span", 1),
-                                    annotation=_annotation(producer_id, [cell_evidence_id]) if cell_evidence_id else None,
+                                    annotation=_extraction_annotation(cell.get("text_origin", "native"), cell.get("ocr_confidence"),
+                                                                      [cell_evidence_id]) if cell_evidence_id else None,
                                 ))
                             rows.append(mapped_row)
                         node = TableNode(id=item_id(document_id, "table", key),
@@ -176,27 +178,39 @@ class CanonicalMapper:
         coverage = result.coverage
         if issues:
             coverage["status"] = "partial"
+        producers = [Producer(id=producer_id, name=result.parser, version=result.parser_version,
+                              configuration_digest=processing.digest if processing else None)]
+        if result.processing_options.get("ocr_profile"):
+            producers.append(Producer(id="producer-easyocr", name="Docling + EasyOCR (literal OCR / mixed native+OCR)", version="1.7.2",
+                                      configuration_digest=processing.digest if processing else None))
         revision = KnowledgeRevision(id=revision_id, document_id=document_id, workspace_id=source.workspace_id,
                                      source_version_id=source.id, created_at=created_at,
                                      parent_revision_id=parent_revision_id, processing=processing,
-                                     producers=(Producer(id=producer_id, name=result.parser,
-                                                         version=result.parser_version,
-                                                         configuration_digest=processing.digest if processing else None),),
+                                     producers=tuple(producers),
                                      coverage=coverage["status"])
         return CanonicalKnowledgeSnapshot(
-            schema_version="0.3.0" if processing else "0.2.0", identity_policy_version=policy,
+            schema_version=processing.schema_version if processing else "0.2.0", identity_policy_version=policy,
             document_id=document_id, workspace_id=source.workspace_id,
             source_version=source, knowledge_revision=revision, root_node_id=root_id,
             structure=structure, evidence=evidence, artifacts=artifacts,
             metadata={"structural_parse": {"coverage": coverage, "issues": issues,
                                            "source_format": result.source_format.value,
-                                           "parser": result.parser, "parser_version": result.parser_version}},
+                                           "parser": result.parser, "parser_version": result.parser_version},
+                      **({"source_extraction": result.source_metadata} if result.processing_options.get("adapter_version") == "n1-1" else {})},
         )
 
 
 def _annotation(producer_id: str, evidence_ids: list[str]) -> Annotation:
     return Annotation(provenance=Provenance(method="parser", derivation="direct", producer_id=producer_id,
                                             evidence_ids=evidence_ids))
+
+
+def _extraction_annotation(origin: str, confidence: float | None, evidence_ids: list[str]) -> Annotation:
+    annotation = _annotation("producer-easyocr" if origin in {"ocr", "mixed"} else "producer-structural-parser", evidence_ids)
+    if origin in {"ocr", "mixed"}:
+        annotation.provenance.confidence = confidence
+        annotation.provenance.confidence_method = f"easyocr-recognition-min:{origin}"
+    return annotation
 
 
 def _locator(raw: dict[str, Any] | None, size: tuple[float, float] | None,
@@ -215,6 +229,8 @@ def _locator(raw: dict[str, Any] | None, size: tuple[float, float] | None,
         return TextSpanLocator(start=raw["start"], end=raw["end"])
     if raw["kind"] == "spreadsheet_range":
         return SpreadsheetRangeLocator(sheet=raw["sheet"], a1_range=raw["a1_range"])
+    if raw["kind"] == "image_region":
+        return ImageRegionLocator.model_validate(raw)
     return None
 
 
@@ -233,6 +249,8 @@ def _identity_anchor(item: Any, locator: Any | None, sections: list[SectionNode]
         return f"docx:{locator.part}:{locator.path}:{context}"
     if isinstance(locator, TextSpanLocator):
         return f"txt:{locator.start}:{locator.end}:{context}"
+    if isinstance(locator, ImageRegionLocator):
+        raise ValueError("image locations require processing identity policy 0.2.0")
     return f"xlsx:{locator.sheet}:{locator.a1_range}:{context}"
 
 
@@ -250,4 +268,7 @@ def _stable_anchor(locator: Any | None) -> str | None:
         return f"docx:{locator.part}:{locator.path}"
     if isinstance(locator, TextSpanLocator):
         return f"txt:{locator.start}"
+    if isinstance(locator, ImageRegionLocator):
+        box = locator.bbox
+        return "image:" + ":".join(f"{v:.6f}" for v in (box.x, box.y, box.width, box.height))
     return f"xlsx:{locator.sheet}:{locator.a1_range}"

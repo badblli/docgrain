@@ -8,18 +8,18 @@ Docgrain genel amaçlıdır. LUWI gelecekteki tüketicilerinden biridir; core i�
 
 Hedef mimaride **canonical structured knowledge kaynak doğrusudur**. Markdown, chunks, embeddings ve uygulamaya özel görünümler bu modelden türetilir. Orijinal belgeler ve ham extraction sonuçları kanıt olarak korunur. Core schema ile kullanıcı/domain JSON Schema ayrı kalır.
 
-**Durum: pre-alpha / M2a–M2g + embedding öncesi çıktı entegrasyonu (local review).** Inspector/image extraction ve stacked M2 backend yerelde birleşti. Yeni ingestion ortak `ai.json` 1.0.0, canonical JSON/Markdown, chunks ve checksum manifestini otomatik yayımlar. AI çıktısı varsayılan sekmedir; JSON/ZIP indirme ve açık visual/parse boşlukları bulunur. Tarihsel canonical schema/hash'ler korunur. İndeks üretimi ve source sync caller-supplied adapter ile explicit çağrıdır; ingestion otomatik index üretmez. [Ortak çıktı / kabul kanıtı](docs/PRE_EMBEDDING_OUTPUT.md), [M2e API](docs/M2E_RETRIEVAL.md), [M2f eval](docs/M2F_EVALUATION.md), [gecikme ölçümü](docs/RETRIEVAL_BENCHMARK.md), [M2g kaynak takibi](docs/M2G_LIVE_SOURCES.md) ve [ADR dizini](docs/adr/README.md).
+**Durum: pre-alpha / normalizasyon ve kaynak doğruluğu kabulü.** Altı format için ortak canonical model ve JSON/ZIP yolu; N1 PNG/JPEG + yerel basılı TR/EN OCR uygulanmıştır. Yeni OCR/image processing canonical 0.5.0 / `ai.json` 1.1.0 üretir; tarihsel schema/output byte'ları korunur. OCR ve görsel anlam kaynak incelemesi gerektirir. N2–N5 structure/visual/reconciliation/corpus kabulü sıradadır; embedding en son. M2a–M2g backend foundations korunur; ingestion otomatik index üretmez. [N1 uygulaması ve sınırları](docs/N1_IMAGE_OCR.md), [scope/teknoloji kararı](docs/adr/0017-normalization-first-scope.md), [ortak çıktı](docs/PRE_EMBEDDING_OUTPUT.md) ve [ADR dizini](docs/adr/README.md).
 
 | Alan | Bugünkü implementasyon |
 | --- | --- |
-| Ingestion | PDF/DOCX/TXT/XLSX kaydı → API upload proxy → MinIO → confirmation → Redis → worker |
+| Ingestion | PDF/DOCX/TXT/XLSX/PNG/JPEG kaydı → API upload proxy → MinIO → confirmation → Redis → worker |
 | Rendering | PyMuPDF ile PDF sayfaları, 200 DPI PNG |
-| Extraction | Gemini key varsa tüm sayfalarda Gemini; yoksa OCR kapalı Docling |
+| Extraction | Canonical: Docling + pinned local EasyOCR TR/EN CPU; TXT deterministic, XLSX native facts. Legacy PDF Gemini key varsa ayrıca tüm sayfalarda Gemini; yerel review worker key boş |
 | Çıktılar | Otomatik canonical JSON/Markdown, ortak `ai.json` + schema, chunks ve checksum manifest; verified binary ekleriyle ZIP. Legacy extraction dosyaları ayrı korunur |
 | Metadata | PostgreSQL document/version/job kayıtları |
 | Kısmi hata | Bazı extraction hataları page failure olarak kaydedilir; bu recovery garantisi değildir |
 | Console | Varsayılan AI çıktısı: okunabilir içerik, exact tablolar, resim/evidence, eksikler ve JSON/ZIP. Canonical Inspector ve açık demo modu |
-| Canonical structure | Docling-first PDF/DOCX/XLSX, deterministik TXT, format-aware evidence ve ayrı canonical PostgreSQL revision; yalnız object version ID varsa |
+| Canonical structure | Docling-first PDF/DOCX/XLSX/image, deterministik TXT, gerçek source evidence/EXIF geometry ve ayrı canonical PostgreSQL revision; yalnız object version ID varsa |
 | Entities | Dış schema kaydı, explicit candidate publication, leaf-level JSON Pointer evidence, extracted → needs_review → accepted/rejected ve ayrı JSON retrieval projection; otomatik semantik extraction henüz yok |
 | Canonical chunks | Bölüm/list context, lossless text slices, atomik table rows ve accepted entity JSON; explicit revision-scoped API, karakter bütçesi ve kaynak kanıtları |
 | Incremental lifecycle | Exact canonical JSON diff, lineage invalidation candidates, selective embedding checkpoints, immutable PostgreSQL generations ve atomic head/CAS; explicit injected adapter, boş generation ile removal ve full rebuild |
@@ -32,7 +32,7 @@ Hedef mimaride **canonical structured knowledge kaynak doğrusudur**. Markdown, 
 
 ## Sabitlenen ilk format scope'u
 
-**PDF, DOCX, TXT, XLSX.** API MIME/extension ve upload byte biçimini doğrular. Desteklenmeyen veya uyuşmayan biçimler `415`, bozuk destekli içerik `422` döner. PPTX, HTML ve bağımsız image ingestion ilk scope dışında kalır.
+**PDF, DOCX, TXT, XLSX, PNG, JPEG (.jpg/.jpeg).** API MIME/extension/magic ve image decode doğrular. Desteklenmeyen veya uyuşmayan biçimler `415`, bozuk destekli içerik `422` döner. PPTX, HTML, legacy .doc/.xls ve animated images scope dışında kalır. İlk OCR profili basılı Türkçe/İngilizcedir; bu scope bütün anlamın kusursuz çıkarıldığı anlamına gelmez.
 
 ## Hedef pipeline — sonraki aşamalar
 

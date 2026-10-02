@@ -24,6 +24,10 @@ def mapped_snapshot(fmt=SourceFormat.TXT, *, pdf_path=None, mapper_version="m2a-
         SourceFormat.DOCX: {"kind": "docx_block", "part": "word/document.xml", "path": "/body/p[1]"},
         SourceFormat.TXT: {"kind": "text_span", "start": 0, "end": 5},
         SourceFormat.XLSX: {"kind": "spreadsheet_range", "sheet": "Data", "a1_range": "A1:B2"},
+        SourceFormat.PNG: {"kind": "image_region", "width_px": 800, "height_px": 600, "exif_orientation": 1,
+                           "bbox": {"x": 0.1, "y": 0.2, "width": 0.3, "height": 0.1}},
+        SourceFormat.JPEG: {"kind": "image_region", "width_px": 800, "height_px": 600, "exif_orientation": 6,
+                            "bbox": {"x": 0.1, "y": 0.2, "width": 0.3, "height": 0.1}},
     }
     result = StructuralParseResult(fmt, "test-parser", "1", "complete", [
         StructuralItem("paragraph", "first", locators[fmt], text="Hello", page_size=(600, 800))
@@ -35,6 +39,7 @@ def mapped_snapshot(fmt=SourceFormat.TXT, *, pdf_path=None, mapper_version="m2a-
                            mime_type="application/test", filename=f"test.{fmt.value}",
                            recorded_at=datetime(2026, 1, 1, tzinfo=UTC))
     spec = ProcessingSpec(parser=result.parser, parser_version=result.parser_version,
+                          schema_version="0.5.0" if fmt in {SourceFormat.PNG, SourceFormat.JPEG} else "0.3.0",
                           mapper_version=mapper_version)
     snapshot = CanonicalMapper().map(result, source, processing=spec,
                                      revision_id=processing_revision_id(source.id, spec),

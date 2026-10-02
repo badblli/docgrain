@@ -15,7 +15,8 @@ def test_single_consumer_schema_and_source_evidence_preserved(fmt):
     snapshot, _, _, _ = mapped_snapshot(fmt)
     output, chunks, revision, files = output_bundle(snapshot)
     jsonschema.Draft202012Validator(json.loads(files["ai.schema.json"])).validate(json.loads(files["ai.json"]))
-    assert output.version == "1.0.0" and output.source == snapshot.source_version
+    assert output.version == ("1.1.0" if fmt in {SourceFormat.PNG, SourceFormat.JPEG} else "1.0.0")
+    assert output.source == snapshot.source_version
     assert {n.id:n.model_dump(mode="json") for n in output.content} == {
         n.id:n.model_dump(mode="json") for n in snapshot.structure}
     assert output.evidence == snapshot.evidence

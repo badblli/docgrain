@@ -5,6 +5,7 @@ description = "Docgrain multi-format structural parsing and legacy PDF extractio
 requires-python = ">=3.12"
 dependencies = [
     "docling==2.130.0",
+    "easyocr==1.7.2",
     "docgrain-domain",
     "docgrain-api",
     "openpyxl>=3.1,<4",

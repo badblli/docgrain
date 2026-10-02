@@ -3,7 +3,7 @@ name = "docgrain-domain"
 version = "0.0.1"
 description = "Vendor-neutral domain models and job state machine for Docgrain"
 requires-python = ">=3.12"
-dependencies = ["pydantic>=2.7"]
+dependencies = ["pydantic>=2.7", "pillow==12.3.0"]
 
 [project.optional-dependencies]
 validation = ["jsonschema>=4.23"]

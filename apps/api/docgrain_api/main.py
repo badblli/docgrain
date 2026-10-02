@@ -50,7 +50,7 @@ app = FastAPI(
     summary="Structured knowledge from every document.",
     description=(
         "Document-to-knowledge engine under development. Current live ingestion accepts "
-        "PDF, DOCX, TXT and XLSX. PDF retains page rendering and provider-specific legacy extraction. "
+        "PDF, DOCX, TXT, XLSX, PNG and JPEG. PDF retains page rendering and provider-specific legacy extraction. "
         "Versioned sources automatically publish canonical JSON, common ai.json, readable Markdown, chunks and a verified manifest. "
         "Vision reconciliation, live embedding/Qdrant adapters and ingestion crash recovery are not implemented. "
         "Explicit worker index lifecycle supports checkpoint reuse and atomic PostgreSQL generations; HTTP lifecycle inspection is read-only. "
