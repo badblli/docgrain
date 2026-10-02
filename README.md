@@ -126,3 +126,7 @@ Embedding öncesi kaynak↔çıktı fidelity kabulü, yerel görsel inceleme/OCR
 ## License
 
 MIT; [LICENSE](LICENSE). Gizli belgeler, credential'lar ve generated artifact'lar Git'e eklenmez.
+
+## Belgeyi incele ve revision kaydet
+
+Varsayılan belge ekranı kaynakla yan yana okunabilir metin, tablo hücreleri, görsel açıklamaları, açık eksikler ve canonical revision geçmişi sunar. Kaynakla kontrol edilen sınırlı alanlar önizleme/CAS ile yeni immutable revision olarak kaydedilir; eski kaynak/paketler korunur. Seçili revision için açık onaylı deneysel Gemini Q&A ayrıca erişilebilir. Embedding üretilmez. Kullanım ve sınırlar: [USER_REVIEW](docs/USER_REVIEW.md).

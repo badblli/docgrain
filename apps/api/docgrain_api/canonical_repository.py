@@ -107,6 +107,11 @@ class CanonicalRepository:
             cursor.execute(sql.SQL("CREATE INDEX IF NOT EXISTS {} ON {} (processing_revision_id)")
                            .format(sql.Identifier("derived_revisions_processing_idx"),
                                    self._table("derived_revisions")))
+            cursor.execute(sql.SQL("""
+                CREATE UNIQUE INDEX IF NOT EXISTS {} ON {}
+                (document_id, (snapshot->'metadata'->'manual_review'->>'operation_id'))
+                WHERE snapshot->'metadata'->'manual_review'->>'operation_id' IS NOT NULL
+            """).format(sql.Identifier("manual_review_operation_idx"), self._table("knowledge_revisions")))
             for name in ("source_versions", "knowledge_revisions", "derived_revisions", "domain_schema_registry"):
                 cursor.execute(sql.SQL("DROP TRIGGER IF EXISTS reject_mutation ON {}")
                                .format(self._table(name)))
@@ -253,6 +258,29 @@ class CanonicalRepository:
                            .format(self._table("knowledge_revisions")), (revision_id,))
             row = cursor.fetchone()
             return CanonicalKnowledgeSnapshot.model_validate(row["snapshot"]) if row else None
+
+    def find_review_operation(self, document_id: str, operation_id: str) -> CanonicalKnowledgeSnapshot | None:
+        with self._connect() as connection, connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(sql.SQL("""
+                SELECT snapshot FROM {} WHERE document_id=%s
+                AND snapshot->'metadata'->'manual_review'->>'operation_id'=%s
+            """).format(self._table("knowledge_revisions")), (document_id, operation_id))
+            row = cursor.fetchone()
+            return CanonicalKnowledgeSnapshot.model_validate(row["snapshot"]) if row else None
+
+    def review_history(self, document_id: str, *, limit: int = 50) -> list[dict]:
+        with self._connect() as connection, connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(sql.SQL("""
+                SELECT id AS revision_id, parent_revision_id,
+                  created_at,
+                  CASE WHEN snapshot->'metadata'->'manual_review' IS NOT NULL
+                    THEN 'manual_review' ELSE 'extraction' END AS kind,
+                  snapshot->'metadata'->'manual_review'->>'reviewer_id' AS reviewer_id,
+                  snapshot->'metadata'->'manual_review'->>'reason' AS reason
+                FROM {} WHERE document_id=%s
+                ORDER BY created_at DESC, id DESC LIMIT %s
+            """).format(self._table("knowledge_revisions")), (document_id, min(max(limit, 1), 100)))
+            return list(cursor.fetchall())
 
     def get_source(self, source_id: str) -> SourceVersion | None:
         with self._connect() as connection, connection.cursor(row_factory=dict_row) as cursor:

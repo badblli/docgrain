@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import "./canonical.css";
 import { AIOutputView } from "./components/canonical/ai-output";
+import { ReviewWorkspace } from "./components/canonical/review-workspace";
 import { Assets as CanonicalAssets, Issues as CanonicalIssues, Overview as CanonicalOverview,
   ProvenanceView, Raw as CanonicalRaw, Structure as CanonicalStructure, Tables as CanonicalTables,
   type Knowledge } from "./components/canonical/inspector";
@@ -10,7 +11,7 @@ import { Assets as CanonicalAssets, Issues as CanonicalIssues, Overview as Canon
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const WORKSPACE = process.env.NEXT_PUBLIC_WORKSPACE_ID ?? "ws_local";
 type Screen = "documents" | "jobs" | "providers" | "contract" | "detail";
-type DetailTab = "ai-output" | "overview" | "structure" | "tables" | "assets" | "issues" | "provenance" | "pages" | "pipeline" | "versions" | "raw";
+type DetailTab = "review" | "ai-output" | "overview" | "structure" | "tables" | "assets" | "issues" | "provenance" | "pages" | "pipeline" | "versions" | "raw";
 type UploadPhase =
   | "idle"
   | "registering"
@@ -680,22 +681,39 @@ function DetailHead({
   setTab: (t: DetailTab) => void;
   knowledge: Knowledge | null;
 }) {
-  const tabs: [DetailTab, string, string][] = [
+  const primaryTabs: [DetailTab, string, string][] = [
+    ["review", "Belgeyi incele", ""],
     ["ai-output", "AI çıktısı", ""],
-    ["overview", "Overview", ""],
-    ["structure", "Structure", String(knowledge?.snapshot.structure.length ?? "—")],
-    ["tables", "Tables", String(knowledge?.snapshot.structure.filter((n) => n.kind === "table").length ?? "—")],
-    ["assets", "Assets", String(knowledge ? Math.max(
+  ];
+  const technicalTabs: [DetailTab, string, string][] = [
+    ["overview", "Özet", ""],
+    ["structure", "Yapı", String(knowledge?.snapshot.structure.length ?? "—")],
+    ["tables", "Tablolar", String(knowledge?.snapshot.structure.filter((n) => n.kind === "table").length ?? "—")],
+    ["assets", "Görseller", String(knowledge ? Math.max(
       knowledge.snapshot.structure.filter((n) => n.kind === "asset" || n.kind === "chart").length,
       knowledge.snapshot.metadata.structural_parse?.coverage?.item_counts?.picture ?? 0,
     ) : "—")],
-    ["issues", "Issues", String(knowledge?.snapshot.metadata.structural_parse?.issues?.length ?? "—")],
-    ["provenance", "Provenance", String(knowledge?.snapshot.evidence.length ?? "—")],
-    ["pages", "Pages", String(doc.pages)],
-    ["pipeline", "Pipeline", ""],
-    ["versions", "Versions", String(doc.versionCount)],
-    ["raw", "Raw", ""],
+    ["issues", "Eksikler", String(knowledge?.snapshot.metadata.structural_parse?.issues?.length ?? "—")],
+    ["provenance", "Kaynak kanıtları", String(knowledge?.snapshot.evidence.length ?? "—")],
+    ["pages", "Sayfalar", String(doc.pages)],
+    ["pipeline", "İşlem kaydı", ""],
+    ["versions", "Kaynak sürümleri", String(doc.versionCount)],
+    ["raw", "Ham veri", ""],
   ];
+  const technicalActive = technicalTabs.some((t) => t[0] === tab);
+  const [techOpen, setTechOpen] = useState(technicalActive);
+  const renderTab = (t: [DetailTab, string, string]) => (
+    <button
+      className="tab"
+      role="tab"
+      aria-selected={tab === t[0]}
+      key={t[0]}
+      onClick={() => setTab(t[0])}
+    >
+      {t[1]}
+      {t[2] && <i>{t[2]}</i>}
+    </button>
+  );
   return (
     <header className="head">
       <div className="crumb">
@@ -715,23 +733,23 @@ function DetailHead({
         </div>
         <div className="headact">
           <Status status={doc.status} />
-          <Ep>GET /v1/documents/{doc.id}/knowledge</Ep>
+          {tab !== "review" && <Ep>GET /v1/documents/{doc.id}/knowledge</Ep>}
         </div>
       </div>
       <div className="tabs" role="tablist">
-        {tabs.map((t) => (
-          <button
-            className="tab"
-            role="tab"
-            aria-selected={tab === t[0]}
-            key={t[0]}
-            onClick={() => setTab(t[0])}
-          >
-            {t[1]}
-            {t[2] && <i>{t[2]}</i>}
-          </button>
-        ))}
+        {primaryTabs.map(renderTab)}
+        {(techOpen || technicalActive) && technicalTabs.map(renderTab)}
       </div>
+      <button
+        type="button"
+        className="btn sm"
+        aria-expanded={techOpen || technicalActive}
+        disabled={technicalActive}
+        onClick={() => setTechOpen(!techOpen)}
+        style={{ margin: "8px 0 2px" }}
+      >
+        {techOpen || technicalActive ? "Teknik görünümleri gizle" : "Teknik görünümler"}
+      </button>
     </header>
   );
 }
@@ -953,7 +971,7 @@ function VersionsView({ versions }: { versions: Version[] }) {
   const sorted = [...versions].sort((a, b) => a.revision - b.revision);
   return <div className="wrap">
     {sorted.map((v, i) => <VersionBox key={v.id} v={v} current={i === sorted.length - 1} />)}
-    <div className="explain">Bunlar source/version kayıtlarıdır; canonical revision kimliği Overview’de gösterilir. Live diff endpoint’i yalnızca legacy sayaç farkı verir.
+    <div className="explain">Bunlar yüklenen kaynak dosyanın sürümleridir; içerik inceleme geçmişi değildir. Belge içeriğindeki inceleme kayıtları için “Belgeyi incele” sekmesindeki Revision geçmişi bölümüne bakın. Canonical revision kimliği Özet sekmesinde gösterilir. Live diff endpoint’i yalnızca legacy sayaç farkı verir.
       İçerik diff’i, Structured Knowledge Patch ve aynı dokümana yeni sürüm yükleme henüz uygulanmadı.</div>
   </div>;
 }
@@ -967,6 +985,9 @@ function Detail({
   markdown,
   knowledge,
   knowledgeState,
+  mode,
+  onSaved,
+  onDirtyChange,
 }: {
   doc: DocumentRow;
   tab: DetailTab;
@@ -977,13 +998,24 @@ function Detail({
   markdown: string;
   knowledge: Knowledge | null;
   knowledgeState: string;
+  mode: Mode | null;
+  onSaved: () => void;
+  onDirtyChange: (dirty: boolean) => void;
 }) {
   const canonical = knowledge?.snapshot;
+  // Once opened, the review workspace stays mounted (hidden) so unsaved drafts survive tab switches.
+  const [reviewOpened, setReviewOpened] = useState(tab === "review");
+  useEffect(() => { if (tab === "review") setReviewOpened(true); }, [tab]);
   const canonicalUnavailable = <div className="ci-wrap"><div className="ci-empty"><strong>Canonical knowledge unavailable</strong>
     <p>{knowledgeState || "Bu doküman için henüz canonical revision üretilmedi."}</p></div></div>;
   return (
     <>
       <DetailHead doc={doc} tab={tab} setTab={setTab} knowledge={knowledge} />
+      {(tab === "review" || reviewOpened) && (
+        <div hidden={tab !== "review"}>
+          <ReviewWorkspace documentId={doc.id} onSaved={onSaved} mode={mode} onDirtyChange={onDirtyChange} />
+        </div>
+      )}
       {tab === "ai-output" && (canonical ? <AIOutputView key={canonical.knowledge_revision.id} snapshot={canonical} versionId={doc.versionId} /> : canonicalUnavailable)}
       {tab === "overview" && (knowledge ? <CanonicalOverview knowledge={knowledge} status={doc.status} /> : canonicalUnavailable)}
       {tab === "structure" && (canonical ? <CanonicalStructure snapshot={canonical} versionId={doc.versionId} /> : canonicalUnavailable)}
@@ -1003,7 +1035,7 @@ function Detail({
 
 export default function Home() {
   const [screen, setScreen] = useState<Screen>("documents"),
-    [tab, setTab] = useState<DetailTab>("ai-output"),
+    [tab, setTab] = useState<DetailTab>("review"),
     [mode, setMode] = useState<Mode | null>(null),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
@@ -1022,6 +1054,7 @@ export default function Home() {
     [uploadState, setUploadState] = useState<UploadState>({ phase: "idle" }),
     [toast, setToast] = useState("");
   const requestId = useRef(0);
+  const dirtyRef = useRef(false);
 
   async function refresh() {
     const request = ++requestId.current;
@@ -1053,15 +1086,24 @@ export default function Home() {
   }, [toast]);
   useEffect(() => { window.scrollTo({ top: 0, behavior: "auto" }); }, [screen, tab, selected?.id]);
 
-  async function open(d: DocumentRow) {
+  // Unsaved review drafts are reported by ReviewWorkspace; leaving the document asks first.
+  function confirmDiscard() {
+    return !dirtyRef.current || window.confirm("Kaydedilmemiş taslak değişiklikler silinecek. Devam etmek istiyor musunuz?");
+  }
+  // silent: refresh knowledge and the list row after a review save without resetting the view,
+  // tab, or the mounted review workspace. The document's source version is never changed here.
+  async function open(d: DocumentRow, options?: { silent?: boolean }) {
+    const silent = options?.silent === true;
     const request = ++requestId.current;
-    setSelected(d); setTab("ai-output"); setScreen("detail");
-    setJob(null); setPages([]); setVersions([]); setMarkdown("");
-    setKnowledge(null); setKnowledgeState("");
-    setDetailError(""); setDetailLoading(true);
+    if (!silent) {
+      setSelected(d); setTab("review"); setScreen("detail");
+      setJob(null); setPages([]); setVersions([]); setMarkdown("");
+      setKnowledge(null); setKnowledgeState("");
+      setDetailError(""); setDetailLoading(true);
+    }
     try {
       if (!mode) throw new Error("API modu doğrulanamadı.");
-      const [canonicalResult, jobResult, pagesResult, versionsResult, markdownResult] = await Promise.allSettled([
+      const [canonicalResult, jobResult, pagesResult, versionsResult, markdownResult, rowResult] = await Promise.allSettled([
         apiJson<Knowledge>(`${API}/v1/documents/${d.id}/knowledge`, undefined, mode),
         d.jobId ? apiJson<Job>(`${API}/v1/jobs/${d.jobId}`, undefined, mode) : Promise.resolve(null),
         d.versionId ? apiJson<Page[]>(`${API}/v1/versions/${d.versionId}/pages`, undefined, mode) : Promise.resolve([]),
@@ -1070,8 +1112,14 @@ export default function Home() {
           if (response.headers.get("X-Docgrain-Mode") !== "live") throw new Error("API modu değişti; listeyi yenileyin.");
           return response.ok ? response.text() : "";
         }) : Promise.resolve(""),
+        silent && mode === "live" ? apiJson<DocumentListResponse>(`${API}/v1/documents/${d.id}`, undefined, mode) : Promise.resolve(null),
       ]);
       if (request !== requestId.current) return;
+      if (rowResult.status === "fulfilled" && rowResult.value) {
+        const fresh = documentRow(rowResult.value);
+        setDocs((current) => current.map((row) => row.id === fresh.id
+          ? { ...fresh, versionId: row.versionId, version: row.version } : row));
+      }
       setKnowledge(canonicalResult.status === "fulfilled" ? canonicalResult.value : null);
       setKnowledgeState(canonicalResult.status === "rejected" ?
         (mode === "demo" ? "Demo modunda canonical snapshot üretilmez." :
@@ -1083,9 +1131,11 @@ export default function Home() {
       setVersions(versionsResult.status === "fulfilled" ? versionsResult.value : []);
       setMarkdown(markdownResult.status === "fulfilled" ? markdownResult.value : "");
     } catch (cause) {
-      if (request === requestId.current) setDetailError(String(cause));
+      if (request !== requestId.current) return;
+      if (silent) setToast(`Doküman bilgileri yenilenemedi: ${String(cause)}`);
+      else setDetailError(String(cause));
     } finally {
-      if (request === requestId.current) setDetailLoading(false);
+      if (!silent && request === requestId.current) setDetailLoading(false);
     }
   }
   async function upload(file: File) {
@@ -1205,7 +1255,7 @@ export default function Home() {
     <div className="app">
       <Sidebar
         screen={screen}
-        nav={setScreen}
+        nav={(next) => { if (confirmDiscard()) setScreen(next); }}
         docs={docs.length}
         jobs={jobs.filter((j) => j.status === "running").length}
       />
@@ -1213,14 +1263,14 @@ export default function Home() {
         <div className="modeNotice" role="status">
           {mode === "demo" ? "DEMO — salt okunur sentetik veriler. Canonical knowledge bu modda mevcut değil."
             : mode === "live" ? "LIVE — canonical revision ve ortak AI çıktıları okunur. Görsel yorumlama ve kaynak bütünlüğü eksikleri açıkça gösterilir." : "API çalışma modu bekleniyor."}
-          <button className="btn sm" onClick={() => void refresh()} disabled={loading || ["registering", "uploading", "confirming", "queued", "running"].includes(uploadState.phase)}>Listeyi yenile</button>
+          <button className="btn sm" onClick={() => { if (confirmDiscard()) void refresh(); }} disabled={loading || ["registering", "uploading", "confirming", "queued", "running"].includes(uploadState.phase)}>Listeyi yenile</button>
         </div>
         {loading ? <EmptyState title="Yükleniyor" text="API çalışma modu ve kayıtlar alınıyor." />
           : error ? <div role="alert"><EmptyState title="API hatası" text={error} /></div>
           : screen === "documents" ? (
           <Documents
             docs={docs}
-            open={open}
+            open={(d) => { if (confirmDiscard()) void open(d); }}
             upload={upload}
             uploadState={uploadState}
             mode={mode}
@@ -1245,6 +1295,9 @@ export default function Home() {
             markdown={markdown}
             knowledge={knowledge}
             knowledgeState={knowledgeState}
+            mode={mode}
+            onSaved={() => void open(selected, { silent: true })}
+            onDirtyChange={(dirty) => { dirtyRef.current = dirty; }}
           />
         ) : null}
       </main>

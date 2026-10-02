@@ -21,3 +21,7 @@ N1 uygulaması: [ADR 0018 — original image evidence and local OCR](0018-image-
 N2 uygulaması: [ADR 0019 — native source structure and cell evidence](0019-native-source-structure-fidelity.md).
 N3 yerel yönü: [ADR 0020 — local-first visual review](0020-local-first-visual-review.md); güncel N3 için ADR 0017'nin harici görsel sağlayıcı seçimini değiştirir.
 Güncel dependency sırası N0 scope → N1 OCR/image → N2 source fidelity → N3 visual proposals → N4 reconciliation/review → N5 source acceptance → optional embedding.
+
+End-user manual review: [ADR 0021 — source reading and immutable reviews](0021-end-user-source-review.md). The bounded manual N4 workspace can proceed alongside the open N3 semantic gate; N5 and embedding remain open.
+
+Experimental normalized-data consumer: [ADR 0022 — canonical Gemini Q&A](0022-canonical-gemini-qa-probe.md). Local source normalization and accepted revisions remain independent of the chat provider.

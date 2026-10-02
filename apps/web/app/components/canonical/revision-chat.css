@@ -1,0 +1,46 @@
+.rc { --rc-paper: var(--paper, #f7f3ea); --rc-ink: var(--ink, #1f1d18); --rc-line: #d9d1bf; --rc-muted: #6b6558; --rc-accent: #1f4f46; --rc-warn: #8a5a00; --rc-bad: #9b2c1f;
+  display: grid; gap: 12px; max-width: 880px; margin: 0 auto; padding: 16px; color: var(--rc-ink); background: var(--rc-paper); font-size: 14px; line-height: 1.5; }
+.rc h2 { margin: 2px 0 0; font-size: 18px; font-weight: 600; }
+.rc p { margin: 0; }
+.rc code { font-size: 12px; }
+.rc-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; align-items: flex-start; border-bottom: 1px solid var(--rc-line); padding-bottom: 10px; }
+.rc-kicker { display: block; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--rc-muted); }
+.rc-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.rc-chip { display: inline-block; padding: 1px 8px; border: 1px solid var(--rc-line); border-radius: 999px; font-size: 12px; color: var(--rc-muted); background: #fffdf8; }
+.rc-chip-strong { color: var(--rc-accent); border-color: var(--rc-accent); font-weight: 600; }
+.rc-note { color: var(--rc-muted); font-size: 13px; }
+.rc-error { color: var(--rc-bad); font-size: 13px; }
+.rc-warning { color: var(--rc-warn); font-size: 13px; border-left: 3px solid var(--rc-warn); padding-left: 8px; }
+.rc-empty { border: 1px dashed var(--rc-line); padding: 12px 14px; background: #fffdf8; }
+.rc-form { display: grid; gap: 8px; border: 1px solid var(--rc-line); padding: 12px; background: #fffdf8; }
+.rc-form label { display: grid; gap: 4px; font-weight: 600; }
+.rc-form textarea { font: inherit; padding: 8px; border: 1px solid var(--rc-line); background: #fff; color: inherit; resize: vertical; }
+.rc-count { justify-self: end; color: var(--rc-muted); font-size: 12px; }
+.rc-pick { border: 1px solid var(--rc-line); padding: 8px; margin: 0; display: grid; gap: 6px; }
+.rc-pick legend { font-weight: 600; padding: 0 4px; }
+.rc-thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.rc-form .rc-thumb { display: grid; gap: 4px; font-weight: 400; font-size: 12px; border: 1px solid var(--rc-line); padding: 4px; cursor: pointer; background: #fff; }
+.rc-thumb.is-on { border-color: var(--rc-accent); box-shadow: 0 0 0 1px var(--rc-accent); }
+.rc-thumb img { width: 100%; height: 80px; object-fit: contain; background: #efe9da; }
+.rc-disclosure { border-left: 3px solid var(--rc-accent); padding: 4px 10px; display: grid; gap: 6px; }
+.rc-form .rc-check { display: flex; align-items: flex-start; gap: 8px; font-weight: 400; }
+.rc-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.rc-btn { font: inherit; padding: 6px 14px; border: 1px solid var(--rc-ink); background: transparent; color: var(--rc-ink); cursor: pointer; }
+.rc-btn-primary { background: var(--rc-ink); color: var(--rc-paper); }
+.rc-btn:disabled { opacity: .45; cursor: not-allowed; }
+.rc-turns { display: grid; gap: 14px; }
+.rc-turn { display: grid; gap: 8px; border-top: 1px solid var(--rc-line); padding-top: 10px; }
+.rc-question span { margin-right: 8px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--rc-muted); }
+.rc-question small { color: var(--rc-muted); }
+.rc-answer { border: 1px solid var(--rc-line); background: #fffdf8; padding: 10px 12px; white-space: pre-wrap; }
+.rc-answer.is-abstained { border-style: dashed; }
+.rc-block { display: grid; gap: 6px; }
+.rc-cite { border: 1px solid var(--rc-line); padding: 4px 8px; background: #fffdf8; }
+.rc-cite summary { cursor: pointer; font-size: 13px; }
+.rc-images { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.rc-images figure { margin: 0; border: 1px solid var(--rc-line); padding: 6px; background: #fffdf8; }
+.rc-images img { width: 100%; max-height: 220px; object-fit: contain; background: #efe9da; }
+.rc-images figcaption { font-size: 12px; color: var(--rc-muted); margin-top: 4px; }
+.rc button:focus-visible, .rc textarea:focus-visible, .rc input:focus-visible, .rc summary:focus-visible { outline: 2px solid var(--rc-accent); outline-offset: 2px; }
+
+.rc-attachment-picker summary { cursor: pointer; color: var(--rc-accent); font-weight: 600; padding: 8px 0; }

@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     api_public_url: str = "http://localhost:8000"
 
     qdrant_url: str = "http://qdrant:6333"
+    gemini_chat_enabled: bool = False
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.7-flash"
     qwen_base_url: str = ""

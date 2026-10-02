@@ -1,7 +1,8 @@
 """Docgrain HTTP API.
 
 Boundary rule: this process orchestrates, it does not extract. Every endpoint
-either reads stored artifacts or dispatches work for the worker; crash recovery is not implemented.
+reads stored artifacts, dispatches worker jobs, or publishes explicit manual review
+revisions and their pure derived projections; ingestion crash recovery is not implemented.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from .canonical_repository import CanonicalRepository
 from .repository import initialize
 from .routers import (
     canonical_chunks,
+    chat,
     chunks,
     documents,
     entities,
@@ -27,6 +29,7 @@ from .routers import (
     outputs,
     providers,
     retrieval,
+    reviews,
     versions,
 )
 from .settings import get_settings
@@ -52,7 +55,8 @@ app = FastAPI(
         "Document-to-knowledge engine under development. Current live ingestion accepts "
         "PDF, DOCX, TXT, XLSX, PNG and JPEG. PDF retains page rendering and provider-specific legacy extraction. "
         "Versioned sources automatically publish canonical JSON, common ai.json, readable Markdown, chunks and a verified manifest. "
-        "Vision reconciliation, live embedding/Qdrant adapters and ingestion crash recovery are not implemented. "
+        "Bounded source-checked manual reviews append immutable child revisions and refreshed outputs atomically. "
+        "Automated visual reconciliation, live embedding/Qdrant adapters and ingestion crash recovery are not implemented. "
         "Explicit worker index lifecycle supports checkpoint reuse and atomic PostgreSQL generations; HTTP lifecycle inspection is read-only. "
         "Canonical chunk derivation runs at ingestion write time; queries read immutable artifacts. "
         "USE_FIXTURES enables read-only demo data; X-Docgrain-Mode identifies responses."
@@ -63,6 +67,8 @@ app = FastAPI(
         {"name": "jobs", "description": "Job status; stage retry is not implemented."},
         {"name": "versions", "description": "Page renders and counts; demo-only tables/assets/chunks."},
         {"name": "knowledge", "description": "Read-only canonical knowledge revisions."},
+        {"name": "chat", "description": "Explicit experimental Gemini Q&A over a pinned revision; no canonical writes or embeddings."},
+        {"name": "review", "description": "Source reading, pure typed preview and explicit immutable manual revision publication."},
         {"name": "chunks", "description": "Demo-only chunk and simulated neighbor inspection."},
         {"name": "canonical-chunks", "description": "Revision-scoped canonical derivation and reads; Unicode character budgets."},
         {"name": "providers", "description": "Configuration inventory, not connectivity probes."},
@@ -86,6 +92,8 @@ async def identify_mode(request: Request, call_next):
 
 for module in (documents, jobs, versions, chunks, providers, lineage, entities, canonical_chunks, incremental, retrieval, outputs):
     app.include_router(module.router)
+app.include_router(reviews.router)
+app.include_router(chat.router)
 app.include_router(knowledge.document_router)
 app.include_router(knowledge.revision_router)
 
