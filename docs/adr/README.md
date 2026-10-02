@@ -18,4 +18,5 @@ Output integration: [ADR 0015 — common pre-embedding output with fidelity gaps
 Source acceptance: [ADR 0016 — independent source checks and selective visual proposals](0016-source-fidelity-acceptance.md).
 Güncel ürün scope/öncelik: [ADR 0017 — normalization first, embeddings last](0017-normalization-first-scope.md).
 N1 uygulaması: [ADR 0018 — original image evidence and local OCR](0018-image-evidence-local-ocr.md).
+N2 uygulaması: [ADR 0019 — native source structure and cell evidence](0019-native-source-structure-fidelity.md).
 Güncel dependency sırası N0 scope → N1 OCR/image → N2 source fidelity → N3 visual proposals → N4 reconciliation/review → N5 source acceptance → optional embedding.

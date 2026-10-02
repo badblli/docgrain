@@ -35,6 +35,7 @@ def processing_spec(result: StructuralParseResult) -> ProcessingSpec:
         except importlib.metadata.PackageNotFoundError:
             dependencies[package] = "unavailable"
     return ProcessingSpec(parser=result.parser, parser_version=result.parser_version,
+                          mapper_version="n2-1" if result.processing_options.get("adapter_version") == "n2-1" else "m2a-1",
                           schema_version=result.processing_options.get("canonical_schema_version", "0.3.0"),
                           dependencies=dependencies,
                           options={"source_format": result.source_format.value, **result.processing_options})

@@ -9,7 +9,7 @@ from docgrain_domain.canonical import NormalizedBox
 
 
 def normalized_pdf_box(raw: dict[str, Any] | None, docling_size: tuple[float, float],
-                       page: pymupdf.Page) -> NormalizedBox | None:
+                       page: pymupdf.Page, *, frame: str | None = None) -> NormalizedBox | None:
     if not raw:
         return None
     width, height = docling_size
@@ -32,7 +32,12 @@ def normalized_pdf_box(raw: dict[str, Any] | None, docling_size: tuple[float, fl
         crop_frame = same(width, crop.width) and same(height, crop.height)
         media_frame = same(width, media.width) and same(height, media.height)
         rotated_frame = same(width, visible.width) and same(height, visible.height)
-        if crop_frame:
+        if frame == "visible" and rotated_frame:
+            points = [pymupdf.Point(x, y) for x, y in
+                      ((left, top), (right, top), (right, bottom), (left, bottom))]
+        elif frame == "visible":
+            return None
+        elif crop_frame:
             points = [pymupdf.Point(x, y) * page.rotation_matrix
                       for x, y in ((left, top), (right, top), (right, bottom), (left, bottom))]
         elif media_frame:

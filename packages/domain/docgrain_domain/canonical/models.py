@@ -214,6 +214,15 @@ class TableCell(StrictModel):
     display_text: str | None = None
     row_span: int = Field(default=1, ge=1)
     col_span: int = Field(default=1, ge=1)
+    # 0.6.0: literal source type/format/merge or parser conflict facts.
+    source_attributes: dict[str, JsonValue] | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_historical_bytes(self, handler: SerializerFunctionWrapHandler):
+        value = handler(self)
+        if self.source_attributes is None:
+            value.pop("source_attributes", None)
+        return value
 
 
 class TableNode(NodeBase):
@@ -232,6 +241,15 @@ class ChartNode(NodeBase):
     kind: Literal["chart"] = "chart"
     artifact_id: str | None = None
     description: str | None = None
+    # Native chart facts are source data, not a generated visual description.
+    source_data: dict[str, JsonValue] | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_historical_bytes(self, handler: SerializerFunctionWrapHandler):
+        value = handler(self)
+        if self.source_data is None:
+            value.pop("source_data", None)
+        return value
 
 
 class ListNode(NodeBase):
@@ -359,7 +377,7 @@ class DomainRecord(StrictModel):
 
 
 class CanonicalKnowledgeSnapshot(StrictModel):
-    schema_version: Literal["0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0"] = "0.2.0"
+    schema_version: Literal["0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0"] = "0.2.0"
     identity_policy_version: Literal["0.1.0", "0.2.0"] = IDENTITY_POLICY_VERSION
     document_id: str = Field(min_length=1)
     workspace_id: str = Field(min_length=1)
@@ -380,7 +398,7 @@ class CanonicalKnowledgeSnapshot(StrictModel):
         from .validation import validate_snapshot
 
         processing = self.knowledge_revision.processing
-        if self.schema_version in {"0.3.0", "0.4.0", "0.5.0"}:
+        if self.schema_version in {"0.3.0", "0.4.0", "0.5.0", "0.6.0"}:
             if processing is None or self.identity_policy_version != processing.identity_policy_version:
                 raise ValueError("0.3.0 requires a processing spec and its identity policy")
             if processing.schema_version != self.schema_version:
@@ -399,10 +417,16 @@ class CanonicalKnowledgeSnapshot(StrictModel):
                 raise ValueError("canonical node ID differs from document/key/policy")
         elif processing is not None or self.identity_policy_version != "0.1.0":
             raise ValueError("processing spec and identity policy 0.2.0 require schema_version 0.3.0")
-        if self.schema_version not in {"0.4.0", "0.5.0"} and any(isinstance(entity, SchemaEntity) for entity in self.entities):
+        if self.schema_version not in {"0.4.0", "0.5.0", "0.6.0"} and any(isinstance(entity, SchemaEntity) for entity in self.entities):
             raise ValueError("schema entities require canonical schema_version 0.4.0")
-        if self.schema_version != "0.5.0" and any(e.locator.kind == "image_region" for e in self.evidence):
+        if self.schema_version not in {"0.5.0", "0.6.0"} and any(e.locator.kind == "image_region" for e in self.evidence):
             raise ValueError("image locations require canonical schema_version 0.5.0")
+        if self.schema_version != "0.6.0" and any(
+            (isinstance(n, ChartNode) and n.source_data is not None) or
+            (isinstance(n, TableNode) and any(c.source_attributes is not None for row in n.rows for c in row))
+            for n in self.structure
+        ):
+            raise ValueError("native chart/cell source facts require canonical schema_version 0.6.0")
         if self.schema_version == "0.1.0":
             for node in self.structure:
                 if isinstance(node, TableNode):

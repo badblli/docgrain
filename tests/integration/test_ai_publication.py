@@ -151,8 +151,8 @@ def test_real_worker_automatically_publishes_same_ai_contract(worker_store,real_
     assert {n.id:n.model_dump(mode="json") for n in output.content} == {n.id:n.model_dump(mode="json") for n in snapshot.structure}
     assert output.evidence == snapshot.evidence
     if name in {"png-printed", "jpeg-printed"}:
-        assert output.version == "1.1.0"
-        assert snapshot.schema_version == "0.5.0"
+        assert output.version == "1.2.0"
+        assert snapshot.schema_version == "0.6.0"
         assert any(a.content_sha256 == sha256(data).hexdigest() for a in snapshot.artifacts)
         assert all(e.locator.kind == "image_region" for e in snapshot.evidence)
         assert "OCR" in files["ai.json"].decode() or "ocr" in files["ai.json"].decode()

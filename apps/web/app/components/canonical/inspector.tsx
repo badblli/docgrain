@@ -19,6 +19,7 @@ export type Annotation = { provenance: Provenance; review_status: string };
 export type Cell = {
   value: unknown; annotation: Annotation | null; formula: string | null;
   cached_value: unknown; display_text: string | null; row_span: number; col_span: number;
+  source_attributes?: Record<string, unknown>;
 };
 export type Node = {
   id: string; identity_key: string; kind: string; annotation: Annotation;
@@ -26,6 +27,7 @@ export type Node = {
   heading?: string; level?: number; text?: string; role?: string; rows?: Cell[][];
   caption?: string | null; artifact_id?: string | null; description?: string | null;
   ordered?: boolean;
+  source_data?: Record<string, unknown>;
 };
 export type Issue = {
   code?: string; stage?: string; impact?: string; reason?: string; item_ref?: string;
@@ -331,10 +333,11 @@ export function Tables({ snapshot, versionId }: { snapshot: Snapshot; versionId?
           <Field label="Columns" value={Math.max(0, ...(current.rows ?? []).map((r) => r.length))} />
           <Field label="Evidence refs" value={evidence.length} /></dl>
         <div className="ci-table-scroll"><table className="ci-data-table"><tbody>{current.rows?.map((row, rowIndex) => <tr key={rowIndex}>
-          {row.map((cell, cellIndex) => <td key={cellIndex} rowSpan={cell.row_span} colSpan={cell.col_span}>
+          {row.map((cell, cellIndex) => cell.source_attributes?.merge_covered ? null : <td key={cellIndex} rowSpan={cell.row_span} colSpan={cell.col_span}>
             <span>{cell.display_text ?? stringValue(cell.value)}</span>
             {cell.formula && <small>Formula: {cell.formula}</small>}
             {cell.cached_value != null && <small>Cached: {stringValue(cell.cached_value)}</small>}
+            {cell.source_attributes?.number_format != null && <small>Sayı biçimi: {String(cell.source_attributes.number_format)}</small>}
           </td>)}</tr>)}</tbody></table></div>
         <h4>Source evidence</h4>{evidence.map((item) => <EvidenceView key={item.id} evidence={item} snapshot={snapshot} versionId={versionId} />)}
         {evidence.length === 0 && <p className="ci-muted">Bu tablonun evidence referansı yok.</p>}

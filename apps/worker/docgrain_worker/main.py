@@ -27,8 +27,8 @@ from minio import Minio
 
 from .canonical_assets import store_asset
 from .canonical_writer import persist_structural, processing_spec
-from .quality import missing_extraction_pages, page_failures
 from .output_writer import publish_outputs
+from .quality import missing_extraction_pages, page_failures
 from .structural import (
     DocumentParser,
     ParseIssue,
@@ -283,7 +283,8 @@ def process(job_id: str) -> None:
                 heads = canonical_repository.get_heads(document_id)
                 expected_head = heads[0] if heads else None
             try:
-                structural = DocumentParser(ocr_enabled=os.getenv("DOCGRAIN_OCR_ENABLED", "true").lower() == "true").parse(
+                structural = DocumentParser(ocr_enabled=os.getenv("DOCGRAIN_OCR_ENABLED", "true").lower() == "true",
+                    native_fidelity=os.getenv("DOCGRAIN_NATIVE_FIDELITY_ENABLED", "true").lower() == "true").parse(
                     VerifiedSource(source, content_hash, len(source_bytes)), source_format)
             except Exception as exc:
                 if source_format is not SourceFormat.PDF:

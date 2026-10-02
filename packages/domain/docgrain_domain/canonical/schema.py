@@ -30,15 +30,17 @@ def without_image_locations(schema: dict) -> dict:
 
 
 def generated_core_schema(version: str = "0.2.0") -> dict[str, object]:
-    if version not in {"0.2.0", "0.3.0", "0.4.0", "0.5.0"}:
+    if version not in {"0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0"}:
         raise ValueError("unsupported generated schema version")
     schema = CanonicalKnowledgeSnapshot.model_json_schema(mode="validation")
-    if version != "0.5.0":
+    if version != "0.6.0":
+        without_native_facts(schema)
+    if version not in {"0.5.0", "0.6.0"}:
         without_image_locations(schema)
     schema["$schema"] = DIALECT
     schema["$id"] = f"urn:docgrain:canonical-knowledge:{version}"
     schema["properties"]["schema_version"] = {"const": version, "title": "Schema Version", "type": "string"}
-    if version not in {"0.4.0", "0.5.0"}:
+    if version not in {"0.4.0", "0.5.0", "0.6.0"}:
         schema["properties"]["entities"]["items"] = {"$ref": "#/$defs/Entity"}
         for name in ("SchemaEntity", "EntityReviewEvent"):
             schema["$defs"].pop(name)
@@ -54,6 +56,12 @@ def generated_core_schema(version: str = "0.2.0") -> dict[str, object]:
         schema["$defs"]["KnowledgeRevision"]["required"].append("processing")
         schema["$defs"]["ProcessingSpec"]["properties"]["schema_version"] = {
             "const": version, "default": version, "title": "Schema Version", "type": "string"}
+    return schema
+
+
+def without_native_facts(schema: dict) -> dict:
+    for model, prop in (("TableCell", "source_attributes"), ("ChartNode", "source_data")):
+        schema["$defs"][model]["properties"].pop(prop, None)
     return schema
 
 

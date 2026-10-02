@@ -6,13 +6,26 @@ from typing import Literal
 
 from pydantic import Field, JsonValue, model_validator
 
-from .chunking import ChunkSet, ChunkingSpec, derive_chunk_set
+from .chunking import ChunkingSpec, ChunkSet, derive_chunk_set
 from .identity import canonical_json_bytes
 from .lifecycle import DerivedRevision
 from .locations import StrictModel
 from .models import (
-    ArtifactRef, AssetNode, CanonicalKnowledgeSnapshot, ChartNode, DomainRecord,
-    DomainSchemaRef, Entity, Evidence, KnowledgeRevision, Relation, SchemaEntity, SourceVersion, StructuralNode, TableNode, TextBlock,
+    ArtifactRef,
+    AssetNode,
+    CanonicalKnowledgeSnapshot,
+    ChartNode,
+    DomainRecord,
+    DomainSchemaRef,
+    Entity,
+    Evidence,
+    KnowledgeRevision,
+    Relation,
+    SchemaEntity,
+    SourceVersion,
+    StructuralNode,
+    TableNode,
+    TextBlock,
 )
 
 
@@ -41,7 +54,7 @@ class OutputQuality(StrictModel):
 
 class AIOutput(StrictModel):
     format: Literal["docgrain.ai-document"] = "docgrain.ai-document"
-    version: Literal["1.0.0", "1.1.0"] = "1.0.0"
+    version: Literal["1.0.0", "1.1.0", "1.2.0"] = "1.0.0"
     document_id: str
     workspace_id: str
     canonical_revision_id: str
@@ -68,6 +81,8 @@ class AIOutput(StrictModel):
     def versioned_locations(self):
         if self.version == "1.0.0" and any(e.locator.kind == "image_region" for e in self.evidence):
             raise ValueError("standalone image evidence requires AI output 1.1.0")
+        if self.version != "1.2.0" and self.canonical_schema_version == "0.6.0":
+            raise ValueError("native source facts require AI output 1.2.0")
         return self
 
 
@@ -136,7 +151,7 @@ def project_ai(snapshot: CanonicalKnowledgeSnapshot, chunks: ChunkSet) -> AIOutp
             "visual_nodes":sum(isinstance(n,(AssetNode,ChartNode)) for n in ordered),
             "evidence":len(snapshot.evidence), "chunks":len(chunks.chunks),
             "chunk_omissions":len(chunks.chunk_omissions)})
-    return AIOutput(version="1.1.0" if snapshot.schema_version == "0.5.0" else "1.0.0",
+    return AIOutput(version={"0.6.0":"1.2.0", "0.5.0":"1.1.0"}.get(snapshot.schema_version, "1.0.0"),
         document_id=snapshot.document_id, workspace_id=snapshot.workspace_id,
         canonical_revision_id=snapshot.knowledge_revision.id, canonical_schema_version=snapshot.schema_version,
         source=snapshot.source_version, processing_revision=snapshot.knowledge_revision,
@@ -160,6 +175,8 @@ def readable(output: AIOutput) -> str:
             lines.append("```json\n" + json.dumps([[cell.model_dump(mode="json") for cell in row] for row in node.rows],
                                                   ensure_ascii=False, indent=2) + "\n```")
         elif isinstance(node,(AssetNode,ChartNode)):
+            if isinstance(node, ChartNode) and node.source_data:
+                lines.append("## Native chart data (source facts; rendering/visual meaning not verified)\n```json\n" + json.dumps(node.source_data, ensure_ascii=False, indent=2) + "\n```")
             lines.append(node.description or "[Visual content requires image interpretation; see ai.json assets and source evidence.]")
     if output.entities or output.relations or output.records:
         lines.append("\n## Structured records (respect review/validation state)\n```json\n" + json.dumps(
@@ -170,11 +187,14 @@ def readable(output: AIOutput) -> str:
 
 
 def output_schema(version: str = "1.0.0") -> dict:
-    from .schema import without_image_locations
+    from .schema import without_image_locations, without_native_facts
 
-    if version not in {"1.0.0", "1.1.0"}:
+    if version not in {"1.0.0", "1.1.0", "1.2.0"}:
         raise ValueError("unsupported AI document version")
     schema = AIOutput.model_json_schema()
+    if version != "1.2.0":
+        without_native_facts(schema)
+        schema["$defs"]["ProcessingSpec"]["properties"]["schema_version"]["enum"].remove("0.6.0")
     if version == "1.0.0":
         without_image_locations(schema)
         schema["$defs"]["ProcessingSpec"]["properties"]["schema_version"]["enum"].remove("0.5.0")

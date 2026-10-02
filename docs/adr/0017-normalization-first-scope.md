@@ -1,7 +1,7 @@
 # ADR 0017 — Normalize and verify sources before embeddings
 
 - Date: 2026-10-02
-- Status: accepted scope; N1 implementation, N2–N5 pending
+- Status: accepted scope; N1/N2 implemented locally, N3–N5 pending
 - Source of truth in Notion: Docgrain project / ADR 0017 and Vision Board / Era 7.
 
 ## Decision

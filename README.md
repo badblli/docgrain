@@ -8,7 +8,7 @@ Docgrain genel amaçlıdır. LUWI gelecekteki tüketicilerinden biridir; core i�
 
 Hedef mimaride **canonical structured knowledge kaynak doğrusudur**. Markdown, chunks, embeddings ve uygulamaya özel görünümler bu modelden türetilir. Orijinal belgeler ve ham extraction sonuçları kanıt olarak korunur. Core schema ile kullanıcı/domain JSON Schema ayrı kalır.
 
-**Durum: pre-alpha / normalizasyon ve kaynak doğruluğu kabulü.** Altı format için ortak canonical model ve JSON/ZIP yolu; N1 PNG/JPEG + yerel basılı TR/EN OCR uygulanmıştır. Yeni OCR/image processing canonical 0.5.0 / `ai.json` 1.1.0 üretir; tarihsel schema/output byte'ları korunur. OCR ve görsel anlam kaynak incelemesi gerektirir. N2–N5 structure/visual/reconciliation/corpus kabulü sıradadır; embedding en son. M2a–M2g backend foundations korunur; ingestion otomatik index üretmez. [N1 uygulaması ve sınırları](docs/N1_IMAGE_OCR.md), [scope/teknoloji kararı](docs/adr/0017-normalization-first-scope.md), [ortak çıktı](docs/PRE_EMBEDDING_OUTPUT.md) ve [ADR dizini](docs/adr/README.md).
+**Durum: pre-alpha / normalizasyon ve kaynak doğruluğu kabulü.** Altı format için ortak canonical model ve JSON/ZIP yolu; N1 PNG/JPEG + yerel basılı TR/EN OCR ve N2 native yapı/hücre kanıtı uygulanmıştır. Yeni N2 profili canonical 0.6.0 / `ai.json` 1.2.0 üretir; tarihsel schema/output byte'ları korunur. PDF tablo/sütun karşılaştırması, DOCX gerçek part/path/header/footer/drawing ve XLSX sayı biçimi/native chart facts kaynak kanıtı taşır. Çelişkiler ve görsel anlam hâlâ inceleme gerektirir. N3 visual, N4 reconciliation ve N5 corpus kabulü sıradadır; embedding en son. M2a–M2g backend foundations korunur; ingestion otomatik index üretmez. [N2 uygulaması ve sınırları](docs/N2_SOURCE_STRUCTURE.md), [N1](docs/N1_IMAGE_OCR.md), [scope/teknoloji kararı](docs/adr/0017-normalization-first-scope.md) ve [ADR dizini](docs/adr/README.md).
 
 | Alan | Bugünkü implementasyon |
 | --- | --- |
@@ -19,7 +19,7 @@ Hedef mimaride **canonical structured knowledge kaynak doğrusudur**. Markdown, 
 | Metadata | PostgreSQL document/version/job kayıtları |
 | Kısmi hata | Bazı extraction hataları page failure olarak kaydedilir; bu recovery garantisi değildir |
 | Console | Varsayılan AI çıktısı: okunabilir içerik, exact tablolar, resim/evidence, eksikler ve JSON/ZIP. Canonical Inspector ve açık demo modu |
-| Canonical structure | Docling-first PDF/DOCX/XLSX/image, deterministik TXT, gerçek source evidence/EXIF geometry ve ayrı canonical PostgreSQL revision; yalnız object version ID varsa |
+| Canonical structure | Docling layout/image/OCR; native PDF hücre kontrolü, DOCX OOXML parts ve XLSX cells/charts; deterministik TXT; gerçek source evidence/EXIF geometry ve ayrı canonical PostgreSQL revision |
 | Entities | Dış schema kaydı, explicit candidate publication, leaf-level JSON Pointer evidence, extracted → needs_review → accepted/rejected ve ayrı JSON retrieval projection; otomatik semantik extraction henüz yok |
 | Canonical chunks | Bölüm/list context, lossless text slices, atomik table rows ve accepted entity JSON; explicit revision-scoped API, karakter bütçesi ve kaynak kanıtları |
 | Incremental lifecycle | Exact canonical JSON diff, lineage invalidation candidates, selective embedding checkpoints, immutable PostgreSQL generations ve atomic head/CAS; explicit injected adapter, boş generation ile removal ve full rebuild |
