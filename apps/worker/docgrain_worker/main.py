@@ -343,7 +343,7 @@ def process(job_id: str) -> None:
                 active_stage = "extract"
                 gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
                 gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.7-flash")
-                if gemini_key:
+                if gemini_key and os.getenv("DOCGRAIN_REMOTE_VISION_ENABLED", "false").lower() == "true":
                     markdown, structured, missing_pages, failures, table_count, asset_count = gemini_extraction(
                         rendered, prefix, bucket, gemini_key, gemini_model
                     )

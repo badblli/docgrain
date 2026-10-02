@@ -25,6 +25,7 @@ if __name__ == "__main__":
     parser.add_argument("--context", required=True)
     parser.add_argument("--model", default=os.environ.get("GEMINI_MODEL"))
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--allow-remote", action="store_true", help="Explicitly permit a new provider call")
     args = parser.parse_args()
     snapshot = CanonicalKnowledgeSnapshot.model_validate_json(args.snapshot.read_bytes())
     source = args.source.read_bytes()
@@ -50,6 +51,8 @@ if __name__ == "__main__":
         Observation.model_validate(cached["observation"])
         print("Existing proposal reused; no provider call.")
     else:
+        if not args.allow_remote:
+            parser.error("new remote calls are disabled; use --allow-remote only for an authorized run")
         key = os.environ.get("GEMINI_API_KEY")
         if not key or not args.model:
             parser.error("GEMINI_API_KEY and explicit --model/GEMINI_MODEL are required")

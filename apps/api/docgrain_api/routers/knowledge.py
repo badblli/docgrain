@@ -6,6 +6,9 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 import psycopg
 from docgrain_domain.canonical import CanonicalKnowledgeSnapshot
+from docgrain_domain.canonical.visuals import (
+    VisualInventory, VisualPreviewRequest, VisualReviewPreview, preview_visual_review, visual_inventory,
+)
 from fastapi import APIRouter, HTTPException, Response, status
 from minio.error import S3Error
 from pydantic import BaseModel
@@ -67,6 +70,21 @@ def get_revision(revision_id: str) -> CanonicalKnowledgeSnapshot:
     if document is None or document.workspace_id != snapshot.workspace_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "canonical revision not found")
     return snapshot
+
+
+@revision_router.get("/revisions/{revision_id}/visuals", response_model=VisualInventory)
+def get_visual_inventory(revision_id: str) -> VisualInventory:
+    return visual_inventory(get_revision(revision_id))
+
+
+@revision_router.post("/revisions/{revision_id}/visuals/preview", response_model=VisualReviewPreview)
+def preview_visuals(revision_id: str, request: VisualPreviewRequest) -> VisualReviewPreview:
+    """Pure source-pinned preview: no write, ingestion or model call."""
+    snapshot = get_revision(revision_id)
+    try:
+        return preview_visual_review(snapshot, request)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
 
 
 @revision_router.get("/revisions/{revision_id}/artifacts/{artifact_id}")

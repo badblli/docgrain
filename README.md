@@ -8,13 +8,13 @@ Docgrain genel amaçlıdır. LUWI gelecekteki tüketicilerinden biridir; core i�
 
 Hedef mimaride **canonical structured knowledge kaynak doğrusudur**. Markdown, chunks, embeddings ve uygulamaya özel görünümler bu modelden türetilir. Orijinal belgeler ve ham extraction sonuçları kanıt olarak korunur. Core schema ile kullanıcı/domain JSON Schema ayrı kalır.
 
-**Durum: pre-alpha / normalizasyon ve kaynak doğruluğu kabulü.** Altı format için ortak canonical model ve JSON/ZIP yolu; N1 PNG/JPEG + yerel basılı TR/EN OCR ve N2 native yapı/hücre kanıtı uygulanmıştır. Yeni N2 profili canonical 0.6.0 / `ai.json` 1.2.0 üretir; tarihsel schema/output byte'ları korunur. PDF tablo/sütun karşılaştırması, DOCX gerçek part/path/header/footer/drawing ve XLSX sayı biçimi/native chart facts kaynak kanıtı taşır. Çelişkiler ve görsel anlam hâlâ inceleme gerektirir. N3 visual, N4 reconciliation ve N5 corpus kabulü sıradadır; embedding en son. M2a–M2g backend foundations korunur; ingestion otomatik index üretmez. [N2 uygulaması ve sınırları](docs/N2_SOURCE_STRUCTURE.md), [N1](docs/N1_IMAGE_OCR.md), [scope/teknoloji kararı](docs/adr/0017-normalization-first-scope.md) ve [ADR dizini](docs/adr/README.md).
+**Durum: pre-alpha / normalizasyon ve kaynak doğruluğu kabulü.** Altı format için ortak canonical model ve JSON/ZIP yolu; N1 PNG/JPEG + yerel basılı TR/EN OCR ve N2 native yapı/hücre kanıtı uygulanmıştır. Yeni N2 profili canonical 0.6.0 / `ai.json` 1.2.0 üretir; tarihsel schema/output byte'ları korunur. PDF tablo/sütun karşılaştırması, DOCX gerçek part/path/header/footer/drawing ve XLSX sayı biçimi/native chart facts kaynak kanıtı taşır. Çelişkiler ve görsel anlam hâlâ inceleme gerektirir. N3 yerel görsel envanteri/sınıflandırma önerileri ve seçilmiş OCR uygulanmıştır; görsel anlam için yerel model kabulü, N4 reconciliation ve N5 corpus kapıları açık; embedding en son. M2a–M2g backend foundations korunur; ingestion otomatik index üretmez. [N2 uygulaması ve sınırları](docs/N2_SOURCE_STRUCTURE.md), [N1](docs/N1_IMAGE_OCR.md), [scope/teknoloji kararı](docs/adr/0017-normalization-first-scope.md) ve [ADR dizini](docs/adr/README.md).
 
 | Alan | Bugünkü implementasyon |
 | --- | --- |
 | Ingestion | PDF/DOCX/TXT/XLSX/PNG/JPEG kaydı → API upload proxy → MinIO → confirmation → Redis → worker |
 | Rendering | PyMuPDF ile PDF sayfaları, 200 DPI PNG |
-| Extraction | Canonical: Docling + pinned local EasyOCR TR/EN CPU; TXT deterministic, XLSX native facts. Legacy PDF Gemini key varsa ayrıca tüm sayfalarda Gemini; yerel review worker key boş |
+| Extraction | Canonical: Docling + pinned local EasyOCR TR/EN CPU; TXT deterministic, XLSX native facts. Seçilmiş görsel OCR doğrudan yerel Reader kullanır. Harici Vision varsayılan kapalı; key tek başına worker çağrısını açmaz |
 | Çıktılar | Otomatik canonical JSON/Markdown, ortak `ai.json` + schema, chunks ve checksum manifest; verified binary ekleriyle ZIP. Legacy extraction dosyaları ayrı korunur |
 | Metadata | PostgreSQL document/version/job kayıtları |
 | Kısmi hata | Bazı extraction hataları page failure olarak kaydedilir; bu recovery garantisi değildir |
@@ -121,7 +121,7 @@ Jev ve decision-provider framework; LangChain/LangGraph; çoklu Vision/embedding
 
 ## Sonraki çalışma
 
-Embedding öncesi kaynak↔çıktı fidelity kabulü ve selective OCR/Vision + evidence reconciliation. Tek format, her belgenin bütün anlamının eksiksiz çıkarılması garantisi değildir; mevcut iki PDF'te 23 görselin açıklaması eksiktir. [Ortak çıktı](docs/PRE_EMBEDDING_OUTPUT.md), [milestone planı](docs/DEVELOPMENT_HARNESS.md), [mimari](docs/ARCHITECTURE.md).
+Embedding öncesi kaynak↔çıktı fidelity kabulü, yerel görsel inceleme/OCR ve evidence reconciliation. Tek format, her belgenin bütün anlamının eksiksiz çıkarılması garantisi değildir; mevcut iki PDF'te 23 görselin açıklaması eksiktir. [N3 yerel inceleme](docs/N3_LOCAL_VISUAL_REVIEW.md), [ADR 0020](docs/adr/0020-local-first-visual-review.md), [ortak çıktı](docs/PRE_EMBEDDING_OUTPUT.md), [milestone planı](docs/DEVELOPMENT_HARNESS.md), [mimari](docs/ARCHITECTURE.md).
 
 ## License
 

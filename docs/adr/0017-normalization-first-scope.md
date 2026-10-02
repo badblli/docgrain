@@ -4,6 +4,8 @@
 - Status: accepted scope; N1/N2 implemented locally, N3–N5 pending
 - Source of truth in Notion: Docgrain project / ADR 0017 and Vision Board / Era 7.
 
+The selected remote visual-provider choice below is historical. [ADR 0020](0020-local-first-visual-review.md) supersedes it for current N3 with local visual inventory, selected CPU OCR and an open local visual-model acceptance gate. The original format scope and embedding-after-N5 order remain applicable.
+
 ## Decision
 
 Docgrain converts source documents into one versioned canonical model with source evidence. Structural parsing, OCR transcription, normalization and interpreted visual meaning are different operations. Valid JSON and a completed parsing job do not establish accurate meaning.

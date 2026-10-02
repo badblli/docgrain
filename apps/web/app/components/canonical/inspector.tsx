@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { VisualReview } from "./visual-review";
 
 export type Box = { x: number; y: number; width: number; height: number };
 export type Locator =
@@ -351,6 +352,7 @@ export function Assets({ snapshot, versionId }: { snapshot: Snapshot; versionId?
   const pictureIssues = (parse?.issues ?? []).filter((issue) => issue.code === "unextracted_picture");
   const pictureCount = parse?.coverage?.item_counts?.picture ?? 0;
   return <div className="ci-wrap"><div className="ci-section-heading"><div><span className="ci-kicker">CANONICAL ASSETS</span><h2>Detected visuals</h2></div><span>{assets.length} asset nodes · {pictureCount} pictures detected</span></div>
+    <VisualReview snapshot={snapshot} />
     {pictureCount > 0 && pictureIssues.length > 0 && <div className="ci-callout"><strong>{pictureCount} picture detected · binary extraction unavailable</strong>
       <p>Parser coverage ve structural issue kayıtları bu resimleri bildiriyor. Binary artifact ve AssetNode üretilmediği için önizleme mevcut değil.</p></div>}
     {pictureIssues.length > 0 && <div className="ci-asset-grid">{pictureIssues.map((issue, index) => <section className="ci-card ci-asset" key={`${issue.item_ref}-${index}`}>

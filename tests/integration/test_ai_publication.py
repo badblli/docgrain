@@ -126,6 +126,13 @@ def worker_store(output_bucket,monkeypatch):
 def test_real_worker_automatically_publishes_same_ai_contract(worker_store,real_corpus,name,mime,monkeypatch):
     worker,repo,client,bucket,connect = worker_store
     path = real_corpus[name]
+    if name == "table":
+        # A configured credential alone must never send documents to a provider.
+        monkeypatch.setenv("GEMINI_API_KEY", "unused-sentinel-not-a-secret")
+        monkeypatch.delenv("DOCGRAIN_REMOTE_VISION_ENABLED", raising=False)
+        def forbid_remote(*_args, **_kwargs):
+            raise AssertionError("remote extraction must require explicit opt-in")
+        monkeypatch.setattr(worker,"gemini_extraction",forbid_remote)
     data = path.read_bytes()
     client.put_object(bucket,"uploads/doc-test/version-test/original",io.BytesIO(data),len(data),content_type=mime)
     from docgrain_domain import JobStage

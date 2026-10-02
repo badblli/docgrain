@@ -20,6 +20,14 @@
 .ci-two-col { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
 .ci-card { background: #fff; border: 1px solid var(--line); border-radius: 9px; padding: 18px; min-width: 0; }
 .ci-card h3 { margin: 0 0 16px; font: 600 18px var(--f-doc); }
+.ci-visual-review > p { font-size: 12px; line-height: 1.6; color: var(--muted); }
+.ci-visual-review select { max-width: 100%; padding: 7px; border: 1px solid var(--line); border-radius: 5px; background: #fff; }
+.ci-review-fields { display: grid; grid-template-columns: minmax(140px,1fr) minmax(0,3fr); gap: 16px; margin-top: 16px; }
+.ci-review-fields label { display: grid; gap: 6px; font-size: 12px; }
+.ci-review-fields input,.ci-review-fields textarea { width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 5px; font: 12px var(--f-ui); }
+.ci-review-fields textarea { min-height: 65px; resize: vertical; }
+.ci-visual-review button:disabled { opacity: .45; cursor: default; }
+@media (max-width: 700px) { .ci-review-fields { grid-template-columns: 1fr; } }
 .ci-fields { display: grid; grid-template-columns: minmax(100px,150px) minmax(0,1fr); gap: 0 16px; margin: 0; }
 .ci-field { display: contents; }
 .ci-field dt,.ci-field dd { border-bottom: 1px solid var(--line2); padding: 7px 0; margin: 0; min-width: 0; }

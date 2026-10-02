@@ -19,4 +19,5 @@ Source acceptance: [ADR 0016 — independent source checks and selective visual 
 Güncel ürün scope/öncelik: [ADR 0017 — normalization first, embeddings last](0017-normalization-first-scope.md).
 N1 uygulaması: [ADR 0018 — original image evidence and local OCR](0018-image-evidence-local-ocr.md).
 N2 uygulaması: [ADR 0019 — native source structure and cell evidence](0019-native-source-structure-fidelity.md).
+N3 yerel yönü: [ADR 0020 — local-first visual review](0020-local-first-visual-review.md); güncel N3 için ADR 0017'nin harici görsel sağlayıcı seçimini değiştirir.
 Güncel dependency sırası N0 scope → N1 OCR/image → N2 source fidelity → N3 visual proposals → N4 reconciliation/review → N5 source acceptance → optional embedding.
