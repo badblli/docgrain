@@ -121,7 +121,7 @@ Jev ve decision-provider framework; LangChain/LangGraph; çoklu Vision/embedding
 
 ## Sonraki çalışma
 
-Embedding öncesi kaynak↔çıktı fidelity kabulü, yerel görsel inceleme/OCR ve evidence reconciliation. Tek format, her belgenin bütün anlamının eksiksiz çıkarılması garantisi değildir; mevcut iki PDF'te 23 görselin açıklaması eksiktir. [N3 yerel inceleme](docs/N3_LOCAL_VISUAL_REVIEW.md), [ADR 0020](docs/adr/0020-local-first-visual-review.md), [ortak çıktı](docs/PRE_EMBEDDING_OUTPUT.md), [milestone planı](docs/DEVELOPMENT_HARNESS.md), [mimari](docs/ARCHITECTURE.md).
+Embedding öncesi kaynak↔çıktı fidelity kabulü, yerel görsel inceleme/OCR ve evidence reconciliation. Tek format, her belgenin bütün anlamının eksiksiz çıkarılması garantisi değildir. Mevcut iki PDF'teki 23 görselin açıklaması kaynak kontrolüyle yeni manuel revision'lara eklendi; dört planın ölçü/ayrıntı belirsizlikleri korunuyor. CPU görsel modeli deneysel öneri üretir; otomatik anlam kabulü ve geniş corpus doğrulaması açık. [ADR 0023](docs/adr/0023-local-cpu-visual-proposals.md), [N3 yerel inceleme](docs/N3_LOCAL_VISUAL_REVIEW.md), [ortak çıktı](docs/PRE_EMBEDDING_OUTPUT.md), [milestone planı](docs/DEVELOPMENT_HARNESS.md), [mimari](docs/ARCHITECTURE.md).
 
 ## License
 

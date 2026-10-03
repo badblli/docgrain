@@ -14,6 +14,7 @@ type Output = {
 const valueText = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value);
 const gapLabels: Record<string, [string, string]> = {
   missing_visual_description: ["Görsel açıklaması eksik", "Görsel veya grafiğin anlamı henüz metne aktarılmadı. Mevcut binary dosyasını ya da kaynak grafik verisini inceleyin."],
+  visual_uncertainty: ["Görselde belirsiz bilgi", "Açıklama var ancak görselde bazı bilgiler hâlâ doğrulanamadı; kayıt ayrıntısını ve kaynağı inceleyin."],
   formula_result_unavailable: ["Formül sonucu mevcut değil", "Formül korundu ancak dosyada hesaplanmış değeri bulunmuyor; sonuç üretilmedi."],
   no_text_or_table_content: ["Metin veya tablo çıkarılamadı", "Kaynak için OCR veya görsel inceleme gerekiyor."],
   structural_coverage_incomplete: ["Kapsam veya kaynak doğrulaması açık", "Çıkarım eksikleri veya doğrulanmamış OCR kayıtları var. Ayrıntıları kaynak belgeyle karşılaştırın."],
@@ -57,7 +58,7 @@ export function AIOutputView({ snapshot, versionId }: { snapshot: Snapshot; vers
   const base = `${API}/v1/knowledge/revisions/${encodeURIComponent(revision)}`;
   const metrics = output.quality.measurements;
   const evidence = snapshot.evidence.find(e => e.id === selectedEvidence);
-  const visualGaps = output.quality.gaps.filter(g => g.code === "missing_visual_description").length;
+  const visualGaps = output.quality.gaps.filter(g => ["missing_visual_description", "visual_uncertainty"].includes(g.code)).length;
   return <div className="ci-wrap ai-output">
     <div className="ci-hero"><div><p className="ci-eyebrow">PDF · DOCX · TXT · XLSX · PNG · JPEG → ortak model</p>
       <h2>AI için ortak doküman çıktısı</h2><p>Metin, tablo ve kaynak kanıtları tek JSON biçiminde. Resimler bu paketin dosya ekleridir.</p></div>

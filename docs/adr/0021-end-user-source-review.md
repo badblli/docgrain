@@ -27,7 +27,7 @@ Preview requests carry base revision, snapshot SHA-256, operation ID, aware time
 - Source evidence must exist. Source bytes, node IDs, evidence, artifacts, formulas/cached results and geometry are immutable.
 - Covered merged cells, compound values and oversized fields are read-only. Native `merge_covered` markers and physical span coverage are honored.
 - Integer, floating, boolean and string types are preserved. JSON clients can serialize an integral float as an integer; the source float type is restored before validation.
-- Revisions with linked entities, relations or domain records are blocked until dependent fact validation exists.
+- ADR 0023 refines linked-data eligibility: affected or ambiguous fields remain blocked; proven independent source fields can be edited without changing linked entities, relations or records. Comprehensive dependent fact validation remains open.
 - Changing fields records human source checking for those fields only; whole-document approval pointer and partial coverage remain unchanged. Reviewer is currently self-reported, not an authenticated identity.
 
 ## Atomicity and replay

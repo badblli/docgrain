@@ -123,6 +123,14 @@ def project_ai(snapshot: CanonicalKnowledgeSnapshot, chunks: ChunkSet) -> AIOutp
     for issue in structural.get("issues", []):
         gaps.append(OutputGap(code="parser_issue", detail=json.dumps(issue, ensure_ascii=False, sort_keys=True)))
     for node in ordered:
+        reviews = snapshot.metadata.get("visual_review", {})
+        review = reviews.get(node.id, {}) if isinstance(reviews, dict) else {}
+        uncertainties = review.get("uncertainties", []) if isinstance(review, dict) else []
+        if isinstance(node, (AssetNode, ChartNode)) and isinstance(uncertainties, list):
+            for uncertainty in uncertainties:
+                if isinstance(uncertainty, str) and uncertainty.strip():
+                    gaps.append(OutputGap(code="visual_uncertainty", detail=uncertainty, object_id=node.id,
+                                          evidence_ids=node.annotation.provenance.evidence_ids))
         if isinstance(node, (AssetNode, ChartNode)) and not node.description:
             gaps.append(OutputGap(code="missing_visual_description", detail="Binary/visual structure is preserved; visual meaning is not described.",
                                   object_id=node.id, evidence_ids=node.annotation.provenance.evidence_ids))

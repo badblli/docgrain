@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useId, useMemo, useR
 import "./review-workspace.css";
 import { RevisionChat } from "./revision-chat";
 import { EvidenceView, type Cell, type Evidence, type Locator, type Node, type Snapshot } from "./inspector";
+import { LocalVisualProposal, type LocalVisualProposalData } from "./local-visual-proposal";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -25,14 +26,14 @@ type Workspace = {
     pages: { page_number: number; render_url: string }[] };
   fields: ReviewField[]; history: HistoryEntry[]; warnings: string[];
 };
-type ChangeBody = { field_id: string; before: Scalar; after: Scalar };
+type ChangeBody = { field_id: string; before: Scalar; after: Scalar; visual_uncertainties?: string[] };
 type RequestBody = {
   base_revision_id: string; base_snapshot_sha256: string; operation_id: string; occurred_at: string;
   reviewer_id: string; reason: string; changes: ChangeBody[];
 };
 type Preview = {
   proposal_id: string; base_revision_id: string; snapshot_sha256: string; review_status: string;
-  changes: { field_id: string; node_id: string; kind: ReviewField["kind"]; label: string; before: Scalar; after: Scalar; evidence_ids: string[] }[];
+  changes: { field_id: string; node_id: string; kind: ReviewField["kind"]; label: string; before: Scalar; after: Scalar; evidence_ids: string[]; visual_uncertainties?: string[] | null }[];
   warnings: string[];
 };
 type SaveResult = { revision_id: string; parent_revision_id: string | null; inserted: boolean;
@@ -47,6 +48,7 @@ type ReadBlock = { node: Node; depth: number; trail: string[] };
 type GridSlot = { cell: Cell; field: ReviewField | null; covered: boolean };
 type Grid = { rows: GridSlot[][]; loose: ReviewField[] };
 type Gap = { key: string; title: string; detail: string; nodeId?: string; count: number };
+type Adoption = { proposal: LocalVisualProposalData; description: string; adopted_at: string };
 
 class HttpError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
@@ -215,7 +217,10 @@ type Ctx = {
   nodes: Map<string, Node>; fieldsByNode: Map<string, ReviewField[]>;
   viewLatest: boolean; wsEditable: boolean; locked: boolean;
   drafts: Record<string, Draft>; query: string; selection: Selection | null;
+  uncertaintyDrafts: Record<string, string>; setUncertaintyDraft: (field: ReviewField, value: string) => void;
   setDraft: (field: ReviewField, value: Draft) => void; revert: (field: ReviewField) => void;
+  mode: Mode | null; snapshotSha256: string;
+  adoptProposal: (field: ReviewField, description: string, proposal: LocalVisualProposalData) => boolean;
   select: (selection: Selection, reveal?: boolean) => void;
   openSection: (section: SectionKey, nodeId?: string) => void;
 };
@@ -342,7 +347,16 @@ function TextPanel({ blocks }: { blocks: ReadBlock[] }) {
   return <div className="rw-flow">{visible.map(({ node, depth }) => {
     if (node.kind === "section") {
       const Heading = (`h${Math.min(5, Math.max(3, (node.level ?? depth) + 2))}`) as "h3" | "h4" | "h5";
-      return <Heading key={node.id} id={`rw-node-${node.id}`} className="rw-heading">{node.heading || node.title}</Heading>;
+      const field = textField(node);
+      const st = fieldState(c, field);
+      return <section key={node.id} id={`rw-node-${node.id}`}>
+        <Heading className="rw-heading">{field ? String(c.drafts[field.field_id] ?? field.value) : node.heading || node.title}</Heading>
+        {field && st?.editable && <details><summary>Başlığı düzenle</summary>
+          <ScalarInput field={field} label="Bölüm başlığı" onFocus={() => c.select({ nodeId: node.id, fieldId: field.field_id })} />
+          {st.changed && <><Original value={field.value} /><button type="button" className="rw-link" onClick={() => c.revert(field)}>Geri al</button></>}
+        </details>}
+        <button type="button" className="rw-link" onClick={() => c.select({ nodeId: node.id, fieldId: field?.field_id }, true)}>Başlığı kaynakta göster</button>
+      </section>;
     }
     if (node.kind === "list") return <ListView key={node.id} node={node} />;
     if (node.kind === "table") {
@@ -484,6 +498,9 @@ function VisualsPanel({ blocks, snapshot }: { blocks: ReadBlock[]; snapshot: Sna
         const field = c.fieldsByNode.get(node.id)?.find((f) => f.kind === "description") ?? null;
         const st = fieldState(c, field);
         const description = field ? (typeof (c.drafts[field.field_id] ?? toRaw(field.value)) === "boolean" ? "" : String(c.drafts[field.field_id] ?? toRaw(field.value))) : node.description ?? "";
+        const uncertainties = storedVisualUncertainties(snapshot, node.id);
+        const uncertaintyText = field ? c.uncertaintyDrafts[field.field_id] ?? uncertainties.join("\n") : uncertainties.join("\n");
+        const notesChanged = uncertaintyText !== uncertainties.join("\n");
         const target: Selection = { nodeId: node.id, fieldId: field?.field_id };
         return <article key={node.id} id={`rw-node-${node.id}`} className={`rw-asset${c.selection?.nodeId === node.id ? " is-selected" : ""}${st?.changed ? " is-changed" : ""}`}
           onClick={() => c.select(target)}>
@@ -495,24 +512,38 @@ function VisualsPanel({ blocks, snapshot }: { blocks: ReadBlock[]; snapshot: Sna
           </div>
           <div className="rw-asset-body">
             <span className="rw-kicker">{node.kind === "chart" ? "Grafik" : "Görsel"}</span>
-            <h3>{node.caption || "Başlık yok"}</h3>
+            <h3>{node.caption || node.description?.split(".")[0] || "Açıklanmamış görsel"}</h3>
             {artifact && <p className="rw-meta">Dosya bilgisi: {artifact.mime_type} · {artifact.byte_size.toLocaleString("tr-TR")} bayt. Bu bilgi görselin anlamını doğrulamaz.</p>}
             <div className="rw-block-meta">{st ? <AccessChip editable={st.editable} reason={st.reason} /> : <span className="rw-chip rw-chip-lock">Salt okunur · açıklama alanı yok</span>}
-              {st?.changed && <span className="rw-chip rw-chip-draft">Taslakta değişti</span>}</div>
+              {(st?.changed || notesChanged) && <span className="rw-chip rw-chip-draft">Taslakta değişti</span>}</div>
             {st?.editable && field ? <ScalarInput field={field} label={`${field.label} (görsel açıklaması)`} multiline onFocus={() => c.select(target)} />
               : <p className="rw-prose">{description ? <Highlight text={description} query={c.query} /> : <span className="rw-unknown">Anlamı bilinmiyor · açıklama yok</span>}</p>}
             {st?.changed && field && <Original value={field.value} />}
             {st?.error && <p className="rw-error" role="alert">{st.error}</p>}
+            {uncertainties.length > 0 && <div className="rw-note rw-note-warn"><strong>Görselde belirsiz kalan bilgiler</strong><ul>{uncertainties.map((item, i) => <li key={i}>{item}</li>)}</ul></div>}
+            {st?.editable && field && <details><summary>Belirsizlik notlarını düzenle</summary>
+              <label><span className="rw-note">Her satır bir not (en fazla 20). Yalnız kaynakta doğruladığınız belirsizlikleri kaldırın.</span>
+                <textarea className="rw-textarea" aria-label="Görsel belirsizlik notları" rows={3} value={uncertaintyText} disabled={c.locked}
+                  onChange={(e) => c.setUncertaintyDraft(field, e.target.value)} onFocus={() => c.select(target)} /></label>
+            </details>}
             <div className="rw-block-actions">
               <button type="button" className="rw-link" onClick={(e) => { e.stopPropagation(); c.select(target, true); }}>Kaynakta göster</button>
-              {st?.changed && field && <button type="button" className="rw-link rw-link-warn" disabled={c.locked} onClick={(e) => { e.stopPropagation(); c.revert(field); }}>Geri al</button>}
+              {(st?.changed || notesChanged) && field && <button type="button" className="rw-link rw-link-warn" disabled={c.locked} onClick={(e) => { e.stopPropagation(); c.revert(field); }}>Geri al</button>}
             </div>
+            {artifact && artifact.mime_type.startsWith("image/") && field && typeof field.value !== "boolean" &&
+              <LocalVisualProposal revisionId={snapshot.knowledge_revision.id} snapshotSha256={c.snapshotSha256} nodeId={node.id} mode={c.mode}
+                canAdopt={!!st?.editable} locked={c.locked} onAdopt={(text, proposal) => c.adoptProposal(field, text, proposal)} />}
           </div>
         </article>;
       })}</div>}
   </div>;
 }
 
+function storedVisualUncertainties(snapshot: Snapshot, nodeId: string): string[] {
+  const reviews = (snapshot.metadata as { visual_review?: Record<string, { uncertainties?: unknown }> }).visual_review;
+  const list = reviews && typeof reviews === "object" ? reviews[nodeId]?.uncertainties : null;
+  return Array.isArray(list) ? list.filter((item): item is string => typeof item === "string") : [];
+}
 function computeGaps(ws: Workspace, fieldsByNode: Map<string, ReviewField[]>, blocks: ReadBlock[]): Gap[] {
   const gaps = new Map<string, Gap>();
   const add = (key: string, title: string, detail: string, nodeId?: string) => {
@@ -531,6 +562,9 @@ function computeGaps(ws: Workspace, fieldsByNode: Map<string, ReviewField[]>, bl
     if (node.kind !== "asset" && node.kind !== "chart") continue;
     const field = fieldsByNode.get(node.id)?.find((f) => f.kind === "description");
     const description = field ? field.value : node.description;
+    for (const [i, uncertainty] of storedVisualUncertainties(ws.snapshot, node.id).entries()) {
+      add(`vu-${node.id}-${i}`, "Görselde belirsiz bilgi", uncertainty, node.id);
+    }
     if (description == null || description === "") {
       add(`d-${node.id}`, node.kind === "chart" ? "Grafiğin anlamı bilinmiyor" : "Görselin anlamı bilinmiyor",
         `${node.caption || "Başlıksız öğe"} için açıklama yok; kaynağa bakıp açıklama ekleyin.`, node.id);
@@ -639,6 +673,7 @@ export function ReviewWorkspace({ documentId, onSaved, mode, onDirtyChange }: {
   const [section, setSection] = useState<SectionKey>("text");
   const [query, setQuery] = useState("");
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  const [uncertaintyDrafts, setUncertaintyDrafts] = useState<Record<string, string>>({});
   const [selection, setSelection] = useState<Selection | null>(null);
   const [activeEvidence, setActiveEvidence] = useState<string | null>(null);
   const [page, setPage] = useState(1);
@@ -651,6 +686,7 @@ export function ReviewWorkspace({ documentId, onSaved, mode, onDirtyChange }: {
   const [conflict, setConflict] = useState("");
   const [commitOpen, setCommitOpen] = useState(false);
   const [sourceOpen, setSourceOpen] = useState(true);
+  const [adoptions, setAdoptions] = useState<Record<string, Adoption>>({});
 
   const loadCtl = useRef<AbortController | null>(null);
   const previewCtl = useRef<AbortController | null>(null);
@@ -679,7 +715,7 @@ export function ReviewWorkspace({ documentId, onSaved, mode, onDirtyChange }: {
     setSave((state) => state.status === "saving" ? state : { status: "idle", message: "" });
   }, []);
   const resetDraftState = useCallback(() => {
-    setDrafts({}); setPreview({ status: "idle" }); setSourceChecked(false); setConflict("");
+    setDrafts({}); setUncertaintyDrafts({}); setAdoptions({}); setPreview({ status: "idle" }); setSourceChecked(false); setConflict("");
     setSave({ status: "idle", message: "" }); operation.current = null; setSelection(null); setActiveEvidence(null);
   }, []);
 
@@ -730,16 +766,23 @@ export function ReviewWorkspace({ documentId, onSaved, mode, onDirtyChange }: {
   const locked = saving || load.status === "loading";
 
   const evaluated = useMemo(() => {
-    const changes: { field: ReviewField; after: Scalar }[] = [];
+    const changes: { field: ReviewField; after: Scalar; visualUncertainties?: string[] }[] = [];
     const invalid: ReviewField[] = [];
     if (ws) for (const field of ws.fields) {
       const draft = drafts[field.field_id];
-      if (draft === undefined) continue;
-      const result = compute(field, draft);
-      if (!result.ok) invalid.push(field); else if (result.changed) changes.push({ field, after: result.value });
+      const notes = uncertaintyDrafts[field.field_id];
+      if (draft === undefined && notes === undefined) continue;
+      const visualUncertainties = notes === undefined ? undefined : notes.split("\n").map((s) => s.trim()).filter(Boolean);
+      if (visualUncertainties && (visualUncertainties.length > 20 || visualUncertainties.some((s) => s.length > 500))) {
+        invalid.push(field); continue;
+      }
+      const result = compute(field, draft ?? toRaw(field.value));
+      const notesChanged = notes !== undefined && JSON.stringify(visualUncertainties) !== JSON.stringify(storedVisualUncertainties(ws.snapshot, field.node_id));
+      if (!result.ok) invalid.push(field); else if (result.changed || notesChanged) changes.push({ field, after: result.value, visualUncertainties });
     }
     return { changes, invalid };
-  }, [ws, drafts]);
+  }, [ws, drafts, uncertaintyDrafts]);
+
   const dirtyCount = evaluated.changes.length + evaluated.invalid.length;
 
   useEffect(() => { onDirtyRef.current?.(dirtyCount > 0); }, [dirtyCount]);
@@ -764,11 +807,32 @@ export function ReviewWorkspace({ documentId, onSaved, mode, onDirtyChange }: {
   const revert = useCallback((field: ReviewField) => {
     invalidatePreview();
     setDrafts((current) => { const next = { ...current }; delete next[field.field_id]; return next; });
+    setAdoptions((current) => { const next = { ...current }; delete next[field.field_id]; return next; });
+    setUncertaintyDrafts((current) => { const next = { ...current }; delete next[field.field_id]; return next; });
+  }, [invalidatePreview]);
+  const setUncertaintyDraft = useCallback((field: ReviewField, value: string) => {
+    invalidatePreview(); setUncertaintyDrafts((all) => ({ ...all, [field.field_id]: value }));
   }, [invalidatePreview]);
   const revertAll = () => {
     if (!dirtyCount || !window.confirm("Tüm taslak değişiklikler geri alınsın mı?")) return;
-    invalidatePreview(); setDrafts({}); setConflict("");
+    invalidatePreview(); setDrafts({}); setUncertaintyDrafts({}); setAdoptions({}); setConflict("");
   };
+  const adoptProposal = useCallback((field: ReviewField, description: string, proposal: LocalVisualProposalData): boolean => {
+    if (!ws || !viewLatest || !ws.can_edit || !field.editable || locked || description.trim() === "") return false;
+    if (proposal.revision_id !== ws.snapshot.knowledge_revision.id || proposal.snapshot_sha256 !== ws.snapshot_sha256 || proposal.node_id !== field.node_id) return false;
+    const current = drafts[field.field_id] ?? toRaw(field.value);
+    if (typeof current === "boolean") return false;
+    if (current.trim() !== "" && current !== description &&
+      !window.confirm("Bu alanda zaten bir açıklama veya taslak var. Yerel model önerisi bunun yerine yazılsın mı? Mevcut taslak metni değiştirilir (özgün değer korunur ve “Geri al” ile dönülebilir).")) return false;
+    setDraft(field, description);
+    setAdoptions((all) => ({ ...all, [field.field_id]: { proposal, description, adopted_at: new Date().toISOString() } }));
+    setUncertaintyDrafts((all) => {
+      const existing = all[field.field_id]?.split("\n").map((s) => s.trim()).filter(Boolean)
+        ?? storedVisualUncertainties(ws.snapshot, field.node_id);
+      return { ...all, [field.field_id]: [...new Set([...existing, ...proposal.uncertainties])].join("\n") };
+    });
+    return true;
+  }, [ws, viewLatest, locked, drafts, setDraft]);
 
   const selectContent = useCallback((next: Selection, reveal = false) => {
     setSelection(next); setActiveEvidence(next.evidenceId ?? null);
@@ -817,8 +881,14 @@ export function ReviewWorkspace({ documentId, onSaved, mode, onDirtyChange }: {
     if (!ws || typeof crypto === "undefined" || typeof crypto.randomUUID !== "function") return null;
     const base = {
       base_revision_id: ws.snapshot.knowledge_revision.id, base_snapshot_sha256: ws.snapshot_sha256,
-      reviewer_id: reviewer.trim(), reason: reason.trim(),
-      changes: evaluated.changes.map(({ field, after }): ChangeBody => ({ field_id: field.field_id, before: field.value, after })),
+      reviewer_id: reviewer.trim(), reason: [reason.trim(), ...evaluated.changes.flatMap(({ field, after }) => {
+        const adoption = adoptions[field.field_id];
+        return adoption && adoption.description === after ? [`Yerel öneri: ${adoption.proposal.id} (${adoption.proposal.profile_id}); kaynakla ayrıca incelendi.`] : [];
+      })].join("\n"),
+      changes: evaluated.changes.map(({ field, after, visualUncertainties }): ChangeBody => {
+        return { field_id: field.field_id, before: field.value, after,
+          ...(field.kind === "description" && visualUncertainties !== undefined ? { visual_uncertainties: visualUncertainties } : {}) };
+      }),
     };
     const sig = JSON.stringify(base);
     // Retries of the identical payload keep the same operation id and time; any payload change starts a new operation.
@@ -847,7 +917,8 @@ export function ReviewWorkspace({ documentId, onSaved, mode, onDirtyChange }: {
       if (seq !== previewSeq.current) return;
       const matches = data.base_revision_id === body.base_revision_id && data.snapshot_sha256 === body.base_snapshot_sha256 &&
         data.changes.length === body.changes.length && body.changes.every((change, i) =>
-          data.changes[i].field_id === change.field_id && Object.is(data.changes[i].after, change.after));
+          data.changes[i].field_id === change.field_id && Object.is(data.changes[i].after, change.after) &&
+          JSON.stringify(data.changes[i].visual_uncertainties ?? null) === JSON.stringify(change.visual_uncertainties ?? null));
       setPreview(matches ? { status: "ready", data, body } :
         { status: "error", message: "Sunucu önizlemesi taslağınızla eşleşmiyor. Kaydedilmedi; yeniden önizleyin." });
     } catch (error) {
@@ -870,7 +941,7 @@ export function ReviewWorkspace({ documentId, onSaved, mode, onDirtyChange }: {
         body: JSON.stringify({ ...preview.body, preview_id: preview.data.proposal_id, confirmed_source: true }),
       });
       if (seq !== saveSeq.current) return;
-      setDrafts({}); setPreview({ status: "idle" }); setSourceChecked(false); setReason(""); setConflict("");
+      setDrafts({}); setUncertaintyDrafts({}); setAdoptions({}); setPreview({ status: "idle" }); setSourceChecked(false); setReason(""); setConflict("");
       operation.current = null; setCommitOpen(false);
       setSave({ status: "saved", message: result.inserted ? "Yeni revision kaydedildi. Değiştirdiğiniz alanlar kaynakla kontrol edilmiş olarak işaretlendi; belgenin tamamının doğruluğu onaylanmış sayılmaz."
         : "Bu işlem daha önce kaydedilmişti; yeni revision eklenmedi." });
@@ -890,8 +961,14 @@ export function ReviewWorkspace({ documentId, onSaved, mode, onDirtyChange }: {
       format: "docgrain.review-draft", document_id: documentId, base_revision_id: displayedRevision,
       base_snapshot_sha256: ws.snapshot_sha256, exported_at: new Date().toISOString(),
       reviewer_id: reviewer.trim() || null, reason: reason.trim() || null,
-      changes: evaluated.changes.map(({ field, after }) => ({ field_id: field.field_id, node_id: field.node_id, label: field.label, before: field.value, after })),
+      changes: evaluated.changes.map(({ field, after, visualUncertainties }) => ({ field_id: field.field_id, node_id: field.node_id, label: field.label, before: field.value, after, visual_uncertainties: visualUncertainties })),
       unparsed_drafts: evaluated.invalid.map((field) => ({ field_id: field.field_id, label: field.label, before: field.value, draft: drafts[field.field_id] })),
+      // Only proposals whose text is still the drafted value; the save request never carries these.
+      adopted_local_visual_proposals: evaluated.changes.flatMap(({ field, after }) => {
+        const adoption = adoptions[field.field_id];
+        return adoption && adoption.description === after
+          ? [{ field_id: field.field_id, node_id: field.node_id, adopted_at: adoption.adopted_at, proposal: adoption.proposal }] : [];
+      }),
     };
     const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }));
     const link = document.createElement("a");
@@ -902,7 +979,7 @@ export function ReviewWorkspace({ documentId, onSaved, mode, onDirtyChange }: {
 
   const ctx: Ctx | null = index && ws ? {
     nodes: index.nodes, fieldsByNode: index.fieldsByNode, viewLatest, wsEditable: ws.can_edit, locked, drafts, query, selection,
-    setDraft, revert, select: selectContent, openSection,
+    setDraft, revert, uncertaintyDrafts, setUncertaintyDraft, mode, snapshotSha256: ws.snapshot_sha256, adoptProposal, select: selectContent, openSection,
   } : null;
 
   if (mode === "demo") {
@@ -1004,6 +1081,10 @@ export function ReviewWorkspace({ documentId, onSaved, mode, onDirtyChange }: {
                 <div className="rw-before"><span>Önce</span><p>{formatScalar(change.before)}</p></div>
                 <div className="rw-after"><span>Sonra</span><p>{formatScalar(change.after)}</p></div>
               </div>
+              {change.visual_uncertainties != null && <div className="rw-diff-cols">
+                <div className="rw-before"><span>Önce · belirsizlikler</span><p>{storedVisualUncertainties(ws.snapshot, change.node_id).join("\n") || "Not yok"}</p></div>
+                <div className="rw-after"><span>Sonra · belirsizlikler</span><p>{change.visual_uncertainties.join("\n") || "Not yok"}</p></div>
+              </div>}
               <div className="rw-block-actions">
                 <button type="button" className="rw-link" onClick={() => selectContent({ nodeId: change.node_id, fieldId: change.field_id }, true)}>Kaynakta göster</button>
                 <button type="button" className="rw-link" onClick={() => { selectContent({ nodeId: change.node_id, fieldId: change.field_id }); openSection(KIND_SECTION[change.kind], change.node_id); }}>İçerikte göster</button>

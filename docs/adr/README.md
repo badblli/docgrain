@@ -25,3 +25,5 @@ Güncel dependency sırası N0 scope → N1 OCR/image → N2 source fidelity →
 End-user manual review: [ADR 0021 — source reading and immutable reviews](0021-end-user-source-review.md). The bounded manual N4 workspace can proceed alongside the open N3 semantic gate; N5 and embedding remain open.
 
 Experimental normalized-data consumer: [ADR 0022 — canonical Gemini Q&A](0022-canonical-gemini-qa-probe.md). Local source normalization and accepted revisions remain independent of the chat provider.
+
+Experimental CPU visual proposals and preserved uncertainty: [ADR 0023](0023-local-cpu-visual-proposals.md). Source-reviewed manual corrections are separate from automatic model acceptance; N3/N5 remain open.

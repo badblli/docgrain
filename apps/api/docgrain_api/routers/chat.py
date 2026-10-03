@@ -55,7 +55,9 @@ SYSTEM_INSTRUCTION = (
     "say what is missing. For a non-abstained answer, cite every supporting claim with node_id and an "
     "evidence_id that is listed on that same node (table cells list theirs under 'e'). Cells are "
     "{v: value, e: evidence ids, f: formula}. In image_node_ids return only ids of image nodes that help the "
-    "answer and are either attached or have a non-empty description. Return JSON only."
+    "answer and are either attached or have a non-empty description. Cite every returned image with "
+    "its own node_id and evidence_id; do not append unrelated images. visual_uncertainties are unresolved "
+    "source facts even when a description was reviewed. Return JSON only."
 )
 RESPONSE_SCHEMA = {
     "type": "object",
@@ -262,6 +264,7 @@ def _context_node(node) -> dict:
         entry["caption"] = getattr(node, "caption", None)
         entry["rows"] = [[_cell_entry(cell) for cell in row] for row in node.rows]
     elif node.kind in {"asset", "chart"}:
+        entry["caption"] = _str_or_none(getattr(node, "caption", None))
         entry["description"] = _str_or_none(getattr(node, "description", None))
         if getattr(node, "source_data", None) is not None:
             entry["source_data"] = node.source_data
@@ -293,13 +296,24 @@ def _build_context(snapshot) -> tuple[dict, int]:
     evidence_ids: set[str] = set()
     nodes = []
     for node in ordered:
-        nodes.append(_context_node(node))
+        entry = _context_node(node)
+        reviews = snapshot.metadata.get("visual_review", {})
+        review = reviews.get(node.id, {}) if isinstance(reviews, dict) else {}
+        if node.kind in {"asset", "chart"} and isinstance(review, dict):
+            entry["visual_uncertainties"] = review.get("uncertainties", [])
+        nodes.append(entry)
         evidence_ids |= _node_evidence_ids(node)
     evidence = [
         {"id": item.id, "locator": item.locator.model_dump(mode="json"), "note": item.note}
         for item in snapshot.evidence if item.id in evidence_ids
     ]
     gaps = _gaps(snapshot, ordered)
+    visual_reviews = snapshot.metadata.get("visual_review", {})
+    if isinstance(visual_reviews, dict):
+        for node_id, review in visual_reviews.items():
+            if isinstance(review, dict) and review.get("uncertainties"):
+                gaps.append({"kind": "visual_uncertainty", "node_id": node_id,
+                             "uncertainties": review["uncertainties"]})
     context = {
         "revision_id": snapshot.knowledge_revision.id,
         "coverage": snapshot.knowledge_revision.coverage,
@@ -403,11 +417,14 @@ def _validate_answer(snapshot, raw: object, selected: dict[str, object]):
     if len(set(answer.image_node_ids)) != len(answer.image_node_ids):
         raise _bad_model_output()
     images = []
+    cited_nodes = {node.id for node, _ in citations}
     for node_id in answer.image_node_ids:
         node = nodes.get(node_id)
         if node is None or _image_artifact(snapshot, node) is None:
             raise _bad_model_output()
         if node_id not in selected and _str_or_none(getattr(node, "description", None)) is None:
+            raise _bad_model_output()
+        if node_id not in cited_nodes:
             raise _bad_model_output()
         images.append(node)
     return answer, citations, images

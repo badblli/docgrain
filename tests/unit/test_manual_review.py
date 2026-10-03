@@ -142,6 +142,13 @@ def request(snapshot, *changes, **override):
 
 def request_sha(req):
     value = req.model_dump(mode="json", exclude={"preview_id", "confirmed_source"})
+    for change in value["changes"]:
+        if change.get("visual_uncertainties") is None:
+            change.pop("visual_uncertainties", None)
+        if not change.get("source_evidence_ids"):
+            change.pop("source_evidence_ids", None)
+        else:
+            change["source_evidence_ids"].sort()
     value["changes"] = sorted(value["changes"], key=lambda c: c["field_id"])
     return digest(value)
 
@@ -505,3 +512,109 @@ def test_browser_integral_float_serialization_keeps_source_float_type():
     result = build_review_revision(snapshot, save)
     assert type(next(n for n in result.structure if n.id == field.node_id).rows[0][0].value) is float
     assert result.metadata["manual_review"]["changes"][0]["after"] == 2.0
+
+
+def test_description_does_not_close_unknown_dimensions_in_output_or_chat():
+    from docgrain_api.routers.chat import _build_context
+    from docgrain_domain.canonical.ai_output import output_bundle
+    base = legacy()
+    field = next(f for f in node_fields(base, kind="description") if f.editable)
+    req = request(base, (field, "Yatak ve oturma alanı görünen plan."))
+    req.changes[0].visual_uncertainties = ["Boyut ve oda tipi kaynak görselde okunamıyor."]
+    preview = preview_review(base, req)
+    result = build_review_revision(base, SaveReviewRequest(**req.model_dump(), preview_id=preview.proposal_id, confirmed_source=True))
+    review = result.metadata["visual_review"][field.node_id]
+    assert review["semantic_status"] == "partial" and review["uncertainties"]
+    output = output_bundle(result)[0]
+    assert any(g.code == "visual_uncertainty" and g.object_id == field.node_id for g in output.quality.gaps)
+    assert not output.quality.text_only_complete
+    assert any(g["kind"] == "visual_uncertainty" for g in _build_context(result)[0]["gaps"])
+    assert result.knowledge_revision.coverage == base.knowledge_revision.coverage
+    next_field = next(f for f in review_fields(result) if f.node_id == field.node_id and f.kind == "description")
+    changed = build_review_revision(result, prepared(result, (next_field, "Düzeltilmiş plan açıklaması."), operation_id="second"))
+    assert changed.metadata["visual_review"][field.node_id]["uncertainties"] == review["uncertainties"]
+    # Explicit recheck can clear only these notes; no whole-document coverage upgrade.
+    next_field = next(f for f in review_fields(changed) if f.node_id == field.node_id and f.kind == "description")
+    req = request(changed, (next_field, next_field.value), operation_id="third")
+    req.changes[0].visual_uncertainties = []
+    preview = preview_review(changed, req)
+    cleared = build_review_revision(changed, SaveReviewRequest(**req.model_dump(), preview_id=preview.proposal_id, confirmed_source=True))
+    assert cleared.metadata["visual_review"][field.node_id]["uncertainties"] == []
+    assert cleared.knowledge_revision.coverage == base.knowledge_revision.coverage
+
+
+def test_visual_notes_are_rejected_on_nonvisual_fields_and_noop_notes():
+    base = legacy()
+    field = node_fields(base, "review:text")[0]
+    req = request(base, (field, "Changed text"))
+    req.changes[0].visual_uncertainties = ["unknown"]
+    with pytest.raises(ValueError, match="description field"):
+        preview_review(base, req)
+    field = next(f for f in node_fields(base, kind="description") if f.editable)
+    req = request(base, (field, field.value))
+    req.changes[0].visual_uncertainties = []
+    with pytest.raises(ValueError, match="does not alter"):
+        preview_review(base, req)
+
+
+def test_section_heading_can_be_corrected_without_changing_source_or_children():
+    base = legacy()
+    base = with_nodes(base, [node(base, "section", "review:heading", heading="ENGELL� ODASI",
+                                  level=1, children=[], annotation=annotation(base))])
+    field = node_fields(base, "review:heading")[0]
+    assert field.editable and field.kind == "text"
+    result = build_review_revision(base, prepared(base, (field, "ENGELLİ ODASI")))
+    heading = next(n for n in result.structure if n.id == field.node_id)
+    assert heading.heading == "ENGELLİ ODASI" and heading.children == []
+    assert result.source_version == base.source_version
+    assert result.evidence == base.evidence and result.artifacts == base.artifacts
+
+
+def test_visual_source_context_evidence_is_audited_and_unknown_ids_rejected():
+    base = legacy()
+    field = next(f for f in node_fields(base, kind="description") if f.editable)
+    additional = next(e.id for e in base.evidence if e.id not in field.evidence_ids)
+    req = request(base, (field, "Kaynak oda başlığına bağlı fotoğraf."))
+    req.changes[0].source_evidence_ids = [additional]
+    preview = preview_review(base, req)
+    expected = sorted(set(field.evidence_ids + [additional]))
+    assert preview.changes[0].evidence_ids == expected
+    result = build_review_revision(base, SaveReviewRequest(**req.model_dump(), preview_id=preview.proposal_id,
+                                                          confirmed_source=True))
+    updated = next(n for n in result.structure if n.id == field.node_id)
+    assert updated.annotation.provenance.evidence_ids == expected
+    assert result.metadata["manual_review"]["changes"][0]["supplemental_evidence_ids"] == [additional]
+    assert result.evidence == base.evidence
+    req.changes[0].source_evidence_ids = ["unknown-evidence"]
+    with pytest.raises(ValueError):
+        preview_review(base, req)
+    req = request(base, (node_fields(base, "review:text")[0], "Changed"))
+    req.changes[0].source_evidence_ids = [additional]
+    with pytest.raises(ValueError):
+        preview_review(base, req)
+
+
+def test_additive_review_fields_preserve_legacy_request_and_revision_identity():
+    base = legacy()
+    text = node_fields(base, "review:text")[0]
+    cell = node_fields(base, "review:table")[1]
+    visual = next(f for f in node_fields(base, kind="description") if f.editable)
+    req = prepared(base, (text, "Corrected"), (cell, 6), (visual, "Site plan"))
+    result = build_review_revision(base, req)
+    assert req.preview_id == "review_proposal_057c6ab93ee2e3b67d0e485673f4cdab"
+    assert result.knowledge_revision.id == "revision_b0448df6b45b41af255b19348753b293"
+    assert digest(result.model_dump(mode="json")) == "818194fc95cfafa43760071e258aa628a11943fb6d0a0b9d060d6dc0b0119a0d"
+
+
+def test_browser_integral_float_cannot_drop_invalid_supplemental_evidence():
+    base = modern()
+    data = base.model_dump(mode="json")
+    table = next(n for n in data["structure"] if n["identity_key"] == "review:table")
+    table["rows"] = [[{"value": 1.0}]]
+    base = CanonicalKnowledgeSnapshot.model_validate(data)
+    field = node_fields(base, "review:table")[0]
+    req = request(base, (field, 2))
+    req.changes[0].before = 1
+    req.changes[0].source_evidence_ids = [base.evidence[0].id]
+    with pytest.raises(ValueError, match="visual field"):
+        preview_review(base, req)

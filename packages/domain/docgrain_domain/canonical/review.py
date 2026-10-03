@@ -8,6 +8,7 @@ exactly, and the parent's coverage/validation status is never upgraded.
 from __future__ import annotations
 
 import json
+import re
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
@@ -67,6 +68,22 @@ class ReviewChange(StrictModel):
     field_id: str = Field(min_length=1)
     before: Scalar
     after: Scalar
+    visual_uncertainties: list[StrictStr] | None = Field(default=None, max_length=20)
+    source_evidence_ids: list[StrictStr] = Field(default_factory=list, max_length=20)
+
+    @field_validator("source_evidence_ids")
+    @classmethod
+    def unique_source_ids(cls, value):
+        if any(not item.strip() for item in value) or len(value) != len(set(value)):
+            raise ValueError("source evidence ids must be nonblank and unique")
+        return value
+
+    @field_validator("visual_uncertainties")
+    @classmethod
+    def bounded_uncertainties(cls, value):
+        if value is not None and any(not item.strip() or len(item) > 500 for item in value):
+            raise ValueError("visual uncertainties must be nonblank and bounded")
+        return value
 
     @field_validator("before", "after")
     @classmethod
@@ -127,6 +144,7 @@ class ReviewDiff(StrictModel):
     before: Scalar
     after: Scalar
     evidence_ids: list[str]
+    visual_uncertainties: list[str] | None = None
 
 
 class ReviewPreview(StrictModel):
@@ -196,16 +214,195 @@ def _snippet(value: str) -> str:
     return text[:48] + ("…" if len(text) > 48 else "")
 
 
+_AFFECTED_REASON = (
+    "Bu alan ilişkili bilgi kayıtlarının dayandığı kaynak kanıtıyla kesişiyor; bağlı "
+    "bilgiler yeniden doğrulanana kadar düzenlenemez"
+)
+_UNKNOWN_REASON = (
+    "Bu revision ilişkili bilgi kayıtları içeriyor; bağlı bilgilerin kaynak bağımlılığı "
+    "belirlenemediği için hiçbir alan düzenlenemez"
+)
+# Coarse containers separate pages/sheets/parts. Within a container only supported
+# text spans, cell ranges and part paths prove disjointness; PDF pages stay conservative.
+_CONTAINER_KEYS = ("page", "page_number", "page_index", "sheet", "sheet_name", "sheet_id",
+                   "slide", "slide_number", "part", "part_name", "member")
+_PATH_KEYS = ("path", "xpath", "json_pointer", "pointer")
+
+
+def _containers(locator: dict) -> dict:
+    if locator.get("kind") == "text_span":
+        return {"source_text": True}
+    return {k: locator[k] for k in (*_CONTAINER_KEYS, *_PATH_KEYS)
+            if k in locator and locator[k] is not None}
+
+
+def _locators_relate(left: dict, right: dict) -> str:
+    """'disjoint' only when containers demonstrably differ; else 'overlap' or 'ambiguous'."""
+    if left == right:
+        return "overlap"
+    if left.get("kind") != right.get("kind"):
+        return "ambiguous"
+    kind = left.get("kind")
+    if kind == "text_span":
+        return "overlap" if max(left["start"], right["start"]) < min(left["end"], right["end"]) else "disjoint"
+    if kind == "spreadsheet_range":
+        if left["sheet"] != right["sheet"]:
+            return "disjoint"
+
+        def bounds(value):
+            first, last = (value.split(":") + [value])[:2] if ":" in value else (value, value)
+            def point(cell):
+                match = re.fullmatch(r"([A-Z]+)([1-9][0-9]*)", cell)
+                if match is None:
+                    raise ValueError("Invalid A1 range")
+                column = 0
+                for letter in match[1]:
+                    column = column * 26 + ord(letter) - ord("A") + 1
+                return column, int(match[2])
+            return (*point(first), *point(last))
+
+        ax, ay, bx, by = bounds(left["a1_range"])
+        cx, cy, dx, dy = bounds(right["a1_range"])
+        return "disjoint" if bx < cx or dx < ax or by < cy or dy < ay else "overlap"
+    a, b = _containers(left), _containers(right)
+    if not a or set(a) != set(b):
+        return "ambiguous"
+    for key in a:
+        if a[key] == b[key]:
+            continue
+        if key in _PATH_KEYS:
+            x, y = str(a[key]), str(b[key])
+            if x.startswith(y.rstrip("/") + "/") or y.startswith(x.rstrip("/") + "/"):
+                continue
+        return "disjoint"
+    return "overlap"
+
+
+def _source_refs(value: object, found: list | None = None) -> list | None:
+    """Collects explicit 'source_refs' strings; None if one is malformed."""
+    found = [] if found is None else found
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key == "source_refs":
+                refs = [item] if isinstance(item, str) else item
+                if not isinstance(refs, list) or not all(isinstance(r, str) and r for r in refs):
+                    return None
+                found.extend(refs)
+            elif _source_refs(item, found) is None:
+                return None
+    elif isinstance(value, list):
+        for item in value:
+            if _source_refs(item, found) is None:
+                return None
+    return found
+
+
+def _linked_dependencies(snapshot: CanonicalKnowledgeSnapshot):
+    """(evidence_ids, node_ids) per linked record, or None when any dependency is unknown."""
+    evidence = {e.id for e in snapshot.evidence}
+    nodes = {n.id: n for n in snapshot.structure}
+    entity_ids = {e.id for e in snapshot.entities}
+    own: dict[str, set[str]] = {}
+    own_nodes: dict[str, set[str]] = {}
+    items = [*snapshot.entities, *snapshot.relations, *snapshot.records]
+    for item in items:
+        annotations = [item.annotation, *item.field_annotations.values()]
+        ids = {i for a in annotations for i in a.provenance.evidence_ids}
+        if not ids or any(not a.provenance.evidence_ids for a in annotations):
+            return None
+        refs: list = []
+        for payload in (getattr(item, name, None) for name in ("properties", "values", "data")):
+            if _source_refs(payload, refs) is None:
+                return None
+        node_refs = set()
+        for ref in refs:
+            if ref in evidence:
+                ids.add(ref)
+            elif ref in nodes:
+                # A document/section/list dependency includes its descendants.
+                pending = [ref]
+                while pending:
+                    current = pending.pop()
+                    if current in node_refs:
+                        continue
+                    node_refs.add(current)
+                    pending.extend(getattr(nodes[current], "children", []))
+            else:
+                return None
+        if not ids <= evidence:
+            return None
+        own[item.id] = ids
+        own_nodes[item.id] = node_refs
+    result = []
+    for item in items:
+        deps = set(own[item.id])
+        dep_nodes = set(own_nodes[item.id])
+        if hasattr(item, "from_entity_id"):
+            referenced = [item.from_entity_id, item.to_entity_id]
+        else:
+            referenced = list(getattr(item, "entity_ids", []))
+        for entity_id in referenced:
+            if entity_id not in entity_ids or entity_id not in own:
+                return None
+            deps |= own[entity_id]
+            dep_nodes |= own_nodes[entity_id]
+        result.append((deps, dep_nodes))
+    return result
+
+
+def _dependency_status(snapshot: CanonicalKnowledgeSnapshot, fields: list[ReviewField]) -> list[str]:
+    """'free' | 'affected' | 'all' per field (any 'all' blocks every field)."""
+    deps = _linked_dependencies(snapshot)
+    if deps is None:
+        return ["all"] * len(fields)
+    locators = {e.id: e.locator.model_dump(mode="json") for e in snapshot.evidence}
+    linked_ids = set().union(*(d for d, _ in deps))
+    if any(not _containers(locators[i]) for i in linked_ids):
+        return ["all"] * len(fields)  # source-wide evidence cannot demonstrate independence
+    statuses = []
+    for field in fields:
+        if not field.evidence_ids:
+            statuses.append("affected")
+            continue
+        if any(i not in locators or not _containers(locators[i]) for i in field.evidence_ids):
+            return ["all"] * len(fields)
+        status = "free"
+        for dep_ids, dep_nodes in deps:
+            if field.node_id in dep_nodes or dep_ids & set(field.evidence_ids):
+                status = "affected"
+                continue
+            for mine in field.evidence_ids:
+                for theirs in dep_ids:
+                    relation = _locators_relate(locators[mine], locators[theirs])
+                    if relation == "ambiguous":
+                        return ["all"] * len(fields)
+                    if relation == "overlap":
+                        status = "affected"
+        statuses.append(status)
+    return statuses
+
+
 def _targets(snapshot: CanonicalKnowledgeSnapshot) -> list[_Target]:
+    targets = _own_targets(snapshot)
+    if not (snapshot.entities or snapshot.relations or snapshot.records):
+        return targets
+    statuses = _dependency_status(snapshot, [t.field for t in targets])
+    if "all" in statuses:
+        statuses = ["all"] * len(statuses)
+    resolved = []
+    for target, status in zip(targets, statuses):
+        if status != "free":
+            reason = _UNKNOWN_REASON if status == "all" else _AFFECTED_REASON
+            field = target.field.model_copy(update={"editable": False, "blocked_reason": reason})
+            target = _Target(field, target.index, target.raw, target.row, target.col)
+        resolved.append(target)
+    return resolved
+
+
+def _own_targets(snapshot: CanonicalKnowledgeSnapshot) -> list[_Target]:
     revision_id = snapshot.knowledge_revision.id
-    linked = bool(snapshot.entities or snapshot.relations or snapshot.records)
-    linked_reason = (
-        "Bu revision ilişkili bilgi kayıtları içeriyor; bağlı bilgilerin doğruluğu "
-        "henüz alan düzenlemesiyle yeniden doğrulanamıyor"
-    )
 
     def build(node, kind, label, raw, evidence, reason, *position, index, row=None, col=None):
-        reason = linked_reason if linked else reason
         field = ReviewField(
             field_id="review_field_" + digest([revision_id, node.id, kind, *position])[:32],
             node_id=node.id,
@@ -223,15 +420,17 @@ def _targets(snapshot: CanonicalKnowledgeSnapshot) -> list[_Target]:
 
     targets: list[_Target] = []
     for index, node in enumerate(snapshot.structure):
-        if node.kind == "text_block":
-            evidence = _evidence(node.field_annotations.get("/text")) or _evidence(node.annotation)
+        if node.kind in {"text_block", "section"}:
+            name = "heading" if node.kind == "section" else "text"
+            text = node.heading if name == "heading" else node.text
+            evidence = _evidence(node.field_annotations.get(f"/{name}")) or _evidence(node.annotation)
             reason = None
-            if long_value(node.text):
+            if long_value(text):
                 reason = f"Metin {MAX_VALUE_CHARS} karakterlik düzenleme sınırını aşıyor"
             elif not evidence:
                 reason = "Bu metnin kaynak konumu kaydedilmemiş"
-            targets.append(build(node, "text", f"Metin: {_snippet(node.text)}", node.text,
-                                 evidence, reason, "text", index=index))
+            targets.append(build(node, "text", f"{'Başlık' if name == 'heading' else 'Metin'}: {_snippet(text)}", text,
+                                 evidence, reason, name, index=index))
         elif node.kind in {"asset", "chart"}:
             evidence = (_evidence(node.field_annotations.get("/description"))
                         or _evidence(node.annotation))
@@ -276,6 +475,13 @@ def review_fields(snapshot: CanonicalKnowledgeSnapshot) -> list[ReviewField]:
 
 def _normalized(request: ReviewRequest) -> dict:
     value = request.model_dump(mode="json", exclude={"preview_id", "confirmed_source"})
+    for change in value["changes"]:
+        if change.get("visual_uncertainties") is None:
+            change.pop("visual_uncertainties", None)
+        if not change.get("source_evidence_ids"):
+            change.pop("source_evidence_ids", None)
+        else:
+            change["source_evidence_ids"].sort()
     value["changes"] = sorted(value["changes"], key=lambda change: change["field_id"])
     return value
 
@@ -320,11 +526,24 @@ def _plan(snapshot: CanonicalKnowledgeSnapshot, request: ReviewRequest):
                 field_id=change.field_id,
                 before=float(change.before) if type(change.before) is int else change.before,
                 after=float(change.after) if type(change.after) is int else change.after,
+                visual_uncertainties=change.visual_uncertainties,
+                source_evidence_ids=change.source_evidence_ids,
             )
         if not _same(change.before, target.raw):
             raise ValueError("review before value is stale for this source revision")
         _check_after(target.field, target.raw, change.after)
-        if _same(change.after, change.before):
+        if change.visual_uncertainties is not None and target.field.kind != "description":
+            raise ValueError("visual uncertainties require a description field")
+        if change.source_evidence_ids and target.field.kind != "description":
+            raise ValueError("supplemental source evidence requires a visual field")
+        own_source_ids = {e.id for e in snapshot.evidence if e.source_version_id == snapshot.source_version.id}
+        if not set(change.source_evidence_ids) <= own_source_ids:
+            raise ValueError("unknown or foreign supplemental source evidence")
+        visual_reviews = snapshot.metadata.get("visual_review", {})
+        visual_review = visual_reviews.get(target.field.node_id, {}) if isinstance(visual_reviews, dict) else {}
+        old_uncertainties = visual_review.get("uncertainties", []) if isinstance(visual_review, dict) else []
+        uncertainty_changed = change.visual_uncertainties is not None and change.visual_uncertainties != old_uncertainties
+        if _same(change.after, change.before) and not uncertainty_changed:
             raise ValueError("review change does not alter the source value")
         if isinstance(change.after, str):
             total += len(change.after)
@@ -336,12 +555,15 @@ def _plan(snapshot: CanonicalKnowledgeSnapshot, request: ReviewRequest):
     diffs = [
         ReviewDiff(field_id=t.field.field_id, node_id=t.field.node_id, kind=t.field.kind,
                    label=t.field.label, before=c.before, after=c.after,
-                   evidence_ids=t.field.evidence_ids)
+                   evidence_ids=sorted(set(t.field.evidence_ids) | set(c.source_evidence_ids)) if c.source_evidence_ids else t.field.evidence_ids,
+                   visual_uncertainties=c.visual_uncertainties)
         for t, c in selected
     ]
     request_sha = digest(_normalized(clean))
     proposal_id = "review_proposal_" + digest(
-        [revision_id, snapshot_sha, request_sha, [d.model_dump(mode="json") for d in diffs]]
+        [revision_id, snapshot_sha, request_sha, [
+            d.model_dump(mode="json", exclude={"visual_uncertainties"} if d.visual_uncertainties is None else set())
+            for d in diffs]]
     )[:32]
     preview = ReviewPreview(
         proposal_id=proposal_id,
@@ -432,7 +654,8 @@ def build_review_revision(
         field = target.field
         node = data["structure"][target.index]
         derivation = "visual_description" if field.kind == "description" else "overridden"
-        annotation = _manual_annotation(producer_id, field.evidence_ids, derivation)
+        source_ids = sorted(set(field.evidence_ids) | set(change.source_evidence_ids)) if change.source_evidence_ids else field.evidence_ids
+        annotation = _manual_annotation(producer_id, source_ids, derivation)
         event = {
             "field_id": field.field_id,
             "node_id": field.node_id,
@@ -440,7 +663,7 @@ def build_review_revision(
             "label": field.label,
             "before": change.before,
             "after": change.after,
-            "evidence_ids": list(field.evidence_ids),
+            "evidence_ids": list(source_ids),
         }
         if field.kind == "table_cell":
             cell = node["rows"][target.row][target.col]
@@ -452,7 +675,7 @@ def build_review_revision(
             # A stale rendering would misrepresent the reviewed value; the event keeps it.
             cell["display_text"] = None
         else:
-            name = "text" if field.kind == "text" else "description"
+            name = ("heading" if node["kind"] == "section" else "text") if field.kind == "text" else field.kind
             pointer = f"/{name}"
             event["previous_annotation"] = deepcopy(node["annotation"])
             event["previous_field_annotation"] = deepcopy(node["field_annotations"].get(pointer))
@@ -460,6 +683,21 @@ def build_review_revision(
             node["annotation"] = annotation
             node["field_annotations"][pointer] = deepcopy(annotation)
         events.append(event)
+        if change.source_evidence_ids:
+            event["supplemental_evidence_ids"] = sorted(change.source_evidence_ids)
+        if field.kind == "description" and change.visual_uncertainties is not None:
+            reviews = data["metadata"].get("visual_review")
+            if not isinstance(reviews, dict):
+                reviews = {}
+                data["metadata"]["visual_review"] = reviews
+            event["previous_visual_review"] = deepcopy(reviews.get(field.node_id))
+            reviews[field.node_id] = {
+                "uncertainties": list(change.visual_uncertainties),
+                "reviewer_id": clean.reviewer_id,
+                "reviewed_description": change.after,
+                "semantic_status": "partial" if change.visual_uncertainties else "description_checked",
+            }
+            event["visual_uncertainties"] = list(change.visual_uncertainties)
 
     data["metadata"]["manual_review"] = {
         "contract_version": CONTRACT_VERSION,

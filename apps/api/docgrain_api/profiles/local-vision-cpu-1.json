@@ -1,0 +1,33 @@
+{
+  "id": "qwen35-2b-cpu-1",
+  "model": "Qwen3.5-2B-Q4_K_M",
+  "license": "Apache-2.0",
+  "model_repository": "bartowski/Qwen_Qwen3.5-2B-GGUF",
+  "model_revision": "7d26695454df6de5fbcce2e58681e62dae06ce43",
+  "files": [
+    {
+      "name": "Qwen_Qwen3.5-2B-Q4_K_M.gguf",
+      "size": 1396198496,
+      "sha256": "57a1085840f497d764a7fc5d346922dbde961efb54cc792ea81d694fd846a1d8"
+    },
+    {
+      "name": "mmproj-Qwen_Qwen3.5-2B-f16.gguf",
+      "size": 668227136,
+      "sha256": "044a0ea136cca70711ae16e23b24d754b44eab6f2462d187aee4d7c7a9503d36"
+    }
+  ],
+  "runtime": {
+    "version": "b11371",
+    "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11371/llama-b11371-bin-win-cpu-x64.zip",
+    "sha256": "085d650f1b4b0725a32c2421b970da5c5d2f769202cd16f89591ac9dcce835c6"
+  },
+  "cpu_threads": 4,
+  "context_tokens": 4096,
+  "max_output_tokens": 384,
+  "image_max_tokens": 1024,
+  "sources": [
+    "https://huggingface.co/Qwen/Qwen3.5-2B",
+    "https://huggingface.co/bartowski/Qwen_Qwen3.5-2B-GGUF",
+    "https://github.com/ggml-org/llama.cpp/blob/master/docs/multimodal.md"
+  ]
+}

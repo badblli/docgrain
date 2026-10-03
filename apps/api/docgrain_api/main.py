@@ -26,6 +26,7 @@ from .routers import (
     jobs,
     knowledge,
     lineage,
+    local_visuals,
     outputs,
     providers,
     retrieval,
@@ -94,6 +95,7 @@ for module in (documents, jobs, versions, chunks, providers, lineage, entities, 
     app.include_router(module.router)
 app.include_router(reviews.router)
 app.include_router(chat.router)
+app.include_router(local_visuals.router)
 app.include_router(knowledge.document_router)
 app.include_router(knowledge.revision_router)
 

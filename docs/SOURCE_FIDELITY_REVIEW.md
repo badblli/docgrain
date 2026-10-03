@@ -100,3 +100,7 @@ kullanan önizleme. Provider testleri mock kullanır, API çağrısı yapmaz.
 Güncel host suite: **161 geçti, 59 opt-in integration atlandı**; Ruff geçti.
 Önceki container kabul turunun 208/208 sonucu tarihsel kanıttır; bu turda yeniden
 çalıştırılmadı. Yeni DB/publication/frontend davranışı eklenmedi.
+
+## Sonraki uygulama — 2026-10-03
+
+Yukarıdaki preview/161-test durumu tarihsel kanıttır. ADR 0021/0023 immutable review/CAS ve belirsizlik korunumunu uygular. Dobedan'daki üç kaynak-doğrulanmış hücre değişikliği `revision_f7dd39e6a1ce00754c98e1c5e9d08176` içinde yayımlandı; altı kaynak golden 6/6 geçiyor. Corendon oda görselleri kaynak başlığı evidence'ına bağlandı; plan ölçüleri açık belirsizliktir. Full runtime suite 472/0; kullanıcı/kör corpus kabulü açık. [Güncel kullanıcı inceleme notları](USER_REVIEW.md).

@@ -178,19 +178,22 @@ def test_cell_evidence_can_be_cited(env):
 
 
 def test_selected_image_bytes_are_fetched_and_server_builds_the_image(env):
-    env.reply.update(image_node_ids=["img2"], citations=[{"node_id": "t1", "evidence_id": "e1"}])
+    env.snapshot.structure[4].annotation = ann(["e-i2"])
+    env.snapshot.evidence.append(evidence("e-i2"))
+    env.reply.update(image_node_ids=["img2"], citations=[{"node_id": "img2", "evidence_id": "e-i2"}])
     response = ask(env, image_node_ids=["img2", "img1"])
     assert response.status_code == 200
     assert env.fetch == ["a2", "a1"]
     assert env.generate[0]["images"] == [("image/png", PNG), ("image/png", PNG)]
     image = response.json()["images"][0]
     assert image == {"node_id": "img2", "caption": None, "description": None,
-                     "artifact_url": "/v1/knowledge/revisions/rev1/artifacts/a2", "evidence_ids": []}
+                     "artifact_url": "/v1/knowledge/revisions/rev1/artifacts/a2", "evidence_ids": ["e-i2"]}
     assert any("Gönderilen görsellerin" in warning for warning in response.json()["warnings"])
 
 
 def test_described_unselected_image_may_be_returned_with_unaccepted_warning(env):
     env.reply["image_node_ids"] = ["img1"]
+    env.reply["citations"] = [{"node_id": "img1", "evidence_id": "e-i1"}]
     response = ask(env)
     assert response.status_code == 200
     assert response.json()["images"][0]["evidence_ids"] == ["e-i1"]
@@ -202,6 +205,12 @@ def test_abstaining_needs_no_citation_but_is_still_warned(env):
     response = ask(env)
     assert response.status_code == 200 and response.json()["abstained"] is True
     assert response.json()["warnings"]
+
+
+def test_described_image_requires_its_own_source_citation(env):
+    env.reply["image_node_ids"] = ["img1"]
+    # A valid unrelated text citation cannot certify the returned image.
+    assert ask(env).status_code == 502
 
 
 @pytest.mark.parametrize("bad", [

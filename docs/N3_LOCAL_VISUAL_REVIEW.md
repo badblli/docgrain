@@ -74,9 +74,9 @@ The inspector panel loads the inventory, lets a reviewer choose a type label for
 
 - Binary availability reflects an artifact pointer; storage health is not established.
 - No timeout or worker-recovery certification for local OCR.
-- No local visual semantic model has been chosen or accepted. Plans, diagrams and charts have no automated meaning.
+- ADR 0023 adds an experimental CPU image model for explicit proposals. It is not accepted for automatic semantics, OCR or exact geometry. Plans, diagrams and charts still require source review.
 - Tables still need source review.
-- N3 full semantic gate, N4 (reviewed reconciliation with CAS) and N5 (corpus acceptance) are open. Embedding follows N5.
+- N3 full semantic gate, comprehensive N4 dependent-fact reconciliation and N5 corpus acceptance are open. Bounded immutable manual review/CAS is implemented (ADR 0021/0023). Embedding follows N5.
 
 ## Verified local evidence — 2026-10-02
 
@@ -92,3 +92,26 @@ The inspector panel loads the inventory, lets a reviewer choose a type label for
 Ignored local evidence: `data/reviews/n3-tests.xml`, `n3-host-tests.xml`, `n3-source-review/report.json`, `n3-live-api.json`, `n3-live-parity.json`, `n3-claude-*`.
 
 The local inventory/OCR foundation is verified. The N3 visual semantic model/meaning gate, N4 immutable reviewed apply and N5 corpus acceptance remain open. Embedding is still last.
+
+## Current CPU proposal and source review — 2026-10-03
+
+The preceding evidence describes the earlier inventory/OCR slice. [ADR 0023](adr/0023-local-cpu-visual-proposals.md) adds the separate optional llama.cpp/Qwen3.5-2B CPU proposal transport, source/storage identity checks, bounded one-image inference and explicit UI draft adoption. It does not replace Docling, native Office parsing or EasyOCR.
+
+Windows setup/start (model download first, then checksum-verified hidden CPU server):
+
+```powershell
+python docs/examples/setup_local_vision.py
+python docs/examples/start_local_vision.py
+```
+
+The API defaults off. To connect Docker API to the owned host server, load the generated ignored `data/models/local-vision/api.env` as an API Compose `env_file`. The checked local stack uses ignored `data/reviews/gaps-local.compose.yml`; worker remote Vision remains disabled. The helper binds authenticated port 11435 for Docker access. Keys and model files stay outside Git. Linux deployment/service lifecycle is not packaged by these Windows helpers.
+
+`GET .../visuals/local/config` checks readiness; `POST .../visuals/local/proposals` accepts node ID and snapshot SHA. It returns proposed classification/description/uncertainty and exact model/source bindings. Generate does not save; adopt does not save; normal source-checked preview/CAS is still required. Existing uncertainty notes survive model adoption. Proposals can be downloaded as JSON. Canceling a browser request may leave local CPU inference busy until completion.
+
+The 0.8B candidate was rejected after hallucination. The 2B model also invented a kitchen/bed details in a plan and nonexistent repeated text; those outputs were rejected. Final profile enforces `visible_text=[]`. Descriptions can be English. A final real photograph proposal took 10.075 seconds; the owned process working set was 2.78 GB decimal, peak 2.83 GB, not whole-stack or production capacity. GPU offload was explicitly disabled.
+
+Separate source checks published Corendon `revision_0a51487cd9aa9f79fa5f491d37803d9b` (13 descriptions) and Dobedan `revision_f7dd39e6a1ce00754c98e1c5e9d08176` (10 logo descriptions, three table corrections). Original sources/artifacts/evidence arrays and previous revisions are unchanged. Four plans plus one small photograph retain six uncertainty notes. The other three document heads are unchanged; all five current ZIP packages and six Dobedan source goldens passed. This is a Codex source review, not user approval or automatic model acceptance.
+
+Full runtime/service suite **472 passed, 0 skipped**; after the final integral-float/supplemental-evidence guard, **129 relevant unit tests passed**, including one new regression. Changed Python Ruff and TypeScript/production/API/web Docker builds passed. Live browser proposal double click sends one request, adoption/uncertainty appears in server diff, save requires source confirmation, historical revisions are read-only and mobile 390 px has no document overflow; test draft discarded. Four Gemini consumer checks with no attached image selections passed exact Family-photo/standard-plan/pool-photo and missing-width abstention. No ingestion or embedding.
+
+Ignored evidence: `data/reviews/gaps-tests.xml`, `gaps-source-review/source-review-publication.json`, `final-package-checks.json`, `automatic-image-chat.json`, `2b-observations.json`, and code-only Claude UI/dependency-review copies. Automatic model/held-out acceptance remains open.
