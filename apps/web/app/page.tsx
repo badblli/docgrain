@@ -663,7 +663,7 @@ function Contract() {
           <p>Hedef: document → structural parse → Vision enrichment → reconciliation → canonical knowledge → projections.</p>
           <p>Canonical structured knowledge kaynak doğrusu olacak; Markdown, chunks, embeddings ve uygulama görünümleri ondan türetilecek.</p>
           <p>PDF, DOCX, TXT, XLSX, PNG ve JPEG → canonical JSON. Taranmış PDF ve görsellerde yerel Türkçe/İngilizce OCR kullanılır; sonuç kaynak incelemesi gerektirir. PDF sayfa render’ları ve özgün görsel dosyaları korunur.</p>
-          <p>Core schema ile kullanıcı/domain schema ayrı kalacak. LUWI gelecekteki tüketicilerden biridir.</p>
+          <p>Core schema ile kullanıcı/domain schema ayrı kalacak; sektöre özel mantık çekirdeğin dışında kalır.</p>
           <p>Canonical revision, ortak AI JSON/Markdown, chunks ve checksum manifest yayını mevcut. Vision reconciliation, otomatik semantic extraction/indexing, structured patch ve crash recovery henüz yok.</p>
           <p>Jev, LangChain/LangGraph, çoklu provider, hybrid retrieval ve connectors ertelendi.</p>
           <a href={`${API}/docs`} target="_blank" rel="noreferrer">OpenAPI sözleşmesini aç</a>

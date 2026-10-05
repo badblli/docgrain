@@ -57,7 +57,7 @@ def test_registered_file_can_be_stored_then_confirmed(monkeypatch: pytest.Monkey
     registration = client.post(
         "/v1/documents",
         json={
-            "workspace_id": "ws_luwi",
+            "workspace_id": "ws_demo",
             "filename": "test.pdf",
             "mime_type": "application/pdf",
             "byte_size": 9,
@@ -93,7 +93,7 @@ def test_upload_confirmation_requires_the_original_object(
     registration = client.post(
         "/v1/documents",
         json={
-            "workspace_id": "ws_luwi",
+            "workspace_id": "ws_demo",
             "filename": "missing.pdf",
             "mime_type": "application/pdf",
             "byte_size": 128,
@@ -120,7 +120,7 @@ def test_upload_rejects_a_filename_that_does_not_match_registration(
     registration = client.post(
         "/v1/documents",
         json={
-            "workspace_id": "ws_luwi",
+            "workspace_id": "ws_demo",
             "filename": "expected.pdf",
             "mime_type": "application/pdf",
             "byte_size": 4,
