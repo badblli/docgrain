@@ -396,7 +396,7 @@ function Documents({
           <div>
             <h3>Kaynak doküman yükle</h3>
             <p>
-              PDF, DOCX, TXT, XLSX, PNG ve JPEG kaynakları yüklenebilir. OCR ve görsel yorumları kaynakla doğrulanmalıdır. Demo modu salt okunurdur.
+              PDF, DOCX, XLSX, TXT, PNG ve JPG/JPEG kaynakları yüklenebilir. OCR ve görsel yorumları kaynakla doğrulanmalıdır. Demo modu salt okunurdur.
             </p>
             {uploadState.phase !== "idle" && (
               <div className={`uploadState upload-${uploadState.phase}`} role="status">
@@ -411,7 +411,9 @@ function Documents({
             ref={input}
             type="file"
             hidden
-            accept=".pdf,.docx,.txt,.xlsx,.png,.jpg,.jpeg,application/pdf,text/plain,image/png,image/jpeg,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            // Use one extension list so native pickers do not select a PDF-only MIME filter.
+            accept=".pdf,.docx,.xlsx,.txt,.png,.jpg,.jpeg"
+            aria-label="Dosya yükle: PDF, DOCX, XLSX, TXT, PNG, JPG veya JPEG"
             disabled={busy}
             onChange={(event) => {
               const file = event.target.files?.[0];
@@ -426,7 +428,7 @@ function Documents({
             onClick={() => input.current?.click()}
             disabled={busy}
           >
-            {mode === "demo" ? "Demo: yükleme kapalı" : mode === null ? "API bekleniyor" : busy ? "İşleniyor…" : "Dosya seç"}
+            {mode === "demo" ? "Demo: yükleme kapalı" : mode === null ? "API bekleniyor" : busy ? "İşleniyor…" : "Dosya yükle"}
           </button>
         </section>
         <section className="card">
