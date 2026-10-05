@@ -1,5 +1,7 @@
 from hashlib import sha256
+from io import BytesIO
 from types import SimpleNamespace
+from zipfile import ZipFile
 
 from docgrain_api.main import app
 from docgrain_api.routers import outputs
@@ -47,6 +49,34 @@ def test_stored_downloads_and_missing_are_explicit(monkeypatch):
     assert "attachment" in response.headers["content-disposition"]
     assert client.get(base+"/outputs/anything.json").status_code == 404
     assert client.get("/v1/knowledge/revisions/missing/outputs").status_code == 404
+
+
+def test_context_is_downloadable_and_in_package(monkeypatch):
+    snapshot, files = setup(monkeypatch)
+    client = TestClient(app)
+    base = f"/v1/knowledge/revisions/{snapshot.knowledge_revision.id}"
+    response = client.get(base + "/outputs/context.md")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/markdown")
+    assert response.content == files["context.md"]
+    with ZipFile(BytesIO(client.get(base + "/package").content)) as package:
+        assert package.read("context.md") == files["context.md"]
+
+
+def test_historical_package_without_context_stays_downloadable(monkeypatch):
+    snapshot, files = setup(monkeypatch)
+    publication = outputs._outputs(snapshot.knowledge_revision.id)
+    historical = publication.model_copy(update={"files": [item for item in publication.files
+                                                        if item.name != "context.md"]})
+    monkeypatch.setattr(outputs, "_outputs", lambda _: historical)
+    base = f"/v1/knowledge/revisions/{snapshot.knowledge_revision.id}"
+    client = TestClient(app)
+    assert client.get(base + "/outputs/context.md").status_code == 404
+    response = client.get(base + "/package")
+    assert response.status_code == 200
+    with ZipFile(BytesIO(response.content)) as package:
+        assert "context.md" not in package.namelist()
+        assert package.read("canonical.md") == files["canonical.md"]
 
 
 def test_corrupted_stored_bytes_return_error_instead_of_success(monkeypatch):
