@@ -1,6 +1,22 @@
 """Opt-in hospitality extraction, verified evidence, and JSON Schema contracts."""
 
 from .extractor import build_messages, extract, verify_response
+from .merge import JsonMergeStore, compare_revisions
+from .merge_models import (
+    FactCandidate,
+    FieldChange,
+    MatchIssue,
+    MergedField,
+    MergeDocument,
+    MergedRecord,
+    MergeRevision,
+    ReviewDecision,
+    ReviewState,
+    RevisionDiff,
+    SourcePin,
+    SourceRecord,
+    VersionedEvidence,
+)
 from .model import ChatClient, ModelResponseError
 from .models import (
     Activity,
@@ -18,7 +34,36 @@ from .models import (
 )
 
 __all__ = [
-    "Activity", "ChatClient", "Contact", "Evidence", "ExtractionResult", "Facility",
-    "FieldValue", "ModelResponseError", "Outlet", "Policy", "Property", "RoomType",
-    "ServicePrice", "build_messages", "extract", "hospitality_schema", "verify_response",
+    "Activity",
+    "ChatClient",
+    "Contact",
+    "Evidence",
+    "ExtractionResult",
+    "Facility",
+    "FactCandidate",
+    "FieldChange",
+    "FieldValue",
+    "JsonMergeStore",
+    "MatchIssue",
+    "MergeDocument",
+    "MergeRevision",
+    "MergedField",
+    "MergedRecord",
+    "ModelResponseError",
+    "Outlet",
+    "Policy",
+    "Property",
+    "ReviewDecision",
+    "ReviewState",
+    "RevisionDiff",
+    "RoomType",
+    "ServicePrice",
+    "SourcePin",
+    "SourceRecord",
+    "VersionedEvidence",
+    "build_messages",
+    "compare_revisions",
+    "extract",
+    "hospitality_schema",
+    "verify_response",
 ]
