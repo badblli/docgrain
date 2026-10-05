@@ -5,13 +5,13 @@ from io import BytesIO
 from pathlib import Path
 
 import pytest
-from PIL import Image
-
 from docgrain_domain.canonical.visuals import visual_inventory
 from docgrain_worker.local_visual_ocr import (
     LocalOCRSession,
     validate_local_ocr_proposal,
 )
+from PIL import Image
+
 from tests.unit.test_n3_visuals import visual_snapshot
 
 pytestmark = pytest.mark.skipif(

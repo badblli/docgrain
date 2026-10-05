@@ -335,7 +335,7 @@ def test_external_or_oversized_chart_reference_stays_unresolved(tmp_path, refere
 
 
 def test_docx_missing_header_and_field_result_are_explicit(tmp_path):
-    from docgrain_worker.native_office import NS, W, R
+    from docgrain_worker.native_office import NS, R, W
 
     path = office_file(tmp_path)
     with ZipFile(path) as package:

@@ -295,7 +295,7 @@ def _identity_anchor(item: Any, locator: Any | None, sections: list[SectionNode]
     if isinstance(locator, TextSpanLocator):
         return f"txt:{locator.start}:{locator.end}:{context}"
     if isinstance(locator, ImageRegionLocator):
-        raise ValueError("image locations require processing identity policy 0.2.0")
+        raise TypeError("image locations require processing identity policy 0.2.0")
     return f"xlsx:{locator.sheet}:{locator.a1_range}:{context}"
 
 

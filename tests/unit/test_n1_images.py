@@ -7,9 +7,6 @@ from pathlib import Path
 
 import jsonschema
 import pytest
-from PIL import Image
-from pydantic import ValidationError
-
 from docgrain_domain.canonical import (
     CanonicalKnowledgeSnapshot,
     ImageRegionLocator,
@@ -28,6 +25,9 @@ from docgrain_domain.source_format import (
     verify_format,
 )
 from docgrain_worker.image_geometry import prepare_image, transform_box
+from PIL import Image
+from pydantic import ValidationError
+
 from tests.fixtures.lifecycle import mapped_snapshot
 from tests.unit.test_m1b_api import _register, client
 

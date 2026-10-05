@@ -19,7 +19,11 @@ from docgrain_domain.canonical.retrieval import RetrievalQuery, retrieve
 from docgrain_domain.source_format import SourceFormat
 from docgrain_worker.canonical_writer import persist_structural
 from docgrain_worker.index_lifecycle import refresh_index
-from docgrain_worker.source_adapters import FilesystemSource, IncompleteObservation, ObjectStoreSource
+from docgrain_worker.source_adapters import (
+    FilesystemSource,
+    IncompleteObservation,
+    ObjectStoreSource,
+)
 from docgrain_worker.source_sync import sync_source
 from docgrain_worker.structural import DocumentParser, VerifiedSource
 from psycopg import sql

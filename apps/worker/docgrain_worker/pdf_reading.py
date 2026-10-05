@@ -1,7 +1,7 @@
 """Geometry order and exact-token splitting of accidentally joined native columns."""
 
-from collections import Counter
 import re
+from collections import Counter
 
 import pymupdf
 from docgrain_domain.source_format import SourceFormat
@@ -84,11 +84,11 @@ def reconcile_reading(source, items, issues):
                     > 0.2
                 ]
             seen = set()
-            for idx in edges:
+            for idx, values in edges.items():
                 if idx in seen:
                     continue
                 component = {idx}
-                native = set(edges[idx])
+                native = set(values)
                 changed = True
                 while changed:
                     changed = False

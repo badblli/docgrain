@@ -6,13 +6,13 @@ from copy import deepcopy
 from types import SimpleNamespace
 
 import pytest
-
 from docgrain_domain.canonical.visuals import visual_inventory
 from docgrain_worker import local_visual_ocr
 from docgrain_worker.local_visual_ocr import (
     LocalOCRSession,
     validate_local_ocr_proposal,
 )
+
 from tests.unit.test_n3_visuals import visual_snapshot as fixture
 
 PROFILE = {"review_threshold": 0.8, "device": "cpu", "download_enabled": False}
@@ -212,22 +212,22 @@ def test_malformed_request_shape_and_profile_mismatch_are_rejected(monkeypatch):
     done = session.extract(snapshot, inventory, assets[0].id, source, image)
     validate_local_ocr_proposal(snapshot, inventory, done, source, image)
 
-    def reject(value):
-        with pytest.raises(ValueError):
+    def reject(value, error=ValueError):
+        with pytest.raises(error):
             validate_local_ocr_proposal(snapshot, inventory, value, source, image)
 
-    reject(None)
-    reject([])
-    reject("proposal")
+    reject(None, TypeError)
+    reject([], TypeError)
+    reject("proposal", TypeError)
     reject({})
     for key in ("request", "format", "version"):
         value = deepcopy(done)
         del value[key]
-        reject(value)
+        reject(value, TypeError if key == "request" else ValueError)
     for request in (None, "request", [], {}, {"region_id": 7}, {"region_id": None}):
         value = deepcopy(done)
         value["request"] = request
-        reject(value)
+        reject(value, TypeError)
     value = deepcopy(done)
     value["request"]["region_id"] = "unknown-region"
     reject(value)

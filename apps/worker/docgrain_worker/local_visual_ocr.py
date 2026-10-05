@@ -84,8 +84,9 @@ def prepare_local_ocr(
         image_bytes,
         SourceFormat.PNG if artifact.mime_type == "image/png" else SourceFormat.JPEG,
     )
-    from PIL import Image
     from io import BytesIO
+
+    from PIL import Image
 
     with Image.open(BytesIO(image_bytes)) as image:
         if image.width * image.height > MAX_PIXELS:
@@ -122,7 +123,7 @@ class _ReaderInitError(Exception):
 
 def _number(value) -> float:
     if isinstance(value, bool) or not isinstance(value, numbers.Real):
-        raise ValueError("OCR observation number is invalid")
+        raise TypeError("OCR observation number is invalid")
     result = float(value)
     if not math.isfinite(result):
         raise ValueError("OCR observation number is not finite")
@@ -132,7 +133,7 @@ def _number(value) -> float:
 def _validated_observations(observed, size: tuple[int, int]) -> list:
     """Return plain (polygon, text, score) rows inside the prepared frame."""
     if not isinstance(observed, (list, tuple)):
-        raise ValueError("OCR output must be a list of rows")
+        raise TypeError("OCR output must be a list of rows")
     width, height = size
     rows = []
     for row in observed:
@@ -140,7 +141,7 @@ def _validated_observations(observed, size: tuple[int, int]) -> list:
             raise ValueError("OCR row must be polygon, text and score")
         polygon, text, score = row
         if not isinstance(text, str):
-            raise ValueError("OCR text must be a string")
+            raise TypeError("OCR text must be a string")
         score = _number(score)
         if not 0 <= score <= 1:
             raise ValueError("OCR score outside 0..1")
@@ -216,9 +217,10 @@ class LocalOCRSession:
             # A missing or unverified profile propagates: the session fails closed.
             self._profile = verified_profile()
             try:
-                from .ocr import model_directory
                 import easyocr
                 import torch
+
+                from .ocr import model_directory
 
                 torch.set_num_threads(2)
                 self._reader = easyocr.Reader(
@@ -269,7 +271,7 @@ class LocalOCRSession:
             else:
                 try:
                     observed = self._reader.readtext(prepared, **OPTIONS)
-                except Exception:
+                except Exception:  # noqa: BLE001 - third-party reader failures become structured OCR failures
                     return _failed(
                         request,
                         profile,
@@ -280,7 +282,7 @@ class LocalOCRSession:
                     )
                 try:
                     raw = _validated_observations(observed, size)
-                except ValueError:
+                except (TypeError, ValueError):
                     return _failed(
                         request,
                         profile,
@@ -362,7 +364,7 @@ def validate_local_ocr_proposal(
     image_bytes: bytes,
 ) -> None:
     if not isinstance(proposal, dict):
-        raise ValueError("local OCR proposal must be an object")
+        raise TypeError("local OCR proposal must be an object")
     if (
         proposal.get("format") != "docgrain.local-ocr-proposal"
         or proposal.get("version") != "1.0.0"
@@ -370,7 +372,7 @@ def validate_local_ocr_proposal(
         raise ValueError("unsupported local OCR proposal")
     claimed = proposal.get("request")
     if not isinstance(claimed, dict) or not isinstance(claimed.get("region_id"), str):
-        raise ValueError("local OCR proposal request is malformed")
+        raise TypeError("local OCR proposal request is malformed")
     request, _ = prepare_local_ocr(
         snapshot, inventory, claimed["region_id"], source_bytes, image_bytes
     )

@@ -147,7 +147,7 @@ def test_asset_hash_size_and_locator_are_verified():
                                "artifact_id": "plan-binary", "annotation": annotation("evidence-page-1")})
     value["structure"][0]["children"].append(node_id)
     snapshot = CanonicalKnowledgeSnapshot.model_validate(value)
-    kwargs = dict(task="room_plan", source_bytes=source, context="", input_locator={"kind": "artifact", "artifact_id": "plan-binary"})
+    kwargs = {"task": "room_plan", "source_bytes": source, "context": "", "input_locator": {"kind": "artifact", "artifact_id": "plan-binary"}}
     assert prepare_request(snapshot, node_id, image, **kwargs).task == "room_plan"
     with pytest.raises(ValueError, match="canonical asset"):
         prepare_request(snapshot, node_id, b"bad", **kwargs)

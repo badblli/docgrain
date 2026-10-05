@@ -6,7 +6,6 @@ from hashlib import sha256
 from pathlib import Path
 
 import pytest
-
 from docgrain_domain.canonical import SourceVersion
 from docgrain_domain.canonical.ai_output import output_bundle
 from docgrain_domain.canonical.lifecycle import (

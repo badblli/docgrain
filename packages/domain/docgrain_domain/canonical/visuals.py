@@ -154,25 +154,25 @@ def visual_inventory(snapshot: CanonicalKnowledgeSnapshot) -> VisualInventory:
         if isinstance(issues, list)
         else []
     )
-    payload = dict(
-        workspace_id=snapshot.workspace_id,
-        document_id=snapshot.document_id,
-        revision_id=snapshot.knowledge_revision.id,
-        source_sha256=snapshot.source_version.content_sha256,
-        snapshot_sha256=digest(snapshot.model_dump(mode="json")),
-        regions=regions,
-        unresolved_picture_refs=[
+    payload = {
+        "workspace_id": snapshot.workspace_id,
+        "document_id": snapshot.document_id,
+        "revision_id": snapshot.knowledge_revision.id,
+        "source_sha256": snapshot.source_version.content_sha256,
+        "snapshot_sha256": digest(snapshot.model_dump(mode="json")),
+        "regions": regions,
+        "unresolved_picture_refs": [
             issue.get("item_ref") or f"unlocated-picture:{i}"
             for i, issue in enumerate(issues)
             if issue.get("code") == "unextracted_picture"
         ],
-        limitations=[
+        "limitations": [
             "Binary availability is a recorded artifact reference, not a storage health check.",
             "Duplicate hashes do not establish logo, decoration or semantic equivalence.",
             "OCR capability and descriptions do not certify source meaning or source acceptance.",
             "Inventory is read-only; canonical revisions and published packages are unchanged.",
         ],
-    )
+    }
     # DTO dump ensures model objects are converted before deterministic hashing.
     value = VisualInventory(id="pending", **payload)
     identity = value.model_dump(mode="json", exclude={"id"})

@@ -87,7 +87,7 @@ def benchmark():
                 current = adapter.scan()
                 native_ms = (time.perf_counter()-stamp)*1000
                 expected = hashlib.sha256(payload).hexdigest() if payload is not None else previous_hash
-                match = wait_for(lambda: next((r for r in records()[before_count:]
+                match = wait_for(lambda before_count=before_count, expected=expected, payload=payload: next((r for r in records()[before_count:]
                     if r.get("sha256") == expected and r["addition"] == (payload is not None)), None))
                 # Allow removal and addition events in the same source batch to settle.
                 time.sleep(.15)

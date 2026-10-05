@@ -4,7 +4,12 @@ from hashlib import sha256
 from urllib.parse import parse_qs, urlparse
 
 from docgrain_api.output_repository import OutputRepository
-from docgrain_domain.canonical.ai_output import MIME, OutputFile, OutputPublication, output_bundle
+from docgrain_domain.canonical.ai_output import (
+    MIME,
+    OutputFile,
+    OutputPublication,
+    output_bundle,
+)
 
 from .canonical_assets import store_asset
 
