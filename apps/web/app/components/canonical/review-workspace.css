@@ -248,3 +248,12 @@ h5.rw-heading { font-size: 15px; border-bottom: 0; }
   .rw-content, .rw-skeleton span { animation: none; }
   .rw-nav button::after { transition: none; }
 }
+
+/* Keep actions in the tab order so keyboard users reveal them on focus. */
+@media (hover: hover) and (pointer: fine) {
+  .rw-block > .rw-block-actions, .rw-asset .rw-block-actions { opacity: 0; pointer-events: none; transition: opacity .15s; }
+  .rw-block:hover > .rw-block-actions, .rw-block:focus-within > .rw-block-actions,
+  .rw-asset:hover .rw-block-actions, .rw-asset:focus-within .rw-block-actions { opacity: 1; pointer-events: auto; }
+}
+.rw-block-meta:empty { display: none; }
+.rw-ref > div { min-width: 0; overflow-wrap: anywhere; }

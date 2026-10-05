@@ -1431,3 +1431,26 @@ table.grid tbody tr.click:hover {
   gap: 16px;
   font-size: 12px;
 }
+
+/* The everyday view keeps document reading and uploading in the foreground. */
+.developerSwitch { margin: 20px 8px 8px; line-height: 1.5; }
+.informationGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.informationCard { padding: 24px; }
+.informationCard svg { width: 28px; height: 28px; color: var(--muted); }
+.informationCard h2 { margin: 16px 0 12px; }
+@media (max-width: 820px) {
+  .developerSwitch { margin: 6px 8px; }
+  .informationGrid { grid-template-columns: minmax(0, 1fr); }
+  .modeNotice { padding: 12px 16px; flex-wrap: wrap; }
+}
+@media (max-width: 560px) {
+  .docs th:nth-child(3), .docs td:nth-child(3),
+  .docs th:nth-child(4), .docs td:nth-child(4),
+  .docs th:nth-child(5), .docs td:nth-child(5) { display: none; }
+  .docs .fname { white-space: normal; overflow-wrap: anywhere; }
+  .docs .ftype { display: none; }
+  .docs td, .docs th { padding: 10px 8px; }
+  .docs .pill { font-size: 10px; }
+  .brand small { letter-spacing: 0; text-transform: none; }
+  .head .crumb, .head .sub, .head h1 { overflow-wrap: anywhere; }
+}

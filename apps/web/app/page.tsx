@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import "./canonical.css";
+import { DeveloperModeContext, useDeveloperMode } from "./components/developer-mode";
 import { AIOutputView } from "./components/canonical/ai-output";
 import { ReviewWorkspace } from "./components/canonical/review-workspace";
 import { Assets as CanonicalAssets, Issues as CanonicalIssues, Overview as CanonicalOverview,
@@ -10,8 +11,8 @@ import { Assets as CanonicalAssets, Issues as CanonicalIssues, Overview as Canon
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const WORKSPACE = process.env.NEXT_PUBLIC_WORKSPACE_ID ?? "ws_local";
-type Screen = "documents" | "jobs" | "providers" | "contract" | "detail";
-type DetailTab = "review" | "ai-output" | "overview" | "structure" | "tables" | "assets" | "issues" | "provenance" | "pages" | "pipeline" | "versions" | "raw";
+type Screen = "documents" | "jobs" | "providers" | "contract" | "detail" | "information";
+type DetailTab = "history" | "review" | "ai-output" | "overview" | "structure" | "tables" | "assets" | "issues" | "provenance" | "pages" | "pipeline" | "versions" | "raw";
 type UploadPhase =
   | "idle"
   | "registering"
@@ -182,6 +183,8 @@ const statusLabel = (s: string) =>
     pending: "bekliyor",
     skipped: "atlandı",
   })[s] ?? s;
+const documentStatusLabel = (status: string) => status === "done" ? "Hazır"
+  : status === "failed" || status === "error" ? "Hata" : "İnceleme gerekiyor";
 const pillClass = (s: string) =>
   s === "done"
     ? "p-ok"
@@ -242,15 +245,16 @@ function Icon({ name }: { name: string }) {
   );
 }
 function Status({ status }: { status: string }) {
+  const developerMode = useDeveloperMode();
   return (
     <span className={`pill ${pillClass(status)}`}>
       <i className="dot" />
-      {statusLabel(status)}
+      {developerMode ? statusLabel(status) : documentStatusLabel(status)}
     </span>
   );
 }
 function Ep({ children }: { children: React.ReactNode }) {
-  return <code className="ep">{children}</code>;
+  return useDeveloperMode() ? <code className="ep">{children}</code> : null;
 }
 function EmptyState({ title, text }: { title: string; text: string }) {
   return (
@@ -268,7 +272,11 @@ function Sidebar({
   nav,
   docs,
   jobs,
+  developerMode,
+  toggleDeveloperMode,
 }: {
+  developerMode: boolean;
+  toggleDeveloperMode: () => void;
   screen: Screen;
   nav: (s: Screen) => void;
   docs: number;
@@ -285,7 +293,7 @@ function Sidebar({
         </svg>
         <span>
           <b>Docgrain</b>
-          <small>konsol</small>
+          <small>belgeleriniz ve bilgileriniz</small>
         </span>
       </button>
       <div className="navlbl">Çalışma alanı</div>
@@ -295,8 +303,11 @@ function Sidebar({
         onClick={() => nav("documents")}
       >
         <Icon name="doc" />
-        Dokümanlar<em>{docs}</em>
+        Belgeler<em>{docs}</em>
       </button>
+      <button className="nav" aria-current={screen === "information"} onClick={() => nav("information")}><Icon name="grid" />Bilgi</button>
+      {developerMode && <>
+      <div className="navlbl">Geliştirici araçları</div>
       <button
         className="nav"
         aria-current={screen === "jobs"}
@@ -322,11 +333,9 @@ function Sidebar({
         <Icon name="book" />
         Veri sözleşmesi
       </button>
-      <div className="railfoot">
-        Ortak doküman çıktıları
-        <br />
-        Metin, tablolar ve kaynak kanıtları tek biçimde. Görsel anlamı için açık eksikleri inceleyin.
-      </div>
+      </>}
+      <label className="switch developerSwitch"><input type="checkbox" role="switch" checked={developerMode} onChange={toggleDeveloperMode} />Geliştirici modu</label>
+      <div className="railfoot">Belgelerinizi okuyun, bilgileri kaynakla karşılaştırın ve eksik açıklamaları tamamlayın.</div>
     </aside>
   );
 }
@@ -357,7 +366,7 @@ function Head({
         </div>
         <div className="headact">
           {children}
-          <Ep>{endpoint}</Ep>
+          {endpoint && <Ep>{endpoint}</Ep>}
         </div>
       </div>
     </header>
@@ -377,6 +386,7 @@ function Documents({
   uploadState: UploadState;
   mode: Mode | null;
 }) {
+  const developerMode = useDeveloperMode();
   const input = useRef<HTMLInputElement>(null);
   const busy = mode !== "live" || ["registering", "uploading", "confirming", "queued", "running"].includes(
     uploadState.phase,
@@ -384,8 +394,8 @@ function Documents({
   return (
     <>
       <Head
-        title="Dokümanlar"
-        sub="Her yükleme yeni bir doküman ve ilk sürüm kaydı oluşturur. Deduplication ve mevcut dokümana yeni sürüm ekleme henüz yok."
+        title="Belgeler"
+        sub="Belgelerinizi yükleyin, durumlarını takip edin ve içeriklerini okuyun."
         endpoint="GET /v1/documents"
       />
       <div className="wrap">
@@ -394,16 +404,16 @@ function Documents({
             <Icon name="upload" />
           </div>
           <div>
-            <h3>Kaynak doküman yükle</h3>
+            <h3>Belge yükle</h3>
             <p>
-              PDF, DOCX, XLSX, TXT, PNG ve JPG/JPEG kaynakları yüklenebilir. OCR ve görsel yorumları kaynakla doğrulanmalıdır. Demo modu salt okunurdur.
+              PDF, Word, Excel, metin veya görsel dosyası seçin. Her yükleme ayrı bir belge oluşturur. Okunan bilgileri özgün dosyayla karşılaştırın.
             </p>
             {uploadState.phase !== "idle" && (
               <div className={`uploadState upload-${uploadState.phase}`} role="status">
                 <span className="uploadDot" />
                 <b>{uploadState.fileName}</b>
-                <span>{uploadState.message}</span>
-                {uploadState.jobId && <code>{uploadState.jobId}</code>}
+                <span>{developerMode || uploadState.phase !== "error" ? uploadState.message : "Dosya yüklenemedi. Bağlantıyı kontrol edip yeniden deneyin."}</span>
+                {developerMode && uploadState.jobId && <code>{uploadState.jobId}</code>}
               </div>
             )}
           </div>
@@ -428,14 +438,14 @@ function Documents({
             onClick={() => input.current?.click()}
             disabled={busy}
           >
-            {mode === "demo" ? "Demo: yükleme kapalı" : mode === null ? "API bekleniyor" : busy ? "İşleniyor…" : "Dosya yükle"}
+            {mode === "demo" ? "Örnek görünüm: yükleme kapalı" : mode === null ? "Bağlanıyor…" : busy ? "İşleniyor…" : "Dosya yükle"}
           </button>
         </section>
         <section className="card">
           <header>
-            <h2>Tüm dokümanlar</h2>
+            <h2>Tüm belgeler</h2>
             <p className="note">
-              Satıra tıkla → canonical knowledge, provenance ve kaynak sayfalar.
+              İçeriğini okumak için bir belge açın.
             </p>
             <span className="sp">
               <Ep>GET /v1/documents?limit=50</Ep>
@@ -445,7 +455,7 @@ function Documents({
             <table className="grid docs">
               <thead>
                 <tr>
-                  <th>Doküman</th>
+                  <th>Belge</th>
                   <th>Durum</th>
                   <th>Sürüm</th>
                   <th>Sayfa</th>
@@ -454,14 +464,14 @@ function Documents({
                 </tr>
               </thead>
               <tbody>
-                {!docs.length && <tr><td colSpan={6}>Henüz doküman yok.</td></tr>}
+                {!docs.length && <tr><td colSpan={6}>Henüz belge yok.</td></tr>}
                 {docs.map((d) => (
                   <tr key={d.id} className="click" onClick={() => open(d)}>
                     <td>
                       <span className="fname">
                         <span className="ftype">{d.type}</span>
                         <span>
-                          {d.title} <small>{d.file} · {d.id}</small>
+                          {d.title} <small>{d.file}{developerMode ? ` · ${d.id}` : ""}</small>
                         </span>
                       </span>
                     </td>
@@ -491,6 +501,12 @@ function Documents({
       </div>
     </>
   );
+}
+function Information() {
+  return <><Head title="Bilgi" sub="Belgelerinizden derlenen bilgileri burada bulabileceksiniz." endpoint="" />
+    <div className="wrap informationGrid">{["Odalar", "Restoranlar", "Etkinlikler"].map((title) =>
+      <section className="card informationCard" key={title}><Icon name="grid" /><h2>{title}</h2><span className="pill p-idle">yakında</span></section>)}
+    </div></>;
 }
 function Jobs({
   jobs,
@@ -549,7 +565,7 @@ function Jobs({
               <thead>
                 <tr>
                   <th>İş</th>
-                  <th>Doküman</th>
+                  <th>Belge</th>
                   <th>Durum</th>
                   <th>Aşamalar</th>
                   <th>Şu an</th>
@@ -683,11 +699,12 @@ function DetailHead({
   setTab: (t: DetailTab) => void;
   knowledge: Knowledge | null;
 }) {
+  const developerMode = useDeveloperMode();
   const primaryTabs: [DetailTab, string, string][] = [
-    ["review", "Belgeyi incele", ""],
-    ["ai-output", "AI çıktısı", ""],
+    ["review", "Oku", ""], ["history", "Geçmiş", ""],
   ];
   const technicalTabs: [DetailTab, string, string][] = [
+    ["ai-output", "AI çıktısı", ""],
     ["overview", "Özet", ""],
     ["structure", "Yapı", String(knowledge?.snapshot.structure.length ?? "—")],
     ["tables", "Tablolar", String(knowledge?.snapshot.structure.filter((n) => n.kind === "table").length ?? "—")],
@@ -702,8 +719,6 @@ function DetailHead({
     ["versions", "Kaynak sürümleri", String(doc.versionCount)],
     ["raw", "Ham veri", ""],
   ];
-  const technicalActive = technicalTabs.some((t) => t[0] === tab);
-  const [techOpen, setTechOpen] = useState(technicalActive);
   const renderTab = (t: [DetailTab, string, string]) => (
     <button
       className="tab"
@@ -721,7 +736,7 @@ function DetailHead({
       <div className="crumb">
         <span>Çalışma alanı</span>
         <b>›</b>
-        <span>Dokümanlar</span>
+        <span>Belgeler</span>
         <b>›</b>
         <span>{doc.title}</span>
       </div>
@@ -740,18 +755,8 @@ function DetailHead({
       </div>
       <div className="tabs" role="tablist">
         {primaryTabs.map(renderTab)}
-        {(techOpen || technicalActive) && technicalTabs.map(renderTab)}
+        {developerMode && technicalTabs.map(renderTab)}
       </div>
-      <button
-        type="button"
-        className="btn sm"
-        aria-expanded={techOpen || technicalActive}
-        disabled={technicalActive}
-        onClick={() => setTechOpen(!techOpen)}
-        style={{ margin: "8px 0 2px" }}
-      >
-        {techOpen || technicalActive ? "Teknik görünümleri gizle" : "Teknik görünümler"}
-      </button>
     </header>
   );
 }
@@ -1004,18 +1009,19 @@ function Detail({
   onSaved: () => void;
   onDirtyChange: (dirty: boolean) => void;
 }) {
+  const developerMode = useDeveloperMode();
   const canonical = knowledge?.snapshot;
   // Once opened, the review workspace stays mounted (hidden) so unsaved drafts survive tab switches.
-  const [reviewOpened, setReviewOpened] = useState(tab === "review");
-  useEffect(() => { if (tab === "review") setReviewOpened(true); }, [tab]);
-  const canonicalUnavailable = <div className="ci-wrap"><div className="ci-empty"><strong>Canonical knowledge unavailable</strong>
-    <p>{knowledgeState || "Bu doküman için henüz canonical revision üretilmedi."}</p></div></div>;
+  const [reviewOpened, setReviewOpened] = useState(tab === "review" || tab === "history");
+  useEffect(() => { if (tab === "review" || tab === "history") setReviewOpened(true); }, [tab]);
+  const canonicalUnavailable = <div className="ci-wrap"><div className="ci-empty"><strong>Belge içeriği henüz hazır değil</strong>
+    <p>{developerMode ? knowledgeState : "Belge içeriği alınamadı. Bir süre sonra tekrar deneyin."}</p></div></div>;
   return (
     <>
       <DetailHead doc={doc} tab={tab} setTab={setTab} knowledge={knowledge} />
-      {(tab === "review" || reviewOpened) && (
-        <div hidden={tab !== "review"}>
-          <ReviewWorkspace documentId={doc.id} onSaved={onSaved} mode={mode} onDirtyChange={onDirtyChange} />
+      {(tab === "review" || tab === "history" || reviewOpened) && (
+        <div hidden={tab !== "review" && tab !== "history"}>
+          <ReviewWorkspace view={tab === "history" ? "history" : "read"} onRead={() => setTab("review")} documentId={doc.id} onSaved={onSaved} mode={mode} onDirtyChange={onDirtyChange} />
         </div>
       )}
       {tab === "ai-output" && (canonical ? <AIOutputView key={canonical.knowledge_revision.id} snapshot={canonical} versionId={doc.versionId} /> : canonicalUnavailable)}
@@ -1055,6 +1061,19 @@ export default function Home() {
     [knowledgeState, setKnowledgeState] = useState(""),
     [uploadState, setUploadState] = useState<UploadState>({ phase: "idle" }),
     [toast, setToast] = useState("");
+  const [developerMode, setDeveloperMode] = useState(false);
+  useEffect(() => {
+    try { setDeveloperMode(localStorage.getItem("docgrain.developer-mode") === "true"); } catch { /* Storage may be unavailable. */ }
+  }, []);
+  function toggleDeveloperMode() {
+    const next = !developerMode;
+    setDeveloperMode(next);
+    try { localStorage.setItem("docgrain.developer-mode", String(next)); } catch { /* Keep the switch usable without storage. */ }
+    if (!next) {
+      if (["jobs", "providers", "contract"].includes(screen)) setScreen("documents");
+      if (tab !== "review" && tab !== "history") setTab("review");
+    }
+  }
   const requestId = useRef(0);
   const dirtyRef = useRef(false);
 
@@ -1147,7 +1166,7 @@ export default function Home() {
       setUploadState({
         phase: "registering",
         fileName: file.name,
-        message: "Doküman ve ilk sürüm kaydı açılıyor…",
+        message: "Belgeniz kaydediliyor…",
       });
       const registration = await apiJson<RegisterResponse>(`${API}/v1/documents`, {
         method: "POST",
@@ -1173,7 +1192,7 @@ export default function Home() {
           phase: "uploading",
           fileName: file.name,
           jobId: registration.job_id,
-          message: "Orijinal dosya MinIO’ya yazılıyor…",
+          message: "Dosya yükleniyor…",
         });
         const form = new FormData();
         form.append("file", file, file.name);
@@ -1186,7 +1205,7 @@ export default function Home() {
           phase: "confirming",
           fileName: file.name,
           jobId: registration.job_id,
-          message: "Upload kontrol edilip job kuyruğa alınıyor…",
+          message: "Dosya kontrol ediliyor…",
         });
         await apiJson<{ status: string; job_id: string }>(
           `${API}/v1/documents/${registration.document.id}/versions/${registration.version.id}/uploaded`,
@@ -1200,7 +1219,7 @@ export default function Home() {
         jobId: registration.job_id,
         message: registration.deduplicated
           ? "Aynı içerik daha önce kaydedilmiş. Mevcut sürüm kullanılıyor."
-          : "Job kuyrukta; worker bekleniyor…",
+          : "Belgeniz hazırlanmayı bekliyor…",
       });
 
       for (let poll = 0; poll < 450; poll += 1) {
@@ -1221,10 +1240,10 @@ export default function Home() {
           fileName: file.name,
           jobId: currentJob.id,
           message: terminal.has(currentJob.status)
-            ? statusLabel(currentJob.status)
+            ? documentStatusLabel(currentJob.status)
             : currentJob.status === "running"
-              ? "Worker pipeline’ı çalıştırıyor…"
-              : "Job kuyrukta; worker bekleniyor…",
+              ? "Belgeniz okunuyor…"
+              : "Belgeniz hazırlanmayı bekliyor…",
         });
         if (terminal.has(currentJob.status)) {
           const refreshed = await apiJson<DocumentListResponse>(
@@ -1235,7 +1254,7 @@ export default function Home() {
             finalRow,
             ...current.filter((item) => item.id !== finalRow.id),
           ]);
-          setToast(`${file.name}: ${statusLabel(currentJob.status)}`);
+          setToast(`${file.name}: ${documentStatusLabel(currentJob.status)}`);
           return;
         }
         await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -1245,7 +1264,7 @@ export default function Home() {
         phase: "error",
         fileName: file.name,
         jobId: registration.job_id,
-        message: "Otomatik izleme süresi doldu; güncel job durumunu listeyi yenileyerek kontrol edin.",
+        message: "Takip süresi doldu. Güncel durumu görmek için listeyi yenileyin.",
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Bilinmeyen upload hatası";
@@ -1254,8 +1273,11 @@ export default function Home() {
     }
   }
   return (
+    <DeveloperModeContext.Provider value={developerMode}>
     <div className="app">
       <Sidebar
+        developerMode={developerMode}
+        toggleDeveloperMode={toggleDeveloperMode}
         screen={screen}
         nav={(next) => { if (confirmDiscard()) setScreen(next); }}
         docs={docs.length}
@@ -1263,12 +1285,12 @@ export default function Home() {
       />
       <main>
         <div className="modeNotice" role="status">
-          {mode === "demo" ? "DEMO — salt okunur sentetik veriler. Canonical knowledge bu modda mevcut değil."
-            : mode === "live" ? "LIVE — canonical revision ve ortak AI çıktıları okunur. Görsel yorumlama ve kaynak bütünlüğü eksikleri açıkça gösterilir." : "API çalışma modu bekleniyor."}
+          <span>{mode === "demo" ? "Örnek belgeleri görüntülüyorsunuz. Düzenleme ve yükleme kapalı."
+            : mode === "live" ? "Belgelerinizi kaynaklarıyla birlikte inceleyebilirsiniz." : "Bağlantı kuruluyor…"}</span>
           <button className="btn sm" onClick={() => { if (confirmDiscard()) void refresh(); }} disabled={loading || ["registering", "uploading", "confirming", "queued", "running"].includes(uploadState.phase)}>Listeyi yenile</button>
         </div>
-        {loading ? <EmptyState title="Yükleniyor" text="API çalışma modu ve kayıtlar alınıyor." />
-          : error ? <div role="alert"><EmptyState title="API hatası" text={error} /></div>
+        {screen === "information" ? <Information /> : loading ? <EmptyState title="Yükleniyor" text="Belgeleriniz alınıyor." />
+          : error ? <div role="alert"><EmptyState title="Bağlantı kurulamadı" text={developerMode ? error : "Belgeler alınamadı. Bağlantıyı kontrol edip listeyi yenileyin."} /></div>
           : screen === "documents" ? (
           <Documents
             docs={docs}
@@ -1283,8 +1305,8 @@ export default function Home() {
           <Providers items={providers} />
         ) : screen === "contract" ? (
           <Contract />
-        ) : detailLoading ? <EmptyState title="Yükleniyor" text="Doküman kayıtları alınıyor." />
-          : detailError ? <div role="alert"><EmptyState title="Doküman okunamadı" text={detailError} /></div>
+        ) : detailLoading ? <EmptyState title="Yükleniyor" text="Belge alınıyor." />
+          : detailError ? <div role="alert"><EmptyState title="Belge okunamadı" text={developerMode ? detailError : "Belge alınamadı. Listeyi yenileyip tekrar deneyin."} /></div>
           : selected ? (
           <Detail
             key={selected.id}
@@ -1306,9 +1328,10 @@ export default function Home() {
       {toast && (
         <div className="toast">
           <i />
-          {toast}
+          {developerMode || !toast.includes("yüklenemedi") && !toast.includes("yenilenemedi") ? toast : "İşlem tamamlanamadı. Bağlantıyı kontrol edip tekrar deneyin."}
         </div>
       )}
     </div>
+    </DeveloperModeContext.Provider>
   );
 }
