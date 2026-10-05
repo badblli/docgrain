@@ -33,7 +33,7 @@ alternatives are retained under `i18n[lang][field]`, with their own evidence. Wi
 English, the caller's language wins (otherwise the first verified alternative);
 this non-English primary is also retained in i18n. A second alternative in the same
 language is rejected rather than silently overwriting the first. Multi-document
-identity reconciliation and conflict review belong to later work packages.
+identity reconciliation and conflict review use the offline merger described below.
 
 Every quote must match after NFKC and whitespace normalization, case-sensitively.
 In compact projections, locators must resolve to a block (`§2`, `§2 p.3`, `[§2 p.3]`, or its
@@ -49,3 +49,112 @@ them; semantic accuracy still requires review and golden-data evaluation.
 Endpoints without structured-output support may fall back to the schema in the
 system prompt. Local schema and quote validation always apply. Source text is placed
 in a separate untrusted user payload and never becomes system instructions.
+
+## Offline workspace merge and field history (WP42)
+
+Run the synthetic example after installing the package, or set
+`PYTHONPATH=packages/records;packages/domain` on Windows (use `:` on POSIX):
+
+```sh
+python -m docgrain_records.merge_example
+python -m docgrain_records.merge_example --store ./merge-example.json
+```
+
+The example merges EN/TR sources into one stable record, changes only capacity in
+the English source's next version, distinguishes the name's Evidence-only update,
+and reopens the store to query the old revision. It makes no API/model requests.
+Without `--store` it uses a temporary directory; a supplied path retains history.
+Treat store files as private runtime artifacts: they contain source quotations.
+
+`MergeDocument` pins one `document_id` to `source_version_id`,
+`knowledge_revision_id` and the corresponding `context`, inside a `workspace_id`.
+The caller must supply the actual pinned context; the offline merge cannot check
+an external source registry. Wrap each wp41 `Record` in `SourceRecord` with a
+caller-owned, durable `source_identity` and optional workspace/type-scoped `aliases`.
+For example, wrap verified extraction output as follows:
+
+```python
+from docgrain_records import JsonMergeStore, MergeDocument, SourceRecord
+
+document = MergeDocument(
+    workspace_id="workspace-example", document_id=extraction.document_id,
+    source_version_id="source-example-v1", knowledge_revision_id="knowledge-example-k1",
+    context=pinned_context,
+    records=[SourceRecord(source_identity=durable_identity[record.id], record=record)
+             for record in extraction.records],
+)
+store = JsonMergeStore("./private-runtime/merge.json", document.workspace_id)
+revision = store.merge("merge-example-1", [document])
+old_revision = store.get_revision("merge-example-1")
+```
+
+wp41 IDs encode extraction order. **Do not copy them into `source_identity`** or
+derive it from an editable name. Obtain a durable identity from the source system
+or a caller-maintained assignment. An explicit shared alias links translations
+with different names. No translation, fuzzy name match or model call is used to
+invent identity. Without that link, different-language names remain unmatched.
+Source identities are exact and document/type-scoped; aliases are exact and
+workspace/type-scoped. Names provide only a weak key: type, actual language, and
+NFKC/whitespace-normalized, case-folded name. A whole weak component is left separate
+when it would connect multiple established IDs or multiple distinct items from one
+document. `match_issues` records these ambiguities. Explicit links between already
+distinct stored IDs fail; deliberate reassignment/consolidation needs a later
+identity-review policy. There is no automatic consolidation of existing IDs.
+
+Identity mappings retain historical names, aliases and deleted IDs, so edits,
+translations with explicit identity, restart, reordered input and reappearance
+retain IDs. The first allocation is deterministic for the same complete input;
+subsequent allocation uses the stored mapping. Keep this store between revisions.
+Each call supplies the **complete active document set**, including unchanged
+documents; omission removes their contributions. Identical repeated documents are
+deduplicated, while multiple different snapshots of one document are rejected.
+The JSON file atomically persists identity mappings and immutable merge revisions.
+An exclusive writer lock prevents concurrent writes; after a crashed writer, only
+remove its `.lock` once you have established the writer has stopped. This is a
+local store, not a replacement for the application's transactional database.
+Revision IDs also bind a digest of the complete input and explicit decisions.
+Repeating the same request returns that saved revision even after later identity
+history changes; changing an existing revision's input fails without overwriting it.
+
+Every incoming Evidence is checked again using wp41's NFKC/whitespace and block
+locator rules. Any invalid citation rejects the merge without changing the store.
+Each resulting citation includes its source version and knowledge revision.
+Equal JSON values in the same language coalesce with a deduplicated Evidence union;
+different values remain separate `FactCandidate`s. Lists retain order, and values
+are not semantically normalized or interpreted. EN wins per field (`en` before
+English regions); missing EN uses the lexically first actual available language.
+Every non-English candidate, including fallback values, appears in `i18n` with
+Evidence. Same-language disagreements appear in `conflicts`; no arbitrary winner
+is exposed by `primary` when the primary language has an unresolved conflict.
+
+`primary` is a display proposal, **never an export approval**. Nonconflicting facts
+start `proposed`; conflicting facts start `needs_review`. To accept/reject, pass
+explicit `ReviewDecision`s to a new merge revision, naming the record, field,
+candidate ID, reviewer and reason. Decisions are stored in the revision. At most
+one candidate per language may be accepted; other candidates remain visible until
+explicitly reviewed. Exporters use `field.accepted()` for primary values or
+`field.accepted(lang)` for a translation, and skip `None`. For example:
+
+```python
+from docgrain_records import ReviewDecision
+
+record = revision.records[0]
+candidate = record.fields["name"].primary
+decision = ReviewDecision(
+    record_id=record.id, field="name", candidate_id=candidate.id, action="accepted",
+    reviewer="reviewer-example", reason="Checked the cited source",
+)
+reviewed = store.merge("merge-example-reviewed", [document], [decision])
+approved_name = reviewed.records[0].fields["name"].accepted()
+```
+
+Decisions are never carried automatically. Candidate IDs bind the fact and complete
+versioned Evidence set; changed sources require fresh review, even for equal facts.
+`compare_revisions(before, after)` compares stable record IDs and fields, returning
+record additions/deletions plus field `added`/`removed`/`changed` entries. Independent
+flags distinguish primary `value_changed`, `i18n_changed`, `evidence_changed`,
+`conflicts_changed`, and `review_changed`; `evidence_only` excludes all fact,
+translation, conflict and review changes. Old/new field snapshots are included.
+Updating a whole source version changes citation pins on its unchanged fields;
+these are Evidence-only changes, not extra fact changes. The old revision remains
+queryable and caller mutation cannot alter saved history.
