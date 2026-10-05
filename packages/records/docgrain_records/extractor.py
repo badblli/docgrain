@@ -3,6 +3,7 @@
 import json
 import re
 import unicodedata
+from collections import defaultdict
 
 from pydantic import TypeAdapter, ValidationError
 
@@ -44,6 +45,62 @@ def build_messages(context: str, document_id: str, lang: str) -> list[dict]:
 
 def normalize_quote(text: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", text).split())
+
+
+def _coalesce_document_records(records, document_lang):
+    """One type/name identity per document, with evidenced same-language conflicts."""
+    grouped = defaultdict(list)
+    for record in records:
+        key = record.type, normalize_quote(record.name.value).casefold()
+        grouped[key].append(record)
+    merged = []
+    for same_name in grouped.values():
+        if len(same_name) == 1:
+            merged.append(same_name[0])
+            continue
+        model, fields_model = RECORD_MODELS[same_name[0].type]
+        primary, i18n, conflicts = {}, defaultdict(dict), {}
+        for field in fields_model.model_fields:
+            candidates = {}
+            for record in same_name:
+                alternatives = [getattr(record, field)]
+                alternatives.extend(getattr(fields, field) for fields in record.i18n.values())
+                alternatives.extend(record.conflicts.get(field, []))
+                for fact in alternatives:
+                    if fact is None:
+                        continue
+                    signature = (fact.lang, json.dumps(fact.value, sort_keys=True, ensure_ascii=False))
+                    if signature not in candidates:
+                        candidates[signature] = fact.model_copy(deep=True)
+                    else:
+                        seen = {(e.document_id, e.locator, e.quote)
+                                for e in candidates[signature].evidence}
+                        for evidence in fact.evidence:
+                            key = evidence.document_id, evidence.locator, evidence.quote
+                            if key not in seen:
+                                candidates[signature].evidence.append(evidence.model_copy(deep=True))
+                                seen.add(key)
+            by_language = defaultdict(list)
+            for signature in sorted(candidates):
+                by_language[signature[0]].append(candidates[signature])
+            languages = sorted(by_language, key=lambda lang: (
+                0 if lang == "en" else 1 if lang.split("-")[0] == "en"
+                else 2 if lang == document_lang else 3, lang))
+            if not languages:
+                continue
+            primary[field] = by_language[languages[0]][0]
+            for language in languages:
+                if language.split("-")[0] != "en":
+                    i18n[language][field] = by_language[language][0]
+                if len(by_language[language]) > 1:
+                    conflicts.setdefault(field, []).extend(by_language[language][1:])
+        merged.append(model(
+            id=min(record.id for record in same_name), **primary,
+            i18n={language: fields_model(**fields) for language, fields in i18n.items()},
+            conflicts=conflicts,
+            review_state="needs_review" if conflicts else "proposed",
+        ))
+    return merged
 
 
 def _blocks(context: str) -> dict[str, str]:
@@ -123,7 +180,8 @@ def verify_response(raw: str, context: str, document_id: str, lang: str) -> Extr
                 id=f"{document_id}:{candidate.type}:{index + 1}",
                 **primary, i18n={key: fields_model(**fields) for key, fields in i18n.items()},
             ))
-    return ExtractionResult(document_id=document_id, lang=lang, records=records, rejected=rejected)
+    return ExtractionResult(document_id=document_id, lang=lang,
+                            records=_coalesce_document_records(records, lang), rejected=rejected)
 
 
 def extract(context: str, document_id: str, lang: str, chat: ChatClient | None = None) -> ExtractionResult:

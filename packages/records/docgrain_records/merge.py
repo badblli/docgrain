@@ -10,6 +10,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from .extractor import _blocks, normalize_quote
 from .merge_models import (
+    AliasDecision,
     FactCandidate,
     FieldChange,
     MatchIssue,
@@ -59,6 +60,7 @@ def _facts(document, item):
     for field in fields_model.model_fields:
         alternatives = [getattr(item.record, field)]
         alternatives.extend(getattr(fields, field) for fields in item.record.i18n.values())
+        alternatives.extend(item.record.conflicts.get(field, []))
         for fact in alternatives:
             if fact is None:
                 continue
@@ -139,13 +141,17 @@ def _match(workspace_id, entries, identity_map):
         for index in indices:
             per_document[entries[index][0].document_id].add(strong_roots[index])
         ambiguous = len(ids) > 1 or any(len(roots) > 1 for roots in per_document.values())
+        excluded = any(keys[b][0] in entries[a][1].match_exclusions
+                       and strong_roots[a] != strong_roots[b] for a in indices for b in indices)
+        ambiguous = ambiguous or excluded
         if ambiguous:
             separate = defaultdict(list)
             for index in indices:
                 separate[strong_roots[index]].append(index)
             for name in sorted(names):
                 issues.append(MatchIssue(key=name, source_keys=sorted(
-                    keys[index][0] for index in indices if name in keys[index][2])))
+                    keys[index][0] for index in indices if name in keys[index][2]),
+                    reason="excluded_pair" if excluded else "ambiguous_normalized_key"))
             partitions = list(separate.values())
         else:
             partitions = [indices]
@@ -164,10 +170,25 @@ def _match(workspace_id, entries, identity_map):
     return resolved, sorted(issues, key=lambda issue: issue.key)
 
 
-def _merge(state, revision_id, documents, decisions):
+def _merge(state, revision_id, documents, decisions, alias_decisions):
     entries = [(document, item) for document in documents for item in document.records]
     # Verify before identity allocation, even if a model was bypassed or mutated.
     facts = [list(_facts(document, item)) for document, item in entries]
+    # Only reviewed alias decisions may consolidate established IDs. Historical
+    # revisions remain immutable; update just the mapping used by this revision.
+    known_types = {record.id: record.type for revision in state.revisions.values()
+                   for record in revision.records}
+    retired = set()
+    keepers = {decision.keep_id for decision in alias_decisions}
+    for decision in alias_decisions:
+        if (decision.keep_id == decision.retired_id or decision.retired_id in retired
+            or decision.retired_id in keepers or decision.keep_id not in known_types
+            or known_types.get(decision.retired_id) != known_types[decision.keep_id]):
+            raise ValueError("alias decision must consolidate distinct existing IDs of one type")
+        retired.add(decision.retired_id)
+        for key, ids in state.identity_map.items():
+            state.identity_map[key] = sorted({decision.keep_id if record_id == decision.retired_id
+                                              else record_id for record_id in ids})
     resolved, issues = _match(state.workspace_id, entries, state.identity_map)
     grouped, types = defaultdict(lambda: defaultdict(dict)), {}
     for index, (_, item) in enumerate(entries):
@@ -214,9 +235,11 @@ def _merge(state, revision_id, documents, decisions):
     return MergeRevision(
         workspace_id=state.workspace_id, id=revision_id,
         documents=[SourcePin(document_id=d.document_id, source_version_id=d.source_version_id,
-                             knowledge_revision_id=d.knowledge_revision_id) for d in documents],
+                             knowledge_revision_id=d.knowledge_revision_id,
+                             content_sha256=d.content_sha256) for d in documents],
         records=records, match_issues=issues,
         decisions=sorted(decisions, key=lambda d: (d.record_id, d.field, d.candidate_id)),
+        alias_decisions=alias_decisions,
     )
 
 
@@ -248,12 +271,16 @@ class JsonMergeStore:
         return self._read().revisions[revision_id]
 
     def merge(self, revision_id: str, documents: list[MergeDocument],
-              decisions: list[ReviewDecision] | None = None) -> MergeRevision:
+              decisions: list[ReviewDecision] | None = None,
+              alias_decisions: list[AliasDecision] | None = None) -> MergeRevision:
         from pydantic import TypeAdapter
 
         TypeAdapter(Text).validate_python(revision_id)
         documents = [MergeDocument.model_validate(_payload(d)) for d in documents]
         decisions = [ReviewDecision.model_validate(_payload(d)) for d in (decisions or [])]
+        alias_decisions = sorted([AliasDecision.model_validate(_payload(d))
+                                  for d in (alias_decisions or [])],
+                                 key=lambda d: (d.keep_id, d.retired_id))
         if any(d.workspace_id != self.workspace_id for d in documents):
             raise ValueError("cannot merge documents from another workspace")
         unique = {}
@@ -266,8 +293,17 @@ class JsonMergeStore:
             unique[document.document_id] = document
         documents = [unique[key] for key in sorted(unique)]
         decisions.sort(key=lambda d: (d.record_id, d.field, d.candidate_id))
-        digest = sha256(_json([[_payload(d) for d in documents],
-                               [_payload(d) for d in decisions]]).encode("utf-8")).hexdigest()
+        request = [[_payload(d) for d in documents], [_payload(d) for d in decisions]]
+        # Empty matcher vetoes preserve wp42 request digests for saved revisions.
+        for document in request[0]:
+            if document["content_sha256"] is None:
+                document.pop("content_sha256")
+            for item in document["records"]:
+                if not item["match_exclusions"]:
+                    item.pop("match_exclusions")
+        if alias_decisions:
+            request.append([_payload(d) for d in alias_decisions])
+        digest = sha256(_json(request).encode("utf-8")).hexdigest()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         lock = self.path.with_name(self.path.name + ".lock")
         try:
@@ -283,7 +319,7 @@ class JsonMergeStore:
                 if state.request_digests.get(revision_id) != digest:
                     raise ValueError("existing merge revision is immutable")
                 return previous
-            revision = _merge(state, revision_id, documents, decisions)
+            revision = _merge(state, revision_id, documents, decisions, alias_decisions)
             state.revisions[revision_id] = revision
             state.request_digests[revision_id] = digest
             with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=self.path.parent,

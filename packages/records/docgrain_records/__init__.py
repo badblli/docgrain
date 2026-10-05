@@ -3,6 +3,7 @@
 from .extractor import build_messages, extract, verify_response
 from .merge import JsonMergeStore, compare_revisions
 from .merge_models import (
+    AliasDecision,
     FactCandidate,
     FieldChange,
     MatchIssue,
@@ -35,6 +36,7 @@ from .models import (
 
 __all__ = [
     "Activity",
+    "AliasDecision",
     "ChatClient",
     "Contact",
     "Evidence",

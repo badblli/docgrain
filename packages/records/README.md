@@ -19,12 +19,19 @@ uses `und`; the prompt asks the model to identify source languages without trans
 Published `context.md` is preferred; on 404, the package computes the same deterministic
 projection from the pinned canonical snapshot. Other API failures stop extraction.
 
+Successful `extract` writes `records.json`, the exact `context.md` used for the
+request, and `source.json` from the same canonical snapshot. `source.json` pins
+`document_id`, `workspace_id`, `knowledge_revision_id`, `source_version_id`,
+the source file's `content_sha256`, and extraction `lang`. Missing or inconsistent
+source pins stop extraction before a model request. Dry-run creates no files.
+
 `records.json` contains `domain`, `schema_version`, `document_id`, `lang`, `records`,
 and `rejected`. `hospitality_schema()` exports its Pydantic-backed JSON Schema.
 Supported record types are Property, RoomType, Outlet, Activity, Facility, Policy,
 Contact and ServicePrice. Every fact (including names) has `value`, `lang`, and a
 nonempty list of `{document_id, locator, quote}`. IDs, types and `review_state`
-are structural metadata; records stay `proposed`, not semantically accepted.
+are structural metadata; records stay `proposed`, or `needs_review` when repeated
+entries in one document disagree. No value is semantically accepted.
 
 Model proposals use a typed list of language alternatives for each field; absent
 fields use `[]`. The schema rejects extra fields and invalid value types. For each
@@ -34,6 +41,11 @@ English, the caller's language wins (otherwise the first verified alternative);
 this non-English primary is also retained in i18n. A second alternative in the same
 language is rejected rather than silently overwriting the first. Multi-document
 identity reconciliation and conflict review use the offline merger described below.
+Within one document, repeated type plus normalized primary name becomes one
+record before writing `records.json`. Equal facts union their Evidence; missing
+facts and translations are retained. Different values in the same language are
+preserved in the record's `conflicts[field]` with Evidence and mark the record
+`needs_review`. The wp42 merge exposes them as separate field candidates.
 
 Every quote must match after NFKC and whitespace normalization, case-sensitively.
 In compact projections, locators must resolve to a block (`§2`, `§2 p.3`, `[§2 p.3]`, or its
@@ -99,7 +111,8 @@ NFKC/whitespace-normalized, case-folded name. A whole weak component is left sep
 when it would connect multiple established IDs or multiple distinct items from one
 document. `match_issues` records these ambiguities. Explicit links between already
 distinct stored IDs fail; deliberate reassignment/consolidation needs a later
-identity-review policy. There is no automatic consolidation of existing IDs.
+identity-review policy. WP44 adds explicit reviewed alias decisions for consolidation;
+there is still no automatic consolidation of existing IDs.
 
 Identity mappings retain historical names, aliases and deleted IDs, so edits,
 translations with explicit identity, restart, reordered input and reappearance
@@ -158,3 +171,91 @@ translation, conflict and review changes. Old/new field snapshots are included.
 Updating a whole source version changes citation pins on its unchanged fields;
 these are Evidence-only changes, not extra fact changes. The old revision remains
 queryable and caller mutation cannot alter saved history.
+
+## Cross-document match proposals (WP44)
+
+```sh
+docgrain-records match --records ./private-runtime/records --out ./private-runtime/matches
+# Review match_proposals.json, then:
+docgrain-records merge --records ./private-runtime/records \
+  --matches ./private-runtime/matches/match_proposals.json \
+  --out ./private-runtime/merged
+```
+
+`match` recursively loads per-document `records.json` files. It has no API calls
+and does not construct a model client unless all three model options are explicit:
+`--base-url`, `--model`, `--api-key-env`. The optional compatible client uses the
+existing retry/fallback policy and a separate schema containing only a
+`same / different / unsure` answer. Names, facts and quotations remain untrusted
+user data; system instructions never include source text. Model answers remain
+proposals, including `same`. Numeric conflicts cannot be overridden by a model.
+
+Every same-type pair across different documents is recorded in
+`match_proposals.json` with snapshot-bound source references, score, signals,
+`decision` and `review_state: proposed`. Scores are heuristic support, not
+probabilities. Signals compare m², capacity, times, price amounts and other numeric
+signatures, names/tokens after case folding, diacritic removal and Cyrillic
+transliteration, and weak ordinal alignment when type counts agree. Ordinal
+alignment alone cannot link records. No translated-name dictionary or embeddings
+are used. Two independent numeric agreements can suggest translated names;
+matching distinguishing names/tokens can provide additional support. Inconsistent
+numbers or categories suggest `different`. Close competing pairs and inconsistent
+transitive components remain `unsure`; no component may contain two records from
+one document. Same-name collisions are inspectable during matching and rejected
+at the merge boundary; current extraction coalesces them before matching.
+
+`match_summary.json` lists every suggested group and every unmatched record with
+its source name, reference and flags. Its per-type counts are **projected counts
+if the same proposals are approved**, not proof of review or a merge result.
+Both artifacts contain source data and must stay outside Git.
+
+To explicitly approve a `same` proposal, set `review_state` to `accepted` and add
+nonempty `reviewer` and `reason` strings. A rejected review also requires these
+strings. An `unsure` or `different` suggestion cannot be accepted as an alias.
+The reviewer can explicitly change the decision after examining its evidence;
+this is a review action, never a model/default behavior. Stale snapshot references,
+duplicate proposal IDs, accepted many-to-one components and conflicting transitive
+links fail without changing the merge store. Rejected or uncertain pairs veto
+wp42's weak normalized-name matching; explicit source identity still retains
+already established records and their visible fact alternatives.
+
+`merge` keeps wp42's original quote verification: beside **each** `records.json`
+it requires the actual pinned `context.md` and a `source.json` sidecar:
+
+```json
+{
+  "document_id": "doc-example",
+  "workspace_id": "workspace-example",
+  "knowledge_revision_id": "knowledge-example-k1",
+  "source_version_id": "source-example-v1",
+  "content_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "lang": "en"
+}
+```
+
+`extract` produces these three files together. `merge` derives the workspace
+from the pins; optional `--workspace` checks it explicitly. All input documents
+must belong to that workspace. The source hash is retained in the merge revision.
+The adapter never manufactures a context from quotation lists. Missing or
+mismatched pins/context, incorrect quotations or duplicate type/name source
+identities stop the merge. The CLI's source identity policy is record type plus
+NFKC/whitespace-normalized, case-folded primary name, scoped within the document.
+A renamed source record therefore requires a newly reviewed link; wp42's lower
+level API still accepts durable caller-owned identities.
+
+Only accepted pairs become shared aliases. `aliases.json` records those pair
+reviews and the resulting source-to-alias assignments. When an accepted component
+connects previously distinct IDs, the adapter emits explicit `AliasDecision`s,
+retains the lexically first ID, retires the others in the identity map and records
+the decision in the new revision. Old revisions and field decisions remain
+unchanged. There is no implicit field acceptance.
+
+`merge_state.json` retains identity mappings/history; `merge_revision.json` stores
+the current source-pinned result. Each type also gets a JSON array (`room_type.json`,
+`outlet.json`, and the other hospitality types, including empty arrays). Records
+use wp42's `fields` envelope with EN-first `primary`, evidenced `i18n`, visible
+same-language `conflicts`, candidates and review states. These are review artifacts,
+not published accepted data. Repeating an unchanged request returns its immutable
+revision; use `--revision` to supply an explicit revision ID or let the CLI derive
+one from the full input. Retain the output store between runs and keep all outputs
+private.

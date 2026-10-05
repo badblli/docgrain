@@ -2,7 +2,7 @@
 
 from typing import Annotated, Generic, Literal, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 Text = Annotated[str, Field(min_length=1, pattern=r"\S")]
 Language = Annotated[str, Field(pattern=r"^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$")]
@@ -86,7 +86,8 @@ class ServicePriceFields(StrictModel):
 
 class RecordBase(StrictModel):
     id: Text
-    review_state: Literal["proposed"] = "proposed"
+    review_state: Literal["proposed", "needs_review"] = "proposed"
+    conflicts: dict[str, list[FieldValue[JsonValue]]] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def language_placement(self):
@@ -101,6 +102,11 @@ class RecordBase(StrictModel):
                     raise ValueError("i18n language key must match the field language")
                 if lang.split("-")[0] == "en":
                     raise ValueError("English fields belong in primary values")
+        if any(field not in RECORD_MODELS[self.type][1].model_fields or not values
+               for field, values in self.conflicts.items()):
+            raise ValueError("record conflicts require known fields and candidates")
+        if self.conflicts and self.review_state != "needs_review":
+            raise ValueError("record conflicts require needs_review")
         return self
 
 
