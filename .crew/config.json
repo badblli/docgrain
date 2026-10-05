@@ -1,0 +1,7 @@
+{
+  "project": "docgrain",
+  "lang": "tr",
+  "planDir": "docs/plan",
+  "stateDir": ".lead",
+  "phasePrefix": "D"
+}
