@@ -1,79 +1,84 @@
 # Docgrain
 
-> **English:** Docgrain turns a company's PDF, DOCX, XLSX, TXT and PNG/JPEG documents into one
-> versioned, source-linked canonical model that people can review and edit. The goal is to publish
-> that model as a shared data pool for AI assistants, mobile apps and websites; the project is
-> **pre-alpha** and only the first half of that path works today.
+**Turn messy company documents into versioned, source-linked knowledge your AI, apps and website can trust.**
 
-Docgrain, şirketlerin dağınık belgelerinden (PDF, DOCX, XLSX, TXT, PNG/JPEG) kaynağına bağlı,
-sürümlenebilir ve insan tarafından düzeltilebilir tek bir bilgi modeli üretir.
+[![Quality](https://github.com/badblli/docgrain/actions/workflows/quality.yml/badge.svg?branch=dev)](https://github.com/badblli/docgrain/actions/workflows/quality.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Status: pre-alpha](https://img.shields.io/badge/status-pre--alpha-orange)
+![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB)
 
-## Ne yapmak için var?
+[Türkçe](README.tr.md) · [Roadmap](docs/plan/ROADMAP.md) · [Quick start](#quick-start)
 
-Dört hedef; bugün hangilerinin çalıştığı [Bugün durum](#bugün-durum) tablosundadır.
+> **Pre-alpha, honestly.** Today Docgrain turns PDF, DOCX, XLSX, TXT and PNG/JPEG files into a
+> reviewable, source-linked model and publishes it as JSON, Markdown and ZIP. The shared data pool,
+> the access API for AI and apps, and file versioning are not built yet. The table below says exactly
+> what works. It is early; stars and feedback help shape it.
 
-1. **Her formatı tek modele çevirir.** Altı format, kaynağa bağlı (sayfa, hücre, kutu) tek bir
-   canonical modele normalize edilir. Eldeki bilginin kaynağı her zaman gösterilebilir.
-2. **Yeniden işlemeden sürümler.** Bir düzeltme ya da yeni dosya sürümü tüm belgeyi baştan
-   işlemeden, yalnızca değişen kısmı yeni bir revision olarak ekler. Eski revision'lar korunur.
-3. **Koleksiyonları ortak veri havuzu yapar.** Odalar, restoranlar, aktiviteler gibi tipli listeler
-   tek havuzda toplanır; aynı onaylı veriyi yapay zeka, mobil uygulama ve web sitesi kullanır.
-4. **Model bağımsız, hızlı cevap verir.** Yapay zeka erişimi OpenAI uyumlu uçlara dayanır; embedding
-   isteğe bağlıdır ve kritik yolda değildir.
+## Why
+
+- **Company knowledge is trapped in PDF, Excel and Word.** Tables break, scans are images, and the same
+  fact lives in three files that disagree.
+- **RAG without provenance hallucinates.** If an answer cannot point at a page, cell or box, nobody can
+  check it, so nobody should trust it.
+- **One-word edits reprocess the whole document.** Updating a price should not mean re-ingesting every
+  file and losing the corrections people already made.
+
+## What it does
+
+Four goals. Markers are literal: ✅ works in code today, 🚧 in progress, 🗺 planned.
+
+1. **One model for every format.** ✅ Six formats are normalized into a single canonical model, and
+   every fact keeps its evidence (page, cell, box). A person reviews it next to the source; each edit is
+   an immutable revision. ✅ Output is published as canonical JSON, Markdown, `ai.json`, chunks and ZIP.
+   🚧 Tables flattened by some PDFs are not yet extracted as real tables.
+2. **Versions without reprocessing.** 🗺 Upload a new file version and add only what changed as a new
+   revision; old revisions stay.
+3. **Collections as one shared data pool.** 🗺 Typed lists (rooms, products, services, policies) feed
+   AI, mobile apps and websites from the same accepted data.
+4. **Model-agnostic, fast answers.** ✅ A compact AI context (`context.md`) is published with every
+   revision: one workspace went from ~514k to ~128k characters with no table cell lost. 🗺 Access for any
+   OpenAI-compatible model (context packs + function-calling tools); embeddings optional, off the
+   critical path.
+
+Docgrain is not a chatbot. It produces packs, APIs and tool specs that your own assistant uses. The
+core is domain-neutral; industry schemas live outside it.
+
+## How it works
 
 ```text
 PDF / DOCX / XLSX / TXT / PNG / JPEG
-        │  yükle + doğrula
+        │  upload + validate
         ▼
-   canonical model  ◄── insan incelemesi (kaynakla yan yana, her düzenleme yeni revision)
+   canonical model  ◄── human review (next to the source, every edit = a new revision)
         │
-        ├─► yayın: JSON / Markdown / ZIP            (bugün var)
-        └─► koleksiyonlar → API / yapay zeka erişimi (henüz yok)
+        ├─► publish: JSON / Markdown / ZIP            ✅ today
+        └─► collections → API / AI access             🗺 not yet
 ```
 
-Docgrain bir sohbet botu değildir; yayın paketleri, API'ler ve araç tanımları sunar. Çekirdek
-genel amaçlıdır: sektöre özel şemalar (örn. otelcilik) çekirdeğin dışında kalır.
+## Quick start
 
-## Bugün durum
+Needs Docker, or Python 3.12 and Node for the demo.
 
-**Pre-alpha.** Aşağıdaki tablo bugün kodda çalışanı ve henüz çalışmayanı ayırır. Plan:
-[`docs/plan/ROADMAP.md`](docs/plan/ROADMAP.md).
-
-| Çalışıyor | Henüz yok |
-| --- | --- |
-| Altı format yükleme ve normalize etme (PDF, DOCX, TXT, XLSX, PNG, JPEG; basılı TR/EN OCR) | Bazı PDF'lerdeki tabloların doğru tablo olarak çıkarılması |
-| Canonical model ve kaynak kanıtı (sayfa, hücre, kutu) | Mevcut belgeye yeni dosya sürümü yükleme ve "neler değişti" görünümü |
-| Kaynakla yan yana inceleme; düzenlemeler değişmez (immutable) revision olarak kaydedilir | Koleksiyon çıkarımı (odalar, restoranlar vb. kayıtlar) |
-| Yayın: canonical JSON, Markdown, `ai.json`, chunks ve ZIP | Uygulamalar için erişim API'si |
-| `docgrain-eval` ile ölçüm (aşağıda) | Model bağımsız yapay zeka erişimi (araç tanımları, "Dene" ekranı) |
-| Demo modu (sentetik, salt okunur) | Kimlik doğrulama, çok kiracılı yetkilendirme, kuyruk kurtarma |
-
-Bazı ileri parçalar (retrieval, lifecycle, canlı kaynak) kodda vardır ama ürün yolunun
-parçası olarak sayılmaz; ilgili aşama gerektirene kadar yeniden kullanılır. Bir işin `done`
-görünmesi anlamın doğru olduğunu kanıtlamaz; ölçüm sonuçları belirleyicidir.
-
-## Hızlı başlangıç
-
-### Canlı yığın (Docker Compose)
+### Live stack (Docker Compose)
 
 ```sh
 cp .env.example .env
 docker compose up --build
 ```
 
-| Servis | Adres |
+| Service | Address |
 | --- | --- |
-| Web arayüzü | http://localhost:3000 |
-| API ve OpenAPI | http://localhost:8000/docs |
-| MinIO konsolu | http://localhost:9001 |
+| Web UI | http://localhost:3000 |
+| API and OpenAPI | http://localhost:8000/docs |
+| MinIO console | http://localhost:9001 |
 
-Compose; API, worker, web, PostgreSQL, Redis, MinIO ve Qdrant servislerini başlatır. Qdrant
-henüz bir özelliğe bağlı değildir. `.env` dosyası Git'e girmez; yerel değerlerdeki parolalar
-yalnızca geliştirme içindir. Harici Vision ve Gemini çağrıları varsayılan olarak kapalıdır.
+Compose starts the API, worker, web, PostgreSQL, Redis, MinIO and Qdrant. Qdrant is not wired to
+any feature yet. `.env` is git-ignored; local passwords are for development only. External vision and
+Gemini calls are off by default.
 
-### Demo modu (altyapısız)
+### Demo mode (no infrastructure)
 
-Sentetik, salt okunur veri gösterir; yükleme istekleri `409` döner, worker gerekmez.
+Serves synthetic, read-only data; uploads return `409`; no worker needed.
 
 ```powershell
 python -m pip install -e 'packages/domain[validation]' -e 'apps/api[dev]'
@@ -81,7 +86,7 @@ $env:USE_FIXTURES = "true"
 python -m uvicorn docgrain_api.main:app --port 8000
 ```
 
-Ayrı bir terminalde:
+In a second terminal:
 
 ```sh
 cd apps/web
@@ -89,11 +94,9 @@ npm ci
 npm run dev
 ```
 
-Çalışan modu `GET /healthz` yanıtındaki `mode` alanı (`live` veya `demo`) gösterir.
+`GET /healthz` reports the running `mode` (`live` or `demo`).
 
-### Testler
-
-Python 3.12 gerekir. CI de `pymupdf>=1.24` kurar; yoksa `pip install "pymupdf>=1.24"` ekleyin.
+### Tests
 
 ```sh
 python -m pip install -e 'packages/domain[validation]' -e 'apps/api[dev]'
@@ -102,46 +105,58 @@ ruff check apps packages tests benchmarks docs/examples
 cd apps/web && npm ci && npm run build
 ```
 
-Aynı üçü tek komutla: `make quality` (`make test`, `make lint`, `make web-build` ayrı da çalışır).
-Docling, EasyOCR, PostgreSQL ve MinIO entegrasyon testleri worker Docker imajında koşar.
+CI also installs `pymupdf>=1.24`; add it if missing. The same three steps run as `make quality`
+(`make test`, `make lint`, `make web-build` also work alone). Docling, EasyOCR, PostgreSQL and MinIO
+integration tests run inside the worker Docker image.
 
-## Ölçüm
+## Measured, not claimed
 
-Bir şey ancak ölçülünce "bitti" sayılır. `docgrain-eval`, yayımlanmış belge içeriğini altın
-sorular ve tablo gerçekleriyle belirleyici (deterministik) biçimde puanlar:
+Nothing counts as done until it is measured. `docgrain-eval` scores published document content against
+golden questions and table facts deterministically: answer accuracy, abstention on unanswerable
+questions, and citation hits. Numbers will be published per release. **The first baseline is coming**;
+none is published yet, so there are no numbers here.
 
 ```sh
 pip install -e packages/evaluation
-docgrain-eval run --questions <sorular.jsonl> --workspace ws_local \
+docgrain-eval run --questions <questions.jsonl> --workspace ws_local \
   --api http://localhost:8000 --dry-run
 ```
 
-Model çağrısı yalnızca `--dry-run` kaldırılıp bir OpenAI uyumlu uç ve anahtar verildiğinde
-yapılır. `tables` ve `compare` komutları da vardır. Ayrıntı: [`docs/plan/eval.md`](docs/plan/eval.md),
-altın veri biçimi: [`docs/plan/golden-format.md`](docs/plan/golden-format.md).
+A model is called only when you drop `--dry-run` and provide an OpenAI-compatible endpoint and key.
+`tables` and `compare` commands exist too. Details: [`docs/plan/eval.md`](docs/plan/eval.md); golden
+format: [`docs/plan/golden-format.md`](docs/plan/golden-format.md). Golden data, real documents and
+eval output (`data/`) are never committed; this repository is public.
 
-Altın veri, gerçek belgeler ve ölçüm çıktıları (`data/`) **Git'te tutulmaz**; depo herkese açıktır.
+## Built by an AI team
 
-## Nasıl geliştiriyoruz
+Docgrain is developed by a small team of AI agents with a human product owner. **Claude Code is the
+tech lead.** Codex agents named after Pokémon (Charizard, Alakazam, Porygon, Jigglypuff, Bulbasaur)
+each take one work package in their own git worktree and branch; **Chatot**, a Claude scribe, writes
+docs. Every change is reviewed, re-tested and measured by the lead before it merges. Text that looks
+like instructions inside source documents is treated as data, never as a command. Rules:
+[`AGENTS.md`](AGENTS.md); work packages: [`docs/plan/wp/`](docs/plan/wp/); tooling:
+[`scripts/team/`](scripts/team/).
 
-- **Teknik lider Claude Code**; ürün sahibi kullanıcıdır. Lider iş paketlerini yazar, inceler,
-  kabul eder ve commit/PR açar.
-- **Adlandırılmış Codex ajanları** her iş paketini kendi git worktree'sinde, kendi
-  `codex/<wp-id>` dalında yapar; Git'e yazmaz.
-- Kurallar: [`AGENTS.md`](AGENTS.md). İş paketleri: [`docs/plan/wp/`](docs/plan/wp/). Ekip ve
-  yardımcı betikler: [`docs/plan/team.json`](docs/plan/team.json), [`scripts/team/`](scripts/team/).
-- Her değişiklik incelenir ve kabul kriterleriyle ölçülür. Kaynak belgelerin içindeki yönergeye
-  benzeyen metin veri sayılır, talimat sayılmaz. Katkı notları: [`CONTRIBUTING.md`](CONTRIBUTING.md).
+## Roadmap
 
-## Mimari ve kararlar
+Full plan: [`docs/plan/ROADMAP.md`](docs/plan/ROADMAP.md).
 
-- Güncel yapı: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-- Karar kayıtları (ADR): [`docs/adr/`](docs/adr/README.md). Yol haritası ile çeliştiğinde yol haritası geçerlidir.
-- `docs/` altındaki eski aşama belgeleri (M1–M2, N1–N3: [`N2_SOURCE_STRUCTURE.md`](docs/N2_SOURCE_STRUCTURE.md),
-  [`USER_REVIEW.md`](docs/USER_REVIEW.md), [`PRE_EMBEDDING_OUTPUT.md`](docs/PRE_EMBEDDING_OUTPUT.md) vb.) tarihçe olarak durur;
-  bugünkü ürün yönü için [yol haritasına](docs/plan/ROADMAP.md) bakın.
-- Güvenlik bildirimi: [`SECURITY.md`](SECURITY.md)
+- **D1 Measurement:** golden questions and tables, `docgrain-eval` against any OpenAI-compatible model, first baseline.
+- **D2 Extraction fixes:** flattened tables become real tables; external images kept as links.
+- **D3 File versions:** upload a new version, see a diff, carry accepted edits forward.
+- **D4 Collections:** typed records with evidence, multi-document merge with visible conflicts.
+- **D5 Access layer:** read-only REST for apps, precomputed AI context, OpenAI tool specs.
+- **D6 Change propagation:** an edit republishes only the affected parts, with webhooks.
+- **D7 Simple UI:** one primary action per screen, mobile-friendly (in parallel from D3).
+
+Later: embeddings only if measurement shows a need; auth, multi-tenant isolation, queue recovery.
+
+## Contributing
+
+Small, well-tested changes are welcome; see [`CONTRIBUTING.md`](CONTRIBUTING.md). Architecture:
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md); decisions: [`docs/adr/`](docs/adr/README.md). Security
+reports: [`SECURITY.md`](SECURITY.md). Never commit API keys or real customer files.
 
 ## License
 
-MIT; bkz. [`LICENSE`](LICENSE).
+MIT. See [`LICENSE`](LICENSE).
