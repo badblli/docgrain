@@ -1,80 +1,84 @@
 # Docgrain
 
-**Belgelerden yapılandırılmış, izlenebilir ve yeniden kullanılabilir bilgi üreten document-to-knowledge engine.**
+**Turn messy company documents into versioned, source-linked knowledge your AI, apps and website can trust.**
 
-Docgrain genel amaçlıdır. LUWI gelecekteki tüketicilerinden biridir; core içinde turizm veya LUWI business logic bulunmaz.
+[![Quality](https://github.com/badblli/docgrain/actions/workflows/quality.yml/badge.svg?branch=dev)](https://github.com/badblli/docgrain/actions/workflows/quality.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Status: pre-alpha](https://img.shields.io/badge/status-pre--alpha-orange)
+![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB)
 
-## Ürün yönü ve mevcut durum
+[Türkçe](README.tr.md) · [Roadmap](docs/plan/ROADMAP.md) · [Quick start](#quick-start)
 
-Hedef mimaride **canonical structured knowledge kaynak doğrusudur**. Markdown, chunks, embeddings ve uygulamaya özel görünümler bu modelden türetilir. Orijinal belgeler ve ham extraction sonuçları kanıt olarak korunur. Core schema ile kullanıcı/domain JSON Schema ayrı kalır.
+> **Pre-alpha, honestly.** Today Docgrain turns PDF, DOCX, XLSX, TXT and PNG/JPEG files into a
+> reviewable, source-linked model and publishes it as JSON, Markdown and ZIP. The shared data pool,
+> the access API for AI and apps, and file versioning are not built yet. The table below says exactly
+> what works. It is early; stars and feedback help shape it.
 
-**Durum: pre-alpha / normalizasyon ve kaynak doğruluğu kabulü.** Altı format için ortak canonical model ve JSON/ZIP yolu; N1 PNG/JPEG + yerel basılı TR/EN OCR ve N2 native yapı/hücre kanıtı uygulanmıştır. Yeni N2 profili canonical 0.6.0 / `ai.json` 1.2.0 üretir; tarihsel schema/output byte'ları korunur. PDF tablo/sütun karşılaştırması, DOCX gerçek part/path/header/footer/drawing ve XLSX sayı biçimi/native chart facts kaynak kanıtı taşır. Çelişkiler ve görsel anlam hâlâ inceleme gerektirir. N3 yerel görsel envanteri/sınıflandırma önerileri ve seçilmiş OCR uygulanmıştır; görsel anlam için yerel model kabulü, N4 reconciliation ve N5 corpus kapıları açık; embedding en son. M2a–M2g backend foundations korunur; ingestion otomatik index üretmez. [N2 uygulaması ve sınırları](docs/N2_SOURCE_STRUCTURE.md), [N1](docs/N1_IMAGE_OCR.md), [scope/teknoloji kararı](docs/adr/0017-normalization-first-scope.md) ve [ADR dizini](docs/adr/README.md).
+## Why
 
-| Alan | Bugünkü implementasyon |
-| --- | --- |
-| Ingestion | PDF/DOCX/TXT/XLSX/PNG/JPEG kaydı → API upload proxy → MinIO → confirmation → Redis → worker |
-| Rendering | PyMuPDF ile PDF sayfaları, 200 DPI PNG |
-| Extraction | Canonical: Docling + pinned local EasyOCR TR/EN CPU; TXT deterministic, XLSX native facts. Seçilmiş görsel OCR doğrudan yerel Reader kullanır. Harici Vision varsayılan kapalı; key tek başına worker çağrısını açmaz |
-| Çıktılar | Otomatik canonical JSON/Markdown, ortak `ai.json` + schema, chunks ve checksum manifest; verified binary ekleriyle ZIP. Legacy extraction dosyaları ayrı korunur |
-| Metadata | PostgreSQL document/version/job kayıtları |
-| Kısmi hata | Bazı extraction hataları page failure olarak kaydedilir; bu recovery garantisi değildir |
-| Console | Varsayılan AI çıktısı: okunabilir içerik, exact tablolar, resim/evidence, eksikler ve JSON/ZIP. Canonical Inspector ve açık demo modu |
-| Canonical structure | Docling layout/image/OCR; native PDF hücre kontrolü, DOCX OOXML parts ve XLSX cells/charts; deterministik TXT; gerçek source evidence/EXIF geometry ve ayrı canonical PostgreSQL revision |
-| Entities | Dış schema kaydı, explicit candidate publication, leaf-level JSON Pointer evidence, extracted → needs_review → accepted/rejected ve ayrı JSON retrieval projection; otomatik semantik extraction henüz yok |
-| Canonical chunks | Bölüm/list context, lossless text slices, atomik table rows ve accepted entity JSON; explicit revision-scoped API, karakter bütçesi ve kaynak kanıtları |
-| Incremental lifecycle | Exact canonical JSON diff, lineage invalidation candidates, selective embedding checkpoints, immutable PostgreSQL generations ve atomic head/CAS; explicit injected adapter, boş generation ile removal ve full rebuild |
-| Retrieval | Tek scoped API; accepted JSON exact filters, precomputed direct context, BM25/cosine/RRF; conditional phrase baseline veya explicit reranker adapter. Vektörler caller-supplied; production semantic model seçilmiş değil |
-| Evaluation | Golden source/evidence labels, recall/MRR/nDCG, no-answer checks; tiny/small/medium/large cold/warm/concurrent HTTP p50/p95/p99. Production SLO belirlenmedi |
-| Live source foundation | Explicit filesystem/versioned object scan → PostgreSQL cursor/CAS/outbox → idempotent callback/ack; source deletion tüm current retrieval yollarını kapatır, history korunur. Pathway spike sonrası runtime dependency eklenmedi |
-| Henüz yok | Vision reconciliation/OCR quality routing, otomatik semantic extraction/index job stage, live model/Qdrant adapter, adaptive router/knowledge profile, registered background connectors/webhook receiver, Structured Knowledge Patch, stage retry, ingestion crash recovery |
+- **Company knowledge is trapped in PDF, Excel and Word.** Tables break, scans are images, and the same
+  fact lives in three files that disagree.
+- **RAG without provenance hallucinates.** If an answer cannot point at a page, cell or box, nobody can
+  check it, so nobody should trust it.
+- **One-word edits reprocess the whole document.** Updating a price should not mean re-ingesting every
+  file and losing the corrections people already made.
 
-`document.json` içeriği kullanılan parser'a bağlıdır; canonical knowledge sözleşmesi değildir. `pages.json` yalnızca render boyutlarını içerir; processing manifest değildir. Job `done`, mevcut extraction yolunun tamamlandığını ifade eder; hedef pipeline'ın tamamlandığı anlamına gelmez.
+## What it does
 
-## Sabitlenen ilk format scope'u
+Four goals. Markers are literal: ✅ works in code today, 🚧 in progress, 🗺 planned.
 
-**PDF, DOCX, TXT, XLSX, PNG, JPEG (.jpg/.jpeg).** API MIME/extension/magic ve image decode doğrular. Desteklenmeyen veya uyuşmayan biçimler `415`, bozuk destekli içerik `422` döner. PPTX, HTML, legacy .doc/.xls ve animated images scope dışında kalır. İlk OCR profili basılı Türkçe/İngilizcedir; bu scope bütün anlamın kusursuz çıkarıldığı anlamına gelmez.
+1. **One model for every format.** ✅ Six formats are normalized into a single canonical model, and
+   every fact keeps its evidence (page, cell, box). A person reviews it next to the source; each edit is
+   an immutable revision. ✅ Output is published as canonical JSON, Markdown, `ai.json`, chunks and ZIP.
+   🚧 Tables flattened by some PDFs are not yet extracted as real tables.
+2. **Versions without reprocessing.** 🗺 Upload a new file version and add only what changed as a new
+   revision; old revisions stay.
+3. **Collections as one shared data pool.** 🗺 Typed lists (rooms, products, services, policies) feed
+   AI, mobile apps and websites from the same accepted data.
+4. **Model-agnostic, fast answers.** ✅ A compact AI context (`context.md`) is published with every
+   revision: one workspace went from ~514k to ~128k characters with no table cell lost. 🗺 Access for any
+   OpenAI-compatible model (context packs + function-calling tools); embeddings optional, off the
+   critical path.
 
-## Hedef pipeline — sonraki aşamalar
+Docgrain is not a chatbot. It produces packs, APIs and tool specs that your own assistant uses. The
+core is domain-neutral; industry schemas live outside it.
+
+## How it works
 
 ```text
-source → Docling structural parsing → quality/routing → Vision enrichment
-       → reconciliation/normalization → core + optional domain schema validation
-       → canonical knowledge → Markdown / assets / chunks / application views
-                             → optional embeddings / Qdrant
+PDF / DOCX / XLSX / TXT / PNG / JPEG
+        │  upload + validate
+        ▼
+   canonical model  ◄── human review (next to the source, every edit = a new revision)
+        │
+        ├─► publish: JSON / Markdown / ZIP            ✅ today
+        └─► collections → API / AI access             🗺 not yet
 ```
 
-M1b canonical structural yolunda Docling PDF/DOCX/XLSX için ana parser, TXT için deterministik decoder'dır. Mevcut PDF legacy JSON/Markdown akışı Gemini-or-Docling olarak kalır; Gemini sonucu canonical snapshot'a eklenmez. Güncel dependency sırası identity/lineage → entities → chunks → diff/invalidation → retrieval → evaluation → live-source spike tamamlandı; selective Vision/reconciliation ayrı capability track'tir. Inspector/image ve M2 foundations `codex/canonical-ai-output-integration` üzerinde birleşip yerelde deploy edildi. İnceleme worker'ında Gemini devre dışıdır; `.env` korunur.
+## Quick start
 
-Yayımlanan artifact seti: `canonical.json`, `canonical.md`, `manifest.json`, `chunks.jsonl`, `ai.json`, `ai.schema.json`; ZIP'te binary `assets/` ekleri bulunur. Versioned storage yolu `knowledge/<document>/<canonical_revision>/<projection_revision>/<file>`; [salt okunur çıktı API'si](docs/PRE_EMBEDDING_OUTPUT.md) yalnız stored byte'ları sunar. Mevcut raw artifact path'leri korunur. Embeddings ve Qdrant opsiyoneldir.
+Needs Docker, or Python 3.12 and Node for the demo.
 
-M1 contract'ı `packages/domain/docgrain_domain/canonical/` altındadır. Eski 0.1.0 JSON Schema korunur; M1b `TableCell` genişlemesini 0.2.0 artifact'iyle sürümler. Core ve domain schema ayrıdır. `SourceVersion` ve `KnowledgeRevision` satırları immutable, revision'lar append-only ve latest/approved head ayrıdır. Mevcut upload key'i overwrite edilebilir; worker yalnız SHA-256 doğrulaması ve gerçek MinIO object `versionId` ile canonical persistence yapar. Version ID olmayan eski kaynaklar gate dışında kalır. [ADR 0005](docs/adr/0005-canonical-knowledge-foundation.md) ve [ADR 0006](docs/adr/0006-m1b-structural-parsing.md) ayrıntıları açıklar.
-
-## Live ve demo modları
-
-- Varsayılan `USE_FIXTURES=false`: live PostgreSQL ve MinIO kayıtları. Fixture fallback yoktur.
-- `USE_FIXTURES=true`: salt okunur sentetik demo. Upload/register/confirm `409` döndürür; gerçek storage/queue kullanılmaz.
-- `/healthz` içindeki `mode` ve HTTP `X-Docgrain-Mode` header'ı `live` veya `demo` değerini taşır.
-- Console modu API'den alır; API erişilemiyorsa hata gösterir. Demo verisiyle devam etmez.
-- Demo chunk, similarity ve ileri pipeline örnekleri simülasyondur. Gerçek embedding veya extraction sonucu değildir.
-- Stage retry her iki modda `501` döndürür; herhangi bir iş planlamaz.
-- Legacy live chunk lookup/neighbors ve boundary analysis `501` döndürür. Canonical chunk üretim/okuma için [revision-scoped API](docs/M2C_CHUNKS.md) kullanılır. Legacy live version listeleri bu chunk revision'larını temsil etmez.
-- Live version diff yalnızca aynı dokümana ait sürümlerin sayaç farkıdır; semantic diff veya patch değildir.
-- Provider envanteri bağlantı testi yapmaz. `healthy: null` kontrol edilmedi, `false` yapılandırılmadı/implement edilmedi anlamındadır. Live page `confidence: null` ölçülmedi demektir.
-
-## Yerel geliştirme
-
-Mevcut live servis profili:
+### Live stack (Docker Compose)
 
 ```sh
 cp .env.example .env
 docker compose up --build
 ```
 
-[Console](http://localhost:3000), [API/OpenAPI](http://localhost:8000/docs), [MinIO](http://localhost:9001).
+| Service | Address |
+| --- | --- |
+| Web UI | http://localhost:3000 |
+| API and OpenAPI | http://localhost:8000/docs |
+| MinIO console | http://localhost:9001 |
 
-Compose; API, worker, web, PostgreSQL, Redis, MinIO ve henüz kullanılmayan Qdrant servisini içerir. MinIO bucket versioning yeni upload'lar için etkinleştirilir. Qdrant container'ının çalışması indexing özelliği sağlamaz.
+Compose starts the API, worker, web, PostgreSQL, Redis, MinIO and Qdrant. Qdrant is not wired to
+any feature yet. `.env` is git-ignored; local passwords are for development only. External vision and
+Gemini calls are off by default.
 
-Altyapısız demo API (PowerShell):
+### Demo mode (no infrastructure)
+
+Serves synthetic, read-only data; uploads return `409`; no worker needed.
 
 ```powershell
 python -m pip install -e 'packages/domain[validation]' -e 'apps/api[dev]'
@@ -82,51 +86,77 @@ $env:USE_FIXTURES = "true"
 python -m uvicorn docgrain_api.main:app --port 8000
 ```
 
-Ayrı terminalde:
+In a second terminal:
 
-```powershell
+```sh
 cd apps/web
 npm ci
 npm run dev
 ```
 
-API doğrudan çalıştırıldığında `.env` dosyasını otomatik yüklemez. Live API için gerekli ortam değişkenleri ayrıca sağlanmalıdır. Demo için worker başlatmayın. `NEXT_PUBLIC_API_URL` web bundle oluşturulurken belirlenir; mevcut Docker build varsayılan localhost adresini kullanır.
+`GET /healthz` reports the running `mode` (`live` or `demo`).
 
-Hedef `docgrain ingest` / `docgrain index` CLI henüz yoktur. Basit local conversion'ın altyapısız çalışması sonraki milestone'ların hedefidir.
-
-## Doğrulama
+### Tests
 
 ```sh
 python -m pip install -e 'packages/domain[validation]' -e 'apps/api[dev]'
 python -m pytest -q
-ruff check apps packages tests
-cd apps/web
-npm ci
-npm run build
+ruff check apps packages tests benchmarks docs/examples
+cd apps/web && npm ci && npm run build
 ```
 
-`pytest.ini` API, worker ve domain source path'lerini tanımlar. Unit testleri gerçek Docling modeli çalıştırmaz. M1 persistence integration testleri yalnızca `DOCGRAIN_M1_TEST_DATABASE_URL` ile etkinleşir ve ayrı, geçici PostgreSQL schema kullanır. M1b sentetik corpus generator ve gerçek Docling container integration testleri `tests/fixtures/structural/` ile `tests/integration/test_m1b_docling.py` altındadır.
+CI also installs `pymupdf>=1.24`; add it if missing. The same three steps run as `make quality`
+(`make test`, `make lint`, `make web-build` also work alone). Docling, EasyOCR, PostgreSQL and MinIO
+integration tests run inside the worker Docker image.
 
-## Bilinen sınırlar
+## Measured, not claimed
 
-Redis list dispatch acknowledgment/lease/recovery sağlamaz; worker çökmesi işi kaybettirebilir veya `running` bırakabilir. Stage özetleri işlem sonunda yazılır; ayrıntılı stage timing/progress yoktur. Önceki sürümlerde kaydedilmiş stage metadatası M0 tarafından geriye dönük düzeltilmez.
+Nothing counts as done until it is measured. `docgrain-eval` scores published document content against
+golden questions and table facts deterministically: answer accuracy, abstention on unanswerable
+questions, and citation hits. Numbers will be published per release. **The first baseline is coming**;
+none is published yet, so there are no numbers here.
 
-Deduplication, mevcut dokümana yeni revision yükleme, source key write-once garantisi ve tenant authorization henüz yoktur. Source SHA/version doğrulaması ve output paketinin atomic metadata publication'ı vardır; bu distributed ingestion recovery garantisi değildir. Source URI ingestion `501` ile reddedilir. Yeni kayıtların source URI'si gerçek upload key ve configured bucket ile eşleşir; eski kayıtlar migrate edilmez.
+```sh
+pip install -e packages/evaluation
+docgrain-eval run --questions <questions.jsonl> --workspace ws_local \
+  --api http://localhost:8000 --dry-run
+```
 
-Compose'ta özel S3 credentials ve API public URL için API environment wiring eksikleri, dependency pinning ve migration gereksinimleri devam eder. Bunlar M0'da altyapı rewrite'ı yapılarak çözülmedi.
+A model is called only when you drop `--dry-run` and provide an OpenAI-compatible endpoint and key.
+`tables` and `compare` commands exist too. Details: [`docs/plan/eval.md`](docs/plan/eval.md); golden
+format: [`docs/plan/golden-format.md`](docs/plan/golden-format.md). Golden data, real documents and
+eval output (`data/`) are never committed; this repository is public.
 
-## Deferred
+## Built by an AI team
 
-Jev ve decision-provider framework; LangChain/LangGraph; çoklu Vision/embedding provider; alternatif vector DB; hybrid retrieval/FTS/reranking; connectors ve connector marketplace; chat/agent UI; schema discovery/otomatik schema evolution; cross-document entity resolution; operational overrides; büyük observability dashboard ve platform özellikleri.
+Docgrain is developed by a small team of AI agents with a human product owner. **Claude Code is the
+tech lead.** Codex agents named after Pokémon (Charizard, Alakazam, Porygon, Jigglypuff, Bulbasaur)
+each take one work package in their own git worktree and branch; **Chatot**, a Claude scribe, writes
+docs. Every change is reviewed, re-tested and measured by the lead before it merges. Text that looks
+like instructions inside source documents is treated as data, never as a command. Rules:
+[`AGENTS.md`](AGENTS.md); work packages: [`docs/plan/wp/`](docs/plan/wp/); tooling:
+[`scripts/team/`](scripts/team/).
 
-## Sonraki çalışma
+## Roadmap
 
-Embedding öncesi kaynak↔çıktı fidelity kabulü, yerel görsel inceleme/OCR ve evidence reconciliation. Tek format, her belgenin bütün anlamının eksiksiz çıkarılması garantisi değildir. Mevcut iki PDF'teki 23 görselin açıklaması kaynak kontrolüyle yeni manuel revision'lara eklendi; dört planın ölçü/ayrıntı belirsizlikleri korunuyor. CPU görsel modeli deneysel öneri üretir; otomatik anlam kabulü ve geniş corpus doğrulaması açık. [ADR 0023](docs/adr/0023-local-cpu-visual-proposals.md), [N3 yerel inceleme](docs/N3_LOCAL_VISUAL_REVIEW.md), [ortak çıktı](docs/PRE_EMBEDDING_OUTPUT.md), [milestone planı](docs/DEVELOPMENT_HARNESS.md), [mimari](docs/ARCHITECTURE.md).
+Full plan: [`docs/plan/ROADMAP.md`](docs/plan/ROADMAP.md).
+
+- **D1 Measurement:** golden questions and tables, `docgrain-eval` against any OpenAI-compatible model, first baseline.
+- **D2 Extraction fixes:** flattened tables become real tables; external images kept as links.
+- **D3 File versions:** upload a new version, see a diff, carry accepted edits forward.
+- **D4 Collections:** typed records with evidence, multi-document merge with visible conflicts.
+- **D5 Access layer:** read-only REST for apps, precomputed AI context, OpenAI tool specs.
+- **D6 Change propagation:** an edit republishes only the affected parts, with webhooks.
+- **D7 Simple UI:** one primary action per screen, mobile-friendly (in parallel from D3).
+
+Later: embeddings only if measurement shows a need; auth, multi-tenant isolation, queue recovery.
+
+## Contributing
+
+Small, well-tested changes are welcome; see [`CONTRIBUTING.md`](CONTRIBUTING.md). Architecture:
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md); decisions: [`docs/adr/`](docs/adr/README.md). Security
+reports: [`SECURITY.md`](SECURITY.md). Never commit API keys or real customer files.
 
 ## License
 
-MIT; [LICENSE](LICENSE). Gizli belgeler, credential'lar ve generated artifact'lar Git'e eklenmez.
-
-## Belgeyi incele ve revision kaydet
-
-Varsayılan belge ekranı kaynakla yan yana okunabilir metin, tablo hücreleri, görsel açıklamaları, açık eksikler ve canonical revision geçmişi sunar. Kaynakla kontrol edilen sınırlı alanlar önizleme/CAS ile yeni immutable revision olarak kaydedilir; eski kaynak/paketler korunur. Seçili revision için açık onaylı deneysel Gemini Q&A ayrıca erişilebilir. Embedding üretilmez. Kullanım ve sınırlar: [USER_REVIEW](docs/USER_REVIEW.md).
+MIT. See [`LICENSE`](LICENSE).
