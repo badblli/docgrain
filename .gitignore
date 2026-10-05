@@ -38,3 +38,6 @@ redis_data/
 .DS_Store
 Thumbs.db
 .vscode/
+
+# Team harness run logs (lead)
+.lead/

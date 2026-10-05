@@ -1,0 +1,20 @@
+{
+  "lead": { "id": "claude", "name": "Claude", "color": "#d97757", "role": "Tech lead · plan, inceleme, commit/PR" },
+  "agents": [
+    { "id": "ada", "name": "Ada", "color": "#22d3ee", "role": "Codex · backend / ingestion" },
+    { "id": "bora", "name": "Bora", "color": "#facc15", "role": "Codex · ölçüm / veri" },
+    { "id": "cem", "name": "Cem", "color": "#4ade80", "role": "Codex · API / erişim" },
+    { "id": "duru", "name": "Duru", "color": "#f472b6", "role": "Codex · arayüz" },
+    { "id": "ece", "name": "Ece", "color": "#a78bfa", "role": "Codex · test / kalite" }
+  ],
+  "steps": [
+    { "id": "assigned", "label": "Atandı" },
+    { "id": "working", "label": "Çalışıyor" },
+    { "id": "reported", "label": "Rapor verdi" },
+    { "id": "reviewing", "label": "Claude inceliyor" },
+    { "id": "changes_requested", "label": "Düzeltme istendi" },
+    { "id": "approved", "label": "Onaylandı" },
+    { "id": "pr_open", "label": "PR açık" },
+    { "id": "merged", "label": "Birleşti" }
+  ]
+}
