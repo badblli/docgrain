@@ -1,6 +1,7 @@
 # <wp-id> — <title>
 
 - Özet: <kullanıcının anlayacağı tek cümle, Türkçe>
+- Model: hafif | standart | derin | zirve (docs/plan/models.json; zirve needs a reason)
 - Phase: D<n>
 - Branch: `codex/<wp-id>` (base: `origin/dev` unless stated)
 - Depends on: <wp-ids or none>

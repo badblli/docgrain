@@ -6,7 +6,15 @@
 # Resumes the agent's Codex thread from the latest run (same worktree, same sandbox), logs both
 # sides in .lead/chat/<wp-id>.jsonl and moves the WP to "working", then "reported".
 set -euo pipefail
-source "$(dirname "$0")/lib.sh"
+# Bash reads a script while running it; run from a private copy so the lead can edit the team
+# scripts while agents are working.
+if [[ -z "${TEAM_SCRIPT_DIR:-}" ]]; then
+  export TEAM_SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+  copy="$(mktemp)"
+  cp "$0" "$copy"
+  exec bash "$copy" "$@"
+fi
+source "$TEAM_SCRIPT_DIR/lib.sh"
 
 wp="${1:?usage: tell.sh <wp-id> \"<message>\"}"
 message="${2:?message required}"

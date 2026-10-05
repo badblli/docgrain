@@ -1,6 +1,7 @@
 # wp11-golden-set — Golden questions and table facts from the six live documents
 
 - Özet: altı belgenin orijinalinden 60+ soru ve 40+ tablo hücresinden oluşan cevap anahtarını hazırla (Docgrain çıktısına bakmadan).
+- Model: derin
 - Phase: D1
 - Branch: `codex/wp11-golden-set` (base: `origin/codex/wp00-team-harness`)
 - Depends on: wp00
