@@ -226,7 +226,10 @@ existing retry/fallback policy and a separate schema containing only a
 user data; system instructions never include source text. Model answers remain
 proposals, including `same`. Numeric conflicts cannot be overridden by a model.
 
-Every same-type pair across different documents is recorded in
+Before scoring, same-type cross-document pairs are blocked by shared distinguishing
+name tokens, identical normalized names (including i18n names), agreeing numeric
+signatures, or equal contact values. Generic type words and position alone do not
+admit candidates. Only retained pairs are recorded in
 `match_proposals.json` with snapshot-bound source references, score, signals,
 `decision` and `review_state: proposed`. Scores are heuristic support, not
 probabilities. Signals compare m², capacity, times, price amounts and other numeric
@@ -245,15 +248,43 @@ its source name, reference and flags. Its per-type counts are **projected counts
 if the same proposals are approved**, not proof of review or a merge result.
 Both artifacts contain source data and must stay outside Git.
 
+`candidate_counts` reports possible, scored and pruned pairs per collection;
+`review_counts` and `review_proposal_ids` list accepted and pending reviews.
+To enable the lead's deterministic identity rules explicitly:
+
+```sh
+docgrain-records match --records data/records --out data/matches --auto-accept strong
+docgrain-records merge --records data/records \
+  --matches data/matches/match_proposals.json --out data/merged --auto-accept strong
+```
+
+`rule:identical-name` accepts identical NFKC/whitespace-normalized, case-folded,
+transliterated primary names of one type. Different field values remain visible
+conflicts. `rule:name-and-numbers` requires distinguishing name token Jaccard
+similarity of at least 0.75 and agreeing numeric signatures, with no numeric,
+category or source conflicts. Identity collisions, competing names and inconsistent
+components remain pending. Numeric-only matches and optional model answers stay
+proposals; an `unsure` model answer does not grant acceptance. Saved signals are
+recomputed from input records before automatic acceptance. Rule reviews include
+reviewer/reason and approve identity only; field acceptance remains separate.
+
+To withdraw an accepted link, change its review state to `rejected` with reviewer
+and reason and merge a new revision. If accepted paths still connect its endpoints,
+withdraw those paths too. Historical revisions stay immutable. One detached source
+partition retains the established ID; other partitions receive stable new IDs.
+Repeating the request preserves those IDs; reacceptance uses explicit ID decisions.
+`merge` saves its effective `match_proposals.json` and `merge_summary.json`, including
+actual per-collection record counts, alongside its collection arrays.
+
 To explicitly approve a `same` proposal, set `review_state` to `accepted` and add
 nonempty `reviewer` and `reason` strings. A rejected review also requires these
 strings. An `unsure` or `different` suggestion cannot be accepted as an alias.
 The reviewer can explicitly change the decision after examining its evidence;
 this is a review action, never a model/default behavior. Stale snapshot references,
 duplicate proposal IDs, accepted many-to-one components and conflicting transitive
-links fail without changing the merge store. Rejected or uncertain pairs veto
-wp42's weak normalized-name matching; explicit source identity still retains
-already established records and their visible fact alternatives.
+links fail without changing the merge store. Every unaccepted pair vetoes
+wp42's weak normalized-name matching. Withdrawn links also split historical identity
+anchors in the new revision; previous revisions remain queryable.
 
 `merge` keeps wp42's original quote verification: beside **each** `records.json`
 it requires the actual pinned `context.md` and a `source.json` sidecar:
@@ -295,3 +326,42 @@ not published accepted data. Repeating an unchanged request returns its immutabl
 revision; use `--revision` to supply an explicit revision ID or let the CLI derive
 one from the full input. Retain the output store between runs and keep all outputs
 private.
+
+## Offline end-to-end measurement (WP47)
+
+`docs/examples/score_record_merge.py` uses the read-only WP45 `record_golden`
+scorer on saved extraction and merge artifacts. Add the evaluation package
+containing that module to `PYTHONPATH`; no model, API or network request occurs.
+
+```sh
+python docs/examples/score_record_merge.py --records data/records \
+  --merged data/merged/merge_revision.json \
+  --manifest /private/golden/manifest.frozen.v2.json \
+  --golden /private/golden/fields.jsonl --questions /private/golden/questions.jsonl \
+  --out data/measurement
+```
+
+It verifies the frozen source hashes and key coverage, then writes per-document,
+aggregate extraction, merged primary and merged source-language reports. A source
+without annotated fields has no accuracy denominator. Golden files are never
+written; before/after key hashes and input receipts are saved. Output directories
+must be new to preserve earlier measurements. The sibling `merge_state.json` pins
+the measured export and supplies actual source identity mappings (`--state` can
+specify another path).
+
+Merged views replicate a canonical record for each contributing document because
+WP45's key is document-scoped. Primary views use actual EN-first display values;
+source-language views use existing candidates in the document's declared language,
+falling back to the display primary if that language is missing. No translations
+are generated. Multiple unresolved candidates in the selected language leave the
+primary absent and preserve conflict candidates. Source identities supply names
+only for WP45's identity alignment; they never fill an omitted display value.
+Version pins are retained in the measured merge artifact; the scorer's strict
+three-field Evidence shape receives the document, locator and quote only.
+
+Monolingual non-English goldens can flag a correct English display value as a
+language/value mismatch. Both views are reported so that limitation stays visible.
+Neither score measures distinct canonical entities or certifies unannotated extra
+fields. Inspect `report.json` for omissions, wrong values, conflicts and alignment
+ambiguities. The helper's successful exit means measurement completed; its
+`d4_target.measurement_met` remains false when quality misses the target.
