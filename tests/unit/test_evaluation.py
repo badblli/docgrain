@@ -1,12 +1,18 @@
 import json
+from pathlib import Path
 
 import httpx
-from docgrain_eval.api import PublishedAPI, build_context
+from docgrain_domain.canonical.ai_output import context_projection, project_ai
+from docgrain_domain.canonical.chunking import ChunkingSpec, derive_chunk_set
+from docgrain_domain.canonical.models import CanonicalKnowledgeSnapshot
+from docgrain_eval.api import PublishedAPI, build_context, build_context_details
 from docgrain_eval.cli import main
 from docgrain_eval.golden import Question, TableFact
 from docgrain_eval.model import ChatClient
 from docgrain_eval.scoring import citation, correct, normalize, number, parse_json
 from docgrain_eval.tables import check_fact
+
+FIXTURE = Path(__file__).parents[1] / "fixtures" / "canonical" / "generic-pdf.json"
 
 
 def question(answer_type="text", expected="İskele", **overrides):
@@ -86,6 +92,66 @@ def test_context_and_dry_run_no_model(tmp_path, capsys, monkeypatch):
     assert main(["run", "--questions", str(path), "--workspace", "ws_local", "--api",
                  "https://example.test", "--dry-run"]) == 0
     assert "context:" in capsys.readouterr().out
+
+
+def compact_snapshot():
+    return CanonicalKnowledgeSnapshot.model_validate_json(FIXTURE.read_text(encoding="utf-8"))
+
+
+def test_compact_context_uses_published_file():
+    def handler(request):
+        if request.url.path == "/v1/documents":
+            return httpx.Response(200, json=[{"document": {"id": "d1", "filename": "a.txt",
+                                                              "workspace_id": "ws_local"}}])
+        if request.url.path.endswith("/knowledge"):
+            return httpx.Response(200, json={"latest_revision_id": "r1", "snapshot": {}})
+        assert request.url.path.endswith("/outputs/context.md")
+        return httpx.Response(200, text="published compact")
+
+    api = PublishedAPI("https://example.test", httpx.Client(
+        base_url="https://example.test", transport=httpx.MockTransport(handler)))
+    context, revisions, sources = build_context_details(api, "ws_local", "compact")
+    assert "published compact" in context
+    assert revisions == {"d1": "r1"}
+    assert sources == {"d1": "published_context.md"}
+
+
+def test_compact_context_404_projects_revision_snapshot():
+    snapshot = compact_snapshot()
+    expected = context_projection(project_ai(snapshot, derive_chunk_set(snapshot, ChunkingSpec())))
+
+    def handler(request):
+        if request.url.path == "/v1/documents":
+            return httpx.Response(200, json=[{"document": {"id": snapshot.document_id,
+                "filename": snapshot.source_version.filename, "workspace_id": snapshot.workspace_id}}])
+        if request.url.path.endswith("/knowledge"):
+            return httpx.Response(200, json={"latest_revision_id": snapshot.knowledge_revision.id,
+                "snapshot": snapshot.model_dump(mode="json")})
+        return httpx.Response(404)
+
+    api = PublishedAPI("https://example.test", httpx.Client(
+        base_url="https://example.test", transport=httpx.MockTransport(handler)))
+    context, _, sources = build_context_details(api, snapshot.workspace_id, "compact")
+    assert expected in context
+    assert sources == {snapshot.document_id: "local_projection"}
+
+
+def test_canonical_context_default_unchanged():
+    def handler(request):
+        if request.url.path == "/v1/documents":
+            return httpx.Response(200, json=[{"document": {"id": "d1", "filename": "a.txt",
+                                                              "workspace_id": "ws_local"}}])
+        if request.url.path.endswith("/knowledge"):
+            return httpx.Response(200, json={"latest_revision_id": "r1"})
+        assert request.url.path.endswith("/outputs/canonical.md")
+        return httpx.Response(200, text="legacy canonical")
+
+    api = PublishedAPI("https://example.test", httpx.Client(
+        base_url="https://example.test", transport=httpx.MockTransport(handler)))
+    default_context, revisions = build_context(api, "ws_local")
+    explicit_context, _, sources = build_context_details(api, "ws_local", "canonical")
+    assert default_context == explicit_context and "legacy canonical" in default_context
+    assert revisions == {"d1": "r1"} and sources == {"d1": "published_canonical.md"}
 
 
 def test_table_found_wrong_missing():

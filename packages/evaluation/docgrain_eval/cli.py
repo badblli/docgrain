@@ -12,7 +12,7 @@ from pathlib import Path
 
 import httpx
 
-from .api import PublishedAPI, build_context
+from .api import PublishedAPI, build_context_details
 from .golden import Question, TableFact, load_jsonl
 from .model import ChatClient
 from .scoring import citation, correct
@@ -53,7 +53,8 @@ def _percentile(values: list[float], fraction: float) -> float | None:
     return ordered[lower] + (ordered[min(lower + 1, len(ordered) - 1)] - ordered[lower]) * (position - lower)
 
 
-def summarize(rows: list[dict], context: str, revisions: dict, model: str | None) -> dict:
+def summarize(rows: list[dict], context: str, revisions: dict, model: str | None,
+              context_mode: str = "canonical", context_sources: dict | None = None) -> dict:
     predicted = [row for row in rows if row["abstained"]]
     actual = [row for row in rows if row["answer_type"] == "unanswerable"]
     true_positive = sum(row["answer_type"] == "unanswerable" for row in predicted)
@@ -61,7 +62,8 @@ def summarize(rows: list[dict], context: str, revisions: dict, model: str | None
     pages = [row for row in rows if row["page_hit"] is not None]
     latencies = [row["latency_seconds"] for row in rows]
     return {
-        "model": model, "revisions": revisions,
+        "model": model, "revisions": revisions, "context_mode": context_mode,
+        "context_sources": context_sources or {},
         "context_characters": len(context), "context_tokens_approx": len(context) // 4,
         "overall": _rate(rows), "per_category": _groups(rows, "categories"),
         "per_difficulty": _groups(rows, "difficulties"),
@@ -105,13 +107,14 @@ def run(args):
         raise ValueError("question workspace differs from --workspace")
     api = PublishedAPI(args.api)
     try:
-        context, revisions = build_context(api, args.workspace)
+        context, revisions, context_sources = build_context_details(api, args.workspace, args.context)
     finally:
         api.close()
     print(f"context: {len(context)} characters, ~{len(context) // 4} tokens; "
           f"{len(revisions)} revisions")
     if args.dry_run:
         print("revisions: " + json.dumps(revisions, ensure_ascii=False))
+        print("context_sources: " + json.dumps(context_sources, ensure_ascii=False))
         return
     if not args.base_url or not args.model or not args.api_key_env:
         raise ValueError("model run requires --base-url, --model and --api-key-env")
@@ -126,7 +129,7 @@ def run(args):
         chat.close()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    summary = summarize(rows, context, revisions, args.model)
+    summary = summarize(rows, context, revisions, args.model, args.context, context_sources)
     _write_jsonl(out / "results.jsonl", rows)
     _write_json(out / "summary.json", summary)
     def group_lines(key):
@@ -137,6 +140,8 @@ def run(args):
 
     (out / "summary.md").write_text(
         f"# Değerlendirme\n\nModel: {args.model}\n\n"
+        f"Bağlam biçimi: {summary['context_mode']}\n\n"
+        f"Bağlam kaynakları: {summary['context_sources']}\n\n"
         f"Doğruluk: {summary['overall']['correct']}/{summary['overall']['count']} "
         f"({summary['overall']['accuracy']:.1%})\n\n"
         f"## Kategori\n\n{group_lines('per_category')}\n\n"
@@ -200,6 +205,7 @@ def main(argv=None):
     runner.add_argument("--workspace", required=True)
     runner.add_argument("--api", required=True)
     runner.add_argument("--mode", choices=["direct_context"], default="direct_context")
+    runner.add_argument("--context", choices=["canonical", "compact"], default="canonical")
     runner.add_argument("--base-url")
     runner.add_argument("--model")
     runner.add_argument("--api-key-env")
