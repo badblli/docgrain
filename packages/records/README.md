@@ -13,7 +13,8 @@ docgrain-records extract --document doc_example --api http://localhost:8000 --la
 ```
 
 No model request occurs without an explicitly supplied endpoint, model and key.
-Dry-run reads the API but prints only the prompt size, including the JSON schema;
+Dry-run reads the API but prints only the aggregate prompt size and planned request
+count, including the JSON schemas (excluding retries);
 the token count is an estimate, not provider tokenization. Unknown document language
 uses `und`; the prompt asks the model to identify source languages without translating.
 Published `context.md` is preferred; on 404, the package computes the same deterministic
@@ -25,8 +26,43 @@ request, and `source.json` from the same canonical snapshot. `source.json` pins
 the source file's `content_sha256`, and extraction `lang`. Missing or inconsistent
 source pins stop extraction before a model request. Dry-run creates no files.
 
+Extraction processes heading/block ranges targeting 8,000 characters (usually
+6,000–10,000). Original `§N` keys and the corresponding canonical object mappings
+stay intact. Oversized blocks continue under their original key; long table
+continuations retain their source column headers. Plain contexts split at line/word
+boundaries. Each section gets a general pass plus separate Policy, ServicePrice,
+Activity and Facility passes that explicitly enumerate every stated list/table item.
+Focused passes use a schema restricted to their collection. Every quotation is
+verified against the **section and original full cited block** before the existing same-document
+type/name collapse combines results, translations, Evidence and conflicts.
+
+At most three requests run concurrently by default. Use `--concurrency 1` through
+`4`, `--section-chars 8000` (allowed 1,000–10,000), and `--retries 3` to control
+latency/cost; `--no-focused-passes` disables the four extra passes. HTTP 429/5xx and
+transport failures use bounded retries; unsupported structured output falls back
+to the same schema in the prompt. No option enables a model without explicit
+configuration. Smaller sections and focused passes increase the request count;
+inspect `--dry-run` before re-extracting a large source set.
+
+`source.json.usage` records provider `prompt_tokens`, `completion_tokens` and
+`total_tokens` per physical request, including retries, schema fallbacks and failed
+responses, plus their aggregate totals. Calls carry section, collection (`null`
+for the general pass), attempt number and HTTP status. Missing provider usage is
+`null` per call and counted by `missing_usage_calls`; totals include only reported
+tokens and are incomplete when that counter is nonzero. When prompt/completion
+counts exist without a total, their sum supplies the total. Credentials, model
+response bodies and source quotations never appear in usage or failure metadata.
+
+Failed passes appear in `records.json.failures` with section number, source keys,
+collection and a sanitized reason. Other passes' verified records are still saved,
+even when every pass fails. The CLI exits `1` and warns that extraction is incomplete;
+inspect failures and re-run before reviewing or merging the output. A successful
+empty list means no verified records were returned, not proof of source completeness.
+`context.md` always saves the entire original pinned context for downstream checks.
+
 `records.json` contains `domain`, `schema_version`, `document_id`, `lang`, `records`,
-and `rejected`. `hospitality_schema()` exports its Pydantic-backed JSON Schema.
+`rejected` and `failures`. Old artifacts without failures/usage remain readable.
+`hospitality_schema()` exports its Pydantic-backed JSON Schema.
 Supported record types are Property, RoomType, Outlet, Activity, Facility, Policy,
 Contact and ServicePrice. Every fact (including names) has `value`, `lang`, and a
 nonempty list of `{document_id, locator, quote}`. IDs, types and `review_state`

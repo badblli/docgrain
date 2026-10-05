@@ -31,21 +31,60 @@ class ChatClient:
     def response_schema(self):
         return "hospitality_proposals", proposal_schema()
 
-    def complete(self, messages: list[dict]) -> str:
-        name, schema = self.response_schema()
+    def complete(self, messages: list[dict], *, schema: dict | None = None,
+                 on_usage=None) -> str:
+        # The extractor can constrain a list-focused pass without changing pair matching.
+        name, default_schema = self.response_schema()
+        schema = schema if schema is not None else default_schema
         payload = {
             "model": self.model, "messages": messages, "temperature": 0,
             "response_format": {"type": "json_schema", "json_schema": {
                 "name": name, "strict": True, "schema": schema,
             }},
         }
-        for attempt in range(self.retries + 1):
-            response = self.client.post("chat/completions", json=payload)
-            # Older compatible endpoints may not implement structured output. The schema
-            # remains in the system prompt and local validation is never relaxed.
-            if response.status_code in {400, 422} and "response_format" in payload:
-                payload.pop("response_format")
+        requests = 0
+
+        def post():
+            nonlocal requests
+            requests += 1
+            try:
                 response = self.client.post("chat/completions", json=payload)
+            except httpx.TransportError:
+                if on_usage:
+                    on_usage({"attempt": requests, "status_code": None})
+                raise
+            usage = {}
+            try:
+                body = response.json()
+                reported = body.get("usage") if isinstance(body, dict) else None
+                if isinstance(reported, dict):
+                    for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                        value = reported.get(key)
+                        if type(value) is int and value >= 0:
+                            usage[key] = value
+                    if "total_tokens" not in usage and all(
+                        key in usage for key in ("prompt_tokens", "completion_tokens")
+                    ):
+                        usage["total_tokens"] = usage["prompt_tokens"] + usage["completion_tokens"]
+            except ValueError:
+                pass
+            if on_usage:
+                on_usage({"attempt": requests, "status_code": response.status_code, **usage})
+            return response
+
+        for attempt in range(self.retries + 1):
+            try:
+                response = post()
+                # Older compatible endpoints may not implement structured output. The schema
+                # remains in the system prompt and local validation is never relaxed.
+                if response.status_code in {400, 422} and "response_format" in payload:
+                    payload.pop("response_format")
+                    response = post()
+            except httpx.TransportError:
+                if attempt == self.retries:
+                    raise
+                time.sleep(min(2 ** attempt, 8))
+                continue
             if (response.status_code == 429 or response.status_code >= 500) and attempt < self.retries:
                 time.sleep(min(2 ** attempt, 8))
                 continue
