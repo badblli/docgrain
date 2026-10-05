@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import "./review-workspace.css";
+import { useDeveloperMode } from "../developer-mode";
 import { RevisionChat } from "./revision-chat";
 import { EvidenceView, type Cell, type Evidence, type Locator, type Node, type Snapshot } from "./inspector";
 import { LocalVisualProposal, type LocalVisualProposalData } from "./local-visual-proposal";
@@ -55,7 +56,7 @@ class HttpError extends Error {
 }
 
 const SECTIONS: [SectionKey, string][] = [
-  ["text", "Metin"], ["tables", "Tablolar"], ["visuals", "Görseller"], ["gaps", "Eksikler"], ["history", "Revision geçmişi"], ["chat", "Belgeye sor"],
+  ["text", "Metin"], ["tables", "Tablolar"], ["visuals", "Görseller"], ["gaps", "Eksikler"], ["history", "Düzenleme geçmişi"], ["chat", "Belgeye sor"],
 ];
 const KIND_LABEL: Record<ReviewField["kind"], string> = { text: "Metin", table_cell: "Tablo hücresi", description: "Görsel açıklaması" };
 const KIND_SECTION: Record<ReviewField["kind"], SectionKey> = { text: "text", table_cell: "tables", description: "visuals" };
@@ -202,8 +203,8 @@ const defaultHeader = (grid: Grid) => grid.rows.length > 1 && grid.rows[0].every
 });
 
 const ISSUE_TEXT: Record<string, [string, string]> = {
-  ocr_needs_review: ["OCR metni kaynakla doğrulanmadı", "Görselden okunan metni sayı ve Türkçe karakterler açısından kaynakla karşılaştırın."],
-  ocr_low_confidence: ["OCR okuması belirsiz", "Bazı satırların tanıma puanı düşük; özgün görselle karşılaştırın."],
+  ocr_needs_review: ["Görselden okunan metin kaynakla doğrulanmadı", "Görselden okunan metni sayı ve Türkçe karakterler açısından kaynakla karşılaştırın."],
+  ocr_low_confidence: ["Görselden okunan metin belirsiz", "Bazı satırların tanıma puanı düşük; özgün görselle karşılaştırın."],
   no_ocr_text: ["Görselde metin bulunamadı", "Özgün dosya korundu; görselin anlamı yorumlanmadı."],
   native_table_reconciled: ["Tablo kaynak geometrisiyle karşılaştırıldı", "Farklı okunan değerler korundu; kaynakla kontrol edin."],
   table_grid_conflict: ["Tablo yapısı çelişiyor", "Satır veya sütun sayısı okuyucular arasında uyuşmuyor; tablo yeniden şekillendirilmedi."],
@@ -235,7 +236,7 @@ function fieldState(c: Ctx, field: ReviewField | null) {
   const draft = c.drafts[field.field_id];
   const result = draft === undefined ? null : compute(field, draft);
   let editable = true, reason = "";
-  if (!c.viewLatest) { editable = false; reason = "Eski revision · yalnızca okunabilir"; }
+  if (!c.viewLatest) { editable = false; reason = "Eski düzenleme · yalnızca okunabilir"; }
   else if (!c.wsEditable) { editable = false; reason = "Bu belge şu an düzenlemeye kapalı"; }
   else if (!field.editable) { editable = false; reason = field.blocked_reason || "Bu alan düzenlenemez"; }
   return {
@@ -261,6 +262,8 @@ function Highlight({ text, query }: { text: string; query: string }) {
   return <>{parts}</>;
 }
 function AccessChip({ editable, reason }: { editable: boolean; reason: string }) {
+  const developerMode = useDeveloperMode();
+  if (editable && !developerMode) return null;
   return editable ? <span className="rw-chip rw-chip-edit">Düzenlenebilir</span>
     : <span className="rw-chip rw-chip-lock" title={reason}>Salt okunur · {reason}</span>;
 }
@@ -343,7 +346,7 @@ function TextPanel({ blocks }: { blocks: ReadBlock[] }) {
     </div>)}</div>;
   }
   const visible = blocks.filter(({ node }) => node.kind !== "section" || node.heading || node.title);
-  if (!visible.length) return <Empty title="Metin bulunamadı" detail="Bu revision’da okunabilir metin içeriği yok." />;
+  if (!visible.length) return <Empty title="Metin bulunamadı" detail="Bu içerikte okunabilir metin içeriği yok." />;
   return <div className="rw-flow">{visible.map(({ node, depth }) => {
     if (node.kind === "section") {
       const Heading = (`h${Math.min(5, Math.max(3, (node.level ?? depth) + 2))}`) as "h3" | "h4" | "h5";
@@ -367,7 +370,7 @@ function TextPanel({ blocks }: { blocks: ReadBlock[] }) {
     }
     if (node.kind === "asset" || node.kind === "chart") {
       return <div className="rw-ref" key={node.id}><div><span className="rw-kicker">{node.kind === "chart" ? "Grafik" : "Görsel"}</span>
-        <strong>{node.caption || "Başlıksız görsel"}</strong></div>
+        <strong>{node.description?.trim() ? node.caption || node.description : "Açıklama yok — ekle"}</strong></div>
         <button type="button" className="rw-btn" onClick={() => c.openSection("visuals", node.id)}>Görseli aç</button></div>;
     }
     return <TextBlock key={node.id} node={node} field={textField(node)} />;
@@ -406,7 +409,7 @@ function TablesPanel({ blocks, tableId, setTableId, grids }: {
   const tables = blocks.filter((b) => b.node.kind === "table");
   const hasHit = (id: string) => !!q && !!grids.get(id)?.rows.flat().some((slot) => norm(slotText(slot, c.drafts)).includes(q));
   const shown = q ? tables.filter((t) => hasHit(t.node.id)) : tables;
-  if (!tables.length) return <Empty title="Tablo yok" detail="Bu revision’da tablo bulunmuyor." />;
+  if (!tables.length) return <Empty title="Tablo yok" detail="Bu içerikte tablo bulunmuyor." />;
   if (!shown.length) return <Empty title="Eşleşen tablo yok" detail="Aramanız hiçbir tablo hücresinde bulunamadı." />;
   const current = shown.find((t) => t.node.id === tableId) ?? shown[0];
   const grid = grids.get(current.node.id) ?? { rows: [], loose: [] };
@@ -481,6 +484,7 @@ function ArtifactImage({ src, alt }: { src: string; alt: string }) {
 }
 function VisualsPanel({ blocks, snapshot }: { blocks: ReadBlock[]; snapshot: Snapshot }) {
   const c = useCtx();
+  const developerMode = useDeveloperMode();
   const q = norm(c.query.trim());
   const coverage = snapshot.metadata.structural_parse?.coverage?.item_counts?.picture ?? 0;
   const undetected = (snapshot.metadata.structural_parse?.issues ?? []).filter((issue) => issue.code === "unextracted_picture").length;
@@ -492,7 +496,7 @@ function VisualsPanel({ blocks, snapshot }: { blocks: ReadBlock[]; snapshot: Sna
   return <div className="rw-visuals">
     <p className="rw-note rw-note-strong">Dosya türü ve boyutu gibi bilgiler yalnızca dosyayı tanımlar. Bir görselin anlamı, açıklama yazılıp kaynakla kontrol edilene kadar bilinmiyor sayılır.</p>
     {undetected > 0 && <div className="rw-callout">{undetected} görsel kaynakta tespit edildi ancak dosyası çıkarılamadığı için burada önizlenemiyor{coverage ? ` (toplam ${coverage} görsel)` : ""}.</div>}
-    {!assets.length ? <Empty title={q ? "Eşleşen görsel yok" : "Görsel yok"} detail={q ? "Aramanızı değiştirin." : "Bu revision’da görsel veya grafik kaydı bulunmuyor."} />
+    {!assets.length ? <Empty title={q ? "Eşleşen görsel yok" : "Görsel yok"} detail={q ? "Aramanızı değiştirin." : "Bu içerikte görsel veya grafik kaydı bulunmuyor."} />
       : <div className="rw-asset-grid">{assets.map(({ node }) => {
         const artifact = snapshot.artifacts.find((item) => item.id === node.artifact_id);
         const field = c.fieldsByNode.get(node.id)?.find((f) => f.kind === "description") ?? null;
@@ -512,8 +516,8 @@ function VisualsPanel({ blocks, snapshot }: { blocks: ReadBlock[]; snapshot: Sna
           </div>
           <div className="rw-asset-body">
             <span className="rw-kicker">{node.kind === "chart" ? "Grafik" : "Görsel"}</span>
-            <h3>{node.caption || node.description?.split(".")[0] || "Açıklanmamış görsel"}</h3>
-            {artifact && <p className="rw-meta">Dosya bilgisi: {artifact.mime_type} · {artifact.byte_size.toLocaleString("tr-TR")} bayt. Bu bilgi görselin anlamını doğrulamaz.</p>}
+            <h3>{description.trim() ? node.caption || description.split(".")[0] : "Açıklama yok — ekle"}</h3>
+            {developerMode && artifact && <p className="rw-meta">Dosya bilgisi: {artifact.mime_type} · {artifact.byte_size.toLocaleString("tr-TR")} bayt. Bu bilgi görselin anlamını doğrulamaz.</p>}
             <div className="rw-block-meta">{st ? <AccessChip editable={st.editable} reason={st.reason} /> : <span className="rw-chip rw-chip-lock">Salt okunur · açıklama alanı yok</span>}
               {(st?.changed || notesChanged) && <span className="rw-chip rw-chip-draft">Taslakta değişti</span>}</div>
             {st?.editable && field ? <ScalarInput field={field} label={`${field.label} (görsel açıklaması)`} multiline onFocus={() => c.select(target)} />
@@ -530,7 +534,7 @@ function VisualsPanel({ blocks, snapshot }: { blocks: ReadBlock[]; snapshot: Sna
               <button type="button" className="rw-link" onClick={(e) => { e.stopPropagation(); c.select(target, true); }}>Kaynakta göster</button>
               {(st?.changed || notesChanged) && field && <button type="button" className="rw-link rw-link-warn" disabled={c.locked} onClick={(e) => { e.stopPropagation(); c.revert(field); }}>Geri al</button>}
             </div>
-            {artifact && artifact.mime_type.startsWith("image/") && field && typeof field.value !== "boolean" &&
+            {developerMode && artifact && artifact.mime_type.startsWith("image/") && field && typeof field.value !== "boolean" &&
               <LocalVisualProposal revisionId={snapshot.knowledge_revision.id} snapshotSha256={c.snapshotSha256} nodeId={node.id} mode={c.mode}
                 canAdopt={!!st?.editable} locked={c.locked} onAdopt={(text, proposal) => c.adoptProposal(field, text, proposal)} />}
           </div>
@@ -573,12 +577,13 @@ function computeGaps(ws: Workspace, fieldsByNode: Map<string, ReviewField[]>, bl
   return Array.from(gaps.values());
 }
 function GapsPanel({ gaps }: { gaps: Gap[] }) {
+  const developerMode = useDeveloperMode();
   const c = useCtx();
   return <div className="rw-gaps">
     <p className="rw-note rw-note-strong">Bu liste kayıtlı eksikleri gösterir. Listenin boş olması, kaynaktaki bütün anlamın doğru çıkarıldığı anlamına gelmez.</p>
-    {!gaps.length ? <Empty title="Kayıtlı eksik yok" detail="Sistem bu revision için eksik kaydı üretmedi; yine de içeriği kaynakla karşılaştırın." /> :
+    {!gaps.length ? <Empty title="Kayıtlı eksik yok" detail="Sistem bu içerik için eksik kaydı üretmedi; yine de içeriği kaynakla karşılaştırın." /> :
       <ul className="rw-gap-list">{gaps.map((gap) => <li key={gap.key} className="rw-gap">
-        <div><strong>{gap.title}{gap.count > 1 ? ` · ${gap.count} kayıt` : ""}</strong>{gap.detail && <p>{gap.detail}</p>}</div>
+        <div><strong>{developerMode || gap.nodeId ? gap.title : "İnceleme gerekiyor"}{gap.count > 1 ? ` · ${gap.count} kayıt` : ""}</strong>{gap.detail && <p>{developerMode || gap.nodeId ? gap.detail : "Bu bölümdeki bilgileri özgün dosyayla karşılaştırın."}</p>}</div>
         {gap.nodeId && <button type="button" className="rw-btn" onClick={() => c.openSection("visuals", gap.nodeId)}>Öğeye git</button>}
       </li>)}</ul>}
   </div>;
@@ -589,13 +594,13 @@ function HistoryPanel({ ws, numbers, displayed, locked, onView }: {
 }) {
   const entries = [...ws.history].sort((a, b) => (numbers.get(b.revision_id) ?? 0) - (numbers.get(a.revision_id) ?? 0));
   return <div className="rw-history">
-    <p className="rw-note rw-note-strong"><b>Revision geçmişi</b> bu belgenin içeriğinde yapılan incelemeleri gösterir. “Kaynak sürümleri” ise yüklenen dosyanın sürümleridir; bir revision kaydetmek kaynak dosyayı değiştirmez.
-      Eski revision’lar yalnızca görüntülenir; geri yükleme veya onaylama burada yoktur.</p>
+    <p className="rw-note rw-note-strong"><b>Düzenleme geçmişi</b> bu belgenin içeriğinde yapılan incelemeleri gösterir. Dosya sürümleri yüklenen dosyanın geçmişini gösterir; bir düzenleme kaydetmek kaynak dosyayı değiştirmez.
+      Eski düzenlemeler yalnızca görüntülenir; geri yükleme veya onaylama burada yoktur.</p>
     <ol className="rw-history-list">{entries.map((entry) => {
       const isLatest = entry.revision_id === ws.latest_revision_id, shown = entry.revision_id === displayed;
       return <li key={entry.revision_id} className={`rw-rev${shown ? " is-shown" : ""}`}>
         <div className="rw-rev-head">
-          <strong>Revision {numbers.get(entry.revision_id)}</strong>
+          <strong>Düzenleme {numbers.get(entry.revision_id)}</strong>
           {isLatest && <span className="rw-chip rw-chip-edit">Güncel</span>}
           {entry.revision_id === ws.approved_revision_id && <span className="rw-chip rw-chip-ok">Onaylı sürüm</span>}
           {shown && <span className="rw-chip rw-chip-draft">Görüntüleniyor</span>}
@@ -604,7 +609,7 @@ function HistoryPanel({ ws, numbers, displayed, locked, onView }: {
         <p className="rw-meta">İnceleyen: {entry.reviewer_id || "kayıtlı değil"}</p>
         {entry.reason && <p className="rw-prose">{entry.reason}</p>}
         {!shown && <button type="button" className="rw-btn" disabled={locked} onClick={() => onView(entry.revision_id)}>
-          {isLatest ? "Güncel revision’ı göster" : "Bu revision’ı görüntüle (salt okunur)"}</button>}
+          {isLatest ? "Güncel içeriği göster" : "Bu içeriği görüntüle"}</button>}
       </li>;
     })}</ol>
   </div>;
@@ -618,6 +623,7 @@ function SourcePanel({ ws, evidences, activeId, setActiveId, page, setPage, hasS
   ws: Workspace; evidences: Evidence[]; activeId: string | null; setActiveId: (id: string) => void;
   page: number; setPage: (n: number) => void; hasSelection: boolean; panelRef: React.RefObject<HTMLElement | null>;
 }) {
+  const developerMode = useDeveloperMode();
   const [failed, setFailed] = useState<string | null>(null);
   const pages = useMemo(() => [...ws.source.pages].sort((a, b) => a.page_number - b.page_number), [ws.source.pages]);
   const active = evidences.find((e) => e.id === activeId) ?? evidences[0];
@@ -656,21 +662,24 @@ function SourcePanel({ ws, evidences, activeId, setActiveId, page, setPage, hasS
         <strong>{active ? locatorLabel(active.locator) : "Konum seçilmedi"}</strong>
         <p>Bu kaynak biçimi için sayfa görüntüsü üretilmiyor. Konumu orijinal dosyada açarak kontrol edin; yukarıdaki bağlantı doğrulanmış özgün dosyayı indirir.</p>
       </div>}
-    {active && <details className="rw-trace" open={active.locator.kind === "image_region"}>
-      <summary>Kaynak izi ayrıntıları</summary>
+    {active && (developerMode || active.locator.kind === "image_region") && <details className="rw-trace" open={active.locator.kind === "image_region"}>
+      <summary>{developerMode ? "Kaynak izi ayrıntıları" : "Kaynak görseli"}</summary>
       <EvidenceView key={active.id} evidence={active} snapshot={ws.snapshot} versionId={ws.source.document_version_id ?? undefined} />
     </details>}
   </aside>;
 }
 
-export function ReviewWorkspace({ documentId, onSaved, mode, onDirtyChange }: {
+export function ReviewWorkspace({ documentId, onSaved, mode, onDirtyChange, view = "read", onRead }: {
+  view?: "read" | "history"; onRead?: () => void;
   documentId: string; onSaved: () => void; mode: Mode | null; onDirtyChange?: (dirty: boolean) => void;
 }) {
+  const developerMode = useDeveloperMode();
   const [ws, setWs] = useState<Workspace | null>(null);
   const [load, setLoad] = useState<{ status: "idle" | "loading" | "ready" | "error"; message: string }>({ status: "idle", message: "" });
   const [viewRevision, setViewRevision] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
   const [section, setSection] = useState<SectionKey>("text");
+  useEffect(() => { if (!developerMode && section === "chat") setSection("text"); }, [developerMode, section]);
   const [query, setQuery] = useState("");
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [uncertaintyDrafts, setUncertaintyDrafts] = useState<Record<string, string>>({});
@@ -740,7 +749,7 @@ export function ReviewWorkspace({ documentId, onSaved, mode, onDirtyChange }: {
     }).catch((error: unknown) => {
       if (ctl.signal.aborted || seq !== loadSeq.current) return;
       setLoad({ status: "error", message: error instanceof HttpError && error.status === 404
-        ? "Bu doküman için henüz incelenebilir bir revision yok." : error instanceof Error ? error.message : "İnceleme verisi alınamadı." });
+        ? "Bu doküman için henüz incelenebilir içerik yok." : error instanceof Error ? error.message : "İnceleme verisi alınamadı." });
     });
     return () => ctl.abort();
   }, [documentId, mode, viewRevision, reloadTick]);
@@ -867,10 +876,11 @@ export function ReviewWorkspace({ documentId, onSaved, mode, onDirtyChange }: {
     if (saving || !ws || id === displayedRevision || !confirmDiscard()) return;
     abortAll(); resetDraftState();
     setViewRevision(id === ws.latest_revision_id ? null : id);
+    onRead?.();
     if (id === ws.latest_revision_id && viewRevision === null) setReloadTick((t) => t + 1);
   }
   function loadCurrent() {
-    if (saving || !window.confirm("Güncel revision yüklenecek ve taslak değişiklikleriniz silinecek. Önce taslağı indirmediyseniz kaybolur. Devam edilsin mi?")) return;
+    if (saving || !window.confirm("Güncel içerik yüklenecek ve taslak değişiklikleriniz silinecek. Önce taslağı indirmediyseniz kaybolur. Devam edilsin mi?")) return;
     abortAll(); resetDraftState(); setViewRevision(null); setReloadTick((t) => t + 1);
   }
 
@@ -934,7 +944,7 @@ export function ReviewWorkspace({ documentId, onSaved, mode, onDirtyChange }: {
     const ctl = new AbortController();
     saveCtl.current = ctl; saveBusy.current = true;
     const seq = ++saveSeq.current;
-    setSave({ status: "saving", message: "Yeni revision kaydediliyor…" });
+    setSave({ status: "saving", message: "Değişiklikler kaydediliyor…" });
     try {
       const result = await request<SaveResult>(`${API}/v1/documents/${encodeURIComponent(documentId)}/reviews`, mode, {
         method: "POST", headers: { "content-type": "application/json" }, signal: ctl.signal,
@@ -943,8 +953,8 @@ export function ReviewWorkspace({ documentId, onSaved, mode, onDirtyChange }: {
       if (seq !== saveSeq.current) return;
       setDrafts({}); setUncertaintyDrafts({}); setAdoptions({}); setPreview({ status: "idle" }); setSourceChecked(false); setReason(""); setConflict("");
       operation.current = null; setCommitOpen(false);
-      setSave({ status: "saved", message: result.inserted ? "Yeni revision kaydedildi. Değiştirdiğiniz alanlar kaynakla kontrol edilmiş olarak işaretlendi; belgenin tamamının doğruluğu onaylanmış sayılmaz."
-        : "Bu işlem daha önce kaydedilmişti; yeni revision eklenmedi." });
+      setSave({ status: "saved", message: result.inserted ? "Değişiklikler kaydedildi. Değiştirdiğiniz alanlar kaynakla kontrol edilmiş olarak işaretlendi; belgenin tamamının doğruluğu onaylanmış sayılmaz."
+        : "Bu işlem daha önce kaydedilmişti; yeni düzenleme eklenmedi." });
       onSavedRef.current();
       setViewRevision(null); setReloadTick((t) => t + 1);
     } catch (error) {
@@ -983,17 +993,19 @@ export function ReviewWorkspace({ documentId, onSaved, mode, onDirtyChange }: {
   } : null;
 
   if (mode === "demo") {
-    return <div className="rw-wrap"><Empty title="Belge incelemesi demo modunda kullanılamıyor" detail="Demo verileri sentetiktir; kanonik belge içeriği üretilmez ve değişiklik kaydedilemez. Canlı API ile bağlandığınızda burada kaynak ve içerik yan yana görünür." /></div>;
+    return <div className="rw-wrap"><Empty title="Örnek belgelerde inceleme kapalı" detail="Örnek belgeler gösterilir; belge içeriği üretilmez ve değişiklik kaydedilemez. Bağlantı kurulduğunda burada kaynak ve içerik yan yana görünür." /></div>;
   }
-  if (mode === null) return <div className="rw-wrap"><Empty title="API bekleniyor" detail="Çalışma modu doğrulandığında belge incelemesi açılır." /></div>;
+  if (mode === null) return <div className="rw-wrap"><Empty title="Bağlanıyor…" detail="Çalışma modu doğrulandığında belge incelemesi açılır." /></div>;
   if (!ws || !index || !ctx) {
     return <div className="rw-wrap" aria-busy={load.status === "loading"}>
-      {load.status === "error" ? <div role="alert"><Empty title="İnceleme açılamadı" detail={load.message} />
+      {load.status === "error" ? <div role="alert"><Empty title="İnceleme açılamadı" detail={developerMode ? load.message : "Belge içeriği alınamadı. Bir süre sonra tekrar deneyin."} />
         <button type="button" className="rw-btn" onClick={() => setReloadTick((t) => t + 1)}>Tekrar dene</button></div>
         : <div className="rw-skeleton" role="status"><span /><span /><span /><p>Belge ve kaynak yükleniyor…</p></div>}
     </div>;
   }
 
+  const activeSection = view === "history" ? "history" : section;
+  const sections = SECTIONS.filter(([key]) => key !== "history" && (developerMode || key !== "chat"));
   const counts: Record<SectionKey, number> = {
     text: index.blocks.filter(({ node }) => node.kind === "text_block" || node.kind === "list").length,
     tables: index.blocks.filter(({ node }) => node.kind === "table").length,
@@ -1010,54 +1022,54 @@ export function ReviewWorkspace({ documentId, onSaved, mode, onDirtyChange }: {
         <div className="rw-title">
           <span className="rw-kicker">Belgeyi incele</span>
           <h2>{ws.source.filename}</h2>
-          <p>Revision {revNumber ?? "—"}{currentEntry ? ` · ${dateText(currentEntry.created_at)}` : ""}
-            {viewLatest ? <span className="rw-chip rw-chip-edit">Güncel</span> : <span className="rw-chip rw-chip-lock">Eski revision · salt okunur</span>}</p>
+          <p>Düzenleme {revNumber ?? "—"}{currentEntry ? ` · ${dateText(currentEntry.created_at)}` : ""}
+            {viewLatest ? <span className="rw-chip rw-chip-edit">Güncel</span> : <span className="rw-chip rw-chip-lock">Eski düzenleme · salt okunur</span>}</p>
         </div>
-        <label className="rw-search"><span className="rw-sr">Belgede ara</span>
-          <input type="search" value={query} placeholder="Metin, hücre veya açıklama ara…" onChange={(e) => setQuery(e.target.value)} /></label>
-        <nav className="rw-nav" aria-label="Belge bölümleri">
+        {view !== "history" && <label className="rw-search"><span className="rw-sr">Belgede ara</span>
+          <input type="search" value={query} placeholder="Metin, hücre veya açıklama ara…" onChange={(e) => setQuery(e.target.value)} /></label>}
+        {view !== "history" && <nav className="rw-nav" aria-label="Belge bölümleri">
           <div role="tablist" aria-label="Bölümler" onKeyDown={(e) => {
             if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
-            const at = SECTIONS.findIndex(([key]) => key === section);
-            const next = SECTIONS[(at + (e.key === "ArrowRight" ? 1 : SECTIONS.length - 1)) % SECTIONS.length][0];
+            const at = sections.findIndex(([key]) => key === section);
+            const next = sections[(at + (e.key === "ArrowRight" ? 1 : sections.length - 1)) % sections.length][0];
             setSection(next); document.getElementById(tabId(next))?.focus();
           }}>
-            {SECTIONS.map(([key, label]) => <button type="button" role="tab" key={key} id={tabId(key)} aria-selected={section === key}
+            {sections.map(([key, label]) => <button type="button" role="tab" key={key} id={tabId(key)} aria-selected={section === key}
               aria-controls={`${baseId}-panel`} tabIndex={section === key ? 0 : -1} onClick={() => setSection(key)}>
               {label}{key !== "chat" && <i>{counts[key]}</i>}</button>)}
           </div>
-        </nav>
+        </nav>}
       </header>
 
-      {!viewLatest && <div className="rw-banner rw-banner-warn" role="status">Eski bir revision’ı görüntülüyorsunuz; düzenleme kapalı.
-        <button type="button" className="rw-btn" onClick={() => goToRevision(ws.latest_revision_id)} disabled={locked}>Güncel revision’a dön</button></div>}
+      {!viewLatest && <div className="rw-banner rw-banner-warn" role="status">Eski bir düzenlemeyi görüntülüyorsunuz; düzenleme kapalı.
+        <button type="button" className="rw-btn" onClick={() => goToRevision(ws.latest_revision_id)} disabled={locked}>Güncel içeriğe dön</button></div>}
       {viewLatest && !ws.can_edit && <div className="rw-banner" role="status">Bu belge şu an düzenlemeye kapalı; içerik yalnızca okunabilir.</div>}
-      {load.status === "error" && <div className="rw-banner rw-banner-warn" role="alert">{load.message}
+      {load.status === "error" && <div className="rw-banner rw-banner-warn" role="alert">{developerMode ? load.message : "Belge içeriği alınamadı. Tekrar deneyin."}
         <button type="button" className="rw-btn" onClick={() => setReloadTick((t) => t + 1)}>Tekrar dene</button></div>}
       {save.status === "saved" && <div className="rw-banner rw-banner-ok" role="status">{save.message}</div>}
-      <p className="rw-lede">Çıkarılan içeriği kaynakla karşılaştırın. Değişiklikler kaydedilene kadar yalnızca taslaktır; kayıt yeni bir revision ekler, kaynak dosyayı değiştirmez ve embedding üretmez.</p>
+      {view !== "history" && <p className="rw-lede">İçeriği özgün dosyayla karşılaştırın. Değişikliklerinizi gözden geçirip kaydedin; her kayıt düzenleme geçmişine eklenir.</p>}
 
-      <button type="button" className="rw-source-toggle" aria-expanded={sourceOpen} onClick={() => setSourceOpen(!sourceOpen)}>
-        {sourceOpen ? "Kaynağı gizle" : "Kaynağı göster"}</button>
-      <div className={`rw-body${sourceOpen ? "" : " is-source-hidden"}`}>
-        {sourceOpen && <SourcePanel ws={ws} evidences={selectedEvidence} activeId={activeEvidenceItem?.id ?? null} setActiveId={setActiveEvidence}
+      {view !== "history" && <button type="button" className="rw-source-toggle" aria-expanded={sourceOpen} onClick={() => setSourceOpen(!sourceOpen)}>
+        {sourceOpen ? "Kaynağı gizle" : "Kaynağı göster"}</button>}
+      <div className={`rw-body${sourceOpen && view !== "history" ? "" : " is-source-hidden"}`}>
+        {sourceOpen && view !== "history" && <SourcePanel ws={ws} evidences={selectedEvidence} activeId={activeEvidenceItem?.id ?? null} setActiveId={setActiveEvidence}
           page={page} setPage={setPage} hasSelection={!!selection} panelRef={sourceRef} />}
-        <div className="rw-content" id={`${baseId}-panel`} role="tabpanel" aria-labelledby={tabId(section)}>
-          {section === "text" && <TextPanel blocks={index.blocks} />}
-          {section === "tables" && <TablesPanel blocks={index.blocks} tableId={tableId} setTableId={setTableId} grids={index.grids} />}
-          {section === "visuals" && <VisualsPanel blocks={index.blocks} snapshot={ws.snapshot} />}
-          {section === "gaps" && <GapsPanel gaps={index.gaps} />}
-          {section === "chat" && <RevisionChat snapshot={ws.snapshot} snapshotSha256={ws.snapshot_sha256} versionId={ws.source.document_version_id ?? undefined} revisionLabel={revNumber ? String(revNumber) : undefined} mode={mode} />}
-          {section === "history" && <HistoryPanel ws={ws} numbers={index.numbers} displayed={displayedRevision} locked={locked} onView={goToRevision} />}
+        <div className="rw-content" id={`${baseId}-panel`} role="tabpanel" aria-label={view === "history" ? "Düzenleme geçmişi" : undefined} aria-labelledby={view === "history" ? undefined : tabId(section)}>
+          {activeSection === "text" && <TextPanel blocks={index.blocks} />}
+          {activeSection === "tables" && <TablesPanel blocks={index.blocks} tableId={tableId} setTableId={setTableId} grids={index.grids} />}
+          {activeSection === "visuals" && <VisualsPanel blocks={index.blocks} snapshot={ws.snapshot} />}
+          {activeSection === "gaps" && <GapsPanel gaps={index.gaps} />}
+          {activeSection === "chat" && <RevisionChat snapshot={ws.snapshot} snapshotSha256={ws.snapshot_sha256} versionId={ws.source.document_version_id ?? undefined} revisionLabel={revNumber ? String(revNumber) : undefined} mode={mode} />}
+          {activeSection === "history" && <HistoryPanel ws={ws} numbers={index.numbers} displayed={displayedRevision} locked={locked} onView={goToRevision} />}
         </div>
       </div>
 
       {(dirtyCount > 0 || conflict) && <section className="rw-commit" aria-label="Taslak değişiklikler">
         {commitOpen && <div className="rw-commit-panel" id={`${baseId}-commit`}>
-          {conflict && <div className="rw-banner rw-banner-warn" role="alert"><p>{conflict}</p>
+          {conflict && <div className="rw-banner rw-banner-warn" role="alert"><p>{developerMode ? conflict : "Belge siz düzenlerken değişmiş olabilir. Taslağı indirin ve güncel içeriği yükleyin."}</p>
             <div className="rw-row">
-              <button type="button" className="rw-btn" onClick={downloadDraft}>Taslağı JSON olarak indir</button>
-              <button type="button" className="rw-btn rw-btn-warn" onClick={loadCurrent} disabled={saving}>Güncel revision’ı yükle (taslak silinir)</button>
+              <button type="button" className="rw-btn" onClick={downloadDraft}>Taslağı indir</button>
+              <button type="button" className="rw-btn rw-btn-warn" onClick={loadCurrent} disabled={saving}>Güncel içeriği yükle (taslak silinir)</button>
             </div></div>}
           <div className="rw-form">
             <label>İnceleyen kişi<input value={reviewer} autoComplete="off" disabled={locked}
@@ -1071,10 +1083,10 @@ export function ReviewWorkspace({ documentId, onSaved, mode, onDirtyChange }: {
             <span className="rw-note">{!viewLatest || !ws.can_edit ? "Bu görünümde kayıt yapılamaz." : evaluated.invalid.length ? "Geçersiz değerleri düzeltin." :
               !reviewer.trim() || !reason.trim() ? "Önizleme için inceleyen kişi ve neden gerekli." : "Önizleme hiçbir şeyi kaydetmez."}</span>
           </div>
-          {preview.status === "error" && <p className="rw-error" role="alert">{preview.message}</p>}
+          {preview.status === "error" && <p className="rw-error" role="alert">{developerMode ? preview.message : "Önizleme alınamadı. Bilgileri kontrol edip tekrar deneyin."}</p>}
           {preview.status === "ready" && <div className="rw-diff">
             <h3>Kaydedilecek farklar</h3>
-            {preview.data.warnings.map((warning, i) => <p key={i} className="rw-note rw-note-warn">{warning}</p>)}
+            {preview.data.warnings.map((warning, i) => <p key={i} className="rw-note rw-note-warn">{developerMode ? warning : "Kaydetmeden önce bu değişikliği özgün dosyayla kontrol edin."}</p>)}
             <ul>{preview.data.changes.map((change) => <li key={change.field_id}>
               <div className="rw-diff-head"><strong>{change.label}</strong><span className="rw-chip">{KIND_LABEL[change.kind]}</span></div>
               <div className="rw-diff-cols">
@@ -1093,15 +1105,15 @@ export function ReviewWorkspace({ documentId, onSaved, mode, onDirtyChange }: {
             <label className="rw-check rw-confirm"><input type="checkbox" checked={sourceChecked} disabled={locked} onChange={(e) => setSourceChecked(e.target.checked)} />
               Bu değişiklikleri özgün kaynakla karşılaştırdım. Bu onay yalnızca değiştirilen alanlar içindir; belgenin tamamının doğruluğunu onaylamaz.</label>
             <button type="button" className="rw-btn rw-btn-primary" disabled={!sourceChecked || locked} onClick={() => void runSave()}>
-              {saving ? "Kaydediliyor…" : "Yeni revision kaydet"}</button>
+              {saving ? "Kaydediliyor…" : "Değişiklikleri kaydet"}</button>
           </div>}
-          {save.status === "error" && <p className="rw-error" role="alert">{save.message}</p>}
+          {save.status === "error" && <p className="rw-error" role="alert">{developerMode ? save.message : "Değişiklikler kaydedilemedi. Tekrar deneyin."}</p>}
         </div>}
         <div className="rw-commit-bar">
           <strong aria-live="polite">{evaluated.changes.length} değişiklik taslakta{evaluated.invalid.length ? ` · ${evaluated.invalid.length} geçersiz değer` : ""}</strong>
           <span className="rw-note">Henüz kaydedilmedi</span>
           <div className="rw-row">
-            <button type="button" className="rw-btn" onClick={downloadDraft}>Taslağı indir (JSON)</button>
+            <button type="button" className="rw-btn" onClick={downloadDraft}>Taslağı indir</button>
             <button type="button" className="rw-btn" onClick={revertAll} disabled={locked}>Tümünü geri al</button>
             <button type="button" className="rw-btn rw-btn-primary" aria-expanded={commitOpen} aria-controls={`${baseId}-commit`} onClick={() => setCommitOpen(!commitOpen)}>
               {commitOpen ? "Kayıt adımlarını gizle" : "Gözden geçir ve kaydet"}</button>

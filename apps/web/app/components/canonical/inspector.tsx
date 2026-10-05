@@ -1,5 +1,7 @@
 "use client";
 
+import { useDeveloperMode } from "../developer-mode";
+
 import { useMemo, useState } from "react";
 import { VisualReview } from "./visual-review";
 
@@ -123,6 +125,7 @@ function EvidenceLinks({ ids, snapshot, onSelect }: {
 export function EvidenceView({ evidence, snapshot, versionId }: {
   evidence: Evidence; snapshot: Snapshot; versionId?: string;
 }) {
+  const developerMode = useDeveloperMode();
   const locator = evidence.locator;
   const linked = snapshot.structure.filter((node) => nodeEvidence(node).includes(evidence.id));
   const provenance = linked.flatMap((node) => [
@@ -136,8 +139,8 @@ export function EvidenceView({ evidence, snapshot, versionId }: {
   const sourceImage = snapshot.artifacts.find((item) => item.content_sha256 === snapshot.source_version.content_sha256);
   const imageBox = locator.kind === "image_region" ? displayedImageBox(locator.bbox, locator.exif_orientation) : null;
   return <div className="ci-evidence-detail">
-    <div className="ci-panel-title"><span className="ci-kicker">SOURCE TRACE</span><h3>{locatorText(locator)}</h3></div>
-    <dl className="ci-fields">
+    <div className="ci-panel-title"><span className="ci-kicker">{developerMode ? "SOURCE TRACE" : "Kaynak"}</span><h3>{developerMode ? locatorText(locator) : "Kaynak görseli"}</h3></div>
+    {developerMode && <dl className="ci-fields">
       <Field label="Evidence ID" value={evidence.id} />
       <Field label="Source version" value={evidence.source_version_id} />
       <Field label="Locator" value={locator.kind} />
@@ -157,26 +160,26 @@ export function EvidenceView({ evidence, snapshot, versionId }: {
       {provenance.some((item) => item.confidence_method?.startsWith("easyocr")) && <Field label="OCR · kaynak doğrulaması bekliyor"
         value={provenance.map((item) => `${item.confidence_method ?? "native"} · ${item.confidence ?? "—"}`).join(", ")} />}
       {evidence.note && <Field label="Note" value={evidence.note} />}
-    </dl>
+    </dl>}
     {locator.kind === "image_region" && <div className="ci-render">
       {sourceImage && imageBox ? <div className="ci-page-image">
         <img src={`${API_BASE}/v1/knowledge/revisions/${snapshot.knowledge_revision.id}/artifacts/${sourceImage.id}`} alt="Özgün kaynak görseli" />
-        <div className="ci-bbox" aria-label="Original image bounding box" style={{
+        <div className="ci-bbox" aria-label="Görseldeki kaynak konumu" style={{
           left: `${imageBox.x * 100}%`, top: `${imageBox.y * 100}%`, width: `${imageBox.width * 100}%`, height: `${imageBox.height * 100}%`,
         }} />
-      </div> : <Empty title="Kaynak görseli yok" detail="Özgün binary artifact bulunamadı." />}
-      <p className="ci-muted">Çerçeve özgün görseldeki kaynak konumudur; görüntüleme sırasında EXIF yönü uygulanır.</p>
+      </div> : <Empty title="Kaynak görseli yok" detail="Özgün görsel dosyası bulunamadı." />}
+      <p className="ci-muted">Çerçeve, özgün görseldeki kaynak konumunu gösterir.</p>
     </div>}
     {locator.kind === "pdf_page" && <div className="ci-render">
       {versionId ? <div className="ci-page-image">
         <img src={`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}/v1/versions/${versionId}/pages/${locator.page_number}/render`}
           alt={`Kaynak PDF sayfa ${locator.page_number}`} />
-        {locator.bbox && <div className="ci-bbox" aria-label="Normalized PDF bounding box" style={{
+        {locator.bbox && <div className="ci-bbox" aria-label="Sayfadaki kaynak konumu" style={{
           left: `${locator.bbox.x * 100}%`, top: `${locator.bbox.y * 100}%`,
           width: `${locator.bbox.width * 100}%`, height: `${locator.bbox.height * 100}%`,
         }} />}
-      </div> : <Empty title="Page render unavailable" detail="Bu kaynak için PDF version kaydı yok." />}
-      <p className="ci-muted">{locator.bbox ? "Sarı çerçeve, kaynak sayfadaki normalized top-left bbox konumunu gösterir." : "BBox unavailable · kaynak sayfa yine de gösterilir."}</p>
+      </div> : <Empty title="Sayfa görüntüsü yok" detail="Bu kaynak için PDF dosya sürümü bulunamadı." />}
+      <p className="ci-muted">{locator.bbox ? "Sarı çerçeve, bilginin kaynak sayfadaki konumunu gösterir." : "Sayfadaki konum belirlenemedi; kaynak sayfa yine de gösterilir."}</p>
     </div>}
   </div>;
 }
