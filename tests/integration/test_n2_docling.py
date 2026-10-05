@@ -5,6 +5,7 @@ import importlib.util
 import pytest
 from docgrain_domain.source_format import SourceFormat
 from docgrain_worker.structural import DocumentParser
+
 from tests.unit.test_n2_fidelity import map_result, office_file, verified, workbook_file
 
 pytestmark = pytest.mark.skipif(

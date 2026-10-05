@@ -4,7 +4,12 @@ from types import SimpleNamespace
 from docgrain_api.main import app
 from docgrain_api.routers import outputs
 from docgrain_api.settings import get_settings
-from docgrain_domain.canonical.ai_output import MIME, OutputFile, OutputPublication, output_bundle
+from docgrain_domain.canonical.ai_output import (
+    MIME,
+    OutputFile,
+    OutputPublication,
+    output_bundle,
+)
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 

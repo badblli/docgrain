@@ -5,9 +5,8 @@ from __future__ import annotations
 from hashlib import sha256
 from io import BytesIO
 
-from PIL import Image, ImageOps
-
 from docgrain_domain.canonical import NormalizedBox
+from PIL import Image, ImageOps
 
 
 def orient_point(x: float, y: float, orientation: int) -> tuple[float, float]:

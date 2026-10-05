@@ -6,8 +6,6 @@ from io import BytesIO
 from types import SimpleNamespace
 
 import pytest
-from PIL import Image
-
 from docgrain_domain.canonical import CanonicalKnowledgeSnapshot, deterministic_item_id
 from docgrain_domain.canonical.visuals import (
     VisualDecision,
@@ -21,6 +19,8 @@ from docgrain_worker.local_visual_ocr import (
     prepare_local_ocr,
     validate_local_ocr_proposal,
 )
+from PIL import Image
+
 from tests.fixtures.canonical.generate import annotation, generic_pdf
 
 
@@ -233,8 +233,9 @@ def test_blank_ocr_and_engine_failure_are_explicit_not_visual_acceptance():
 
 
 def test_visual_api_preview_is_pure_and_rejects_missing_stale_and_demo(monkeypatch):
-    from tests.unit.test_knowledge_api import client, setup_live
     from docgrain_api.routers import knowledge
+
+    from tests.unit.test_knowledge_api import client, setup_live
 
     actual_store = knowledge._store
     snapshot, store = setup_live(monkeypatch)

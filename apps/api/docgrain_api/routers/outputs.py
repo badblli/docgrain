@@ -5,7 +5,7 @@ from io import BytesIO
 from urllib.parse import parse_qs, urlparse
 from zipfile import ZIP_DEFLATED, ZipFile
 
-from docgrain_domain.canonical.ai_output import AIOutput, MIME
+from docgrain_domain.canonical.ai_output import MIME, AIOutput
 from fastapi import APIRouter, HTTPException, Response
 from minio.error import S3Error
 

@@ -12,7 +12,11 @@ import pytest
 from docgrain_api import repository as metadata
 from docgrain_api.canonical_repository import CanonicalConflict, CanonicalRepository
 from docgrain_api.output_repository import OutputRepository
-from docgrain_domain.canonical.ai_output import AIOutput, OutputPublication, output_bundle
+from docgrain_domain.canonical.ai_output import (
+    AIOutput,
+    OutputPublication,
+    output_bundle,
+)
 from docgrain_worker.output_writer import publish_outputs
 from psycopg import sql
 from psycopg.conninfo import make_conninfo
@@ -73,7 +77,7 @@ def test_partial_storage_failure_retry_hash_guard_and_immutable_sql(lifecycle_st
     with pytest.raises(psycopg.errors.RaiseException), connect() as connection, connection.cursor() as cursor:
         cursor.execute(sql.SQL("DELETE FROM {}").format(sql.Identifier(schema,"knowledge_outputs")))
     # A later overwrite cannot change the immutable version referenced by publication.
-    from urllib.parse import urlparse,parse_qs
+    from urllib.parse import parse_qs, urlparse
     file = publication.files[0]
     uri = urlparse(file.storage_uri)
     client.put_object(bucket,uri.path.lstrip("/"),io.BytesIO(b"changed"),7)
@@ -177,7 +181,7 @@ def test_real_worker_automatically_publishes_same_ai_contract(worker_store,real_
         assert "missing_visual_description" in {g.code for g in output.quality.gaps}
     # Actual stored API/ZIP path against this isolated revision/bucket.
     from docgrain_api.main import app
-    from docgrain_api.routers import knowledge,outputs
+    from docgrain_api.routers import knowledge, outputs
     from fastapi.testclient import TestClient
     monkeypatch.setattr(knowledge,"_store",lambda:repo)
     monkeypatch.setattr(outputs,"_store",lambda:repo)

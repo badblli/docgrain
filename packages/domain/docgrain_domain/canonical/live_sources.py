@@ -46,10 +46,15 @@ def changes(workspace: str, connector: str, generation: int,
     for key in sorted(previous.keys() | current.keys()):
         if previous.get(key) == current.get(key):
             continue
-        payload = dict(workspace_id=workspace, connector_id=connector, generation=generation,
-                       source_key=key, document_id=logical_document_id(workspace, connector, key),
-                       action="upsert" if key in current else "delete",
-                       observation=current[key].model_dump(mode="json") if key in current else None)
+        payload = {
+            "workspace_id": workspace,
+            "connector_id": connector,
+            "generation": generation,
+            "source_key": key,
+            "document_id": logical_document_id(workspace, connector, key),
+            "action": "upsert" if key in current else "delete",
+            "observation": current[key].model_dump(mode="json") if key in current else None,
+        }
         identity = "source_change_" + hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
         result.append(SourceChange(id=identity, **payload))
     return result

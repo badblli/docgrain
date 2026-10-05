@@ -7,7 +7,11 @@ from urllib.parse import parse_qs, unquote, urlparse
 import psycopg
 from docgrain_domain.canonical import CanonicalKnowledgeSnapshot
 from docgrain_domain.canonical.visuals import (
-    VisualInventory, VisualPreviewRequest, VisualReviewPreview, preview_visual_review, visual_inventory,
+    VisualInventory,
+    VisualPreviewRequest,
+    VisualReviewPreview,
+    preview_visual_review,
+    visual_inventory,
 )
 from fastapi import APIRouter, HTTPException, Response, status
 from minio.error import S3Error

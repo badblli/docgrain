@@ -9,7 +9,12 @@ from hashlib import sha256
 from docgrain_domain.canonical import CanonicalKnowledgeSnapshot
 
 from .fidelity import golden_table_checks
-from .selective_vision import Observation, SelectedRequest, prepare_request, render_table_page
+from .selective_vision import (
+    Observation,
+    SelectedRequest,
+    prepare_request,
+    render_table_page,
+)
 
 
 def review_table_proposal(snapshot: CanonicalKnowledgeSnapshot, proposal: dict,
