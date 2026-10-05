@@ -31,7 +31,7 @@ from docgrain_domain import (
 )
 from docgrain_domain.models import DiffEntry, VersionDiff
 
-WS = "ws_luwi"
+WS = "ws_demo"
 DOC = "doc_7fk2"
 V2 = "dver_2"
 V1 = "dver_1"
