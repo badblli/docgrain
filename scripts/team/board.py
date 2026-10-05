@@ -12,6 +12,8 @@ Usage:
   board.py agent <wp>                         print the assigned agent id
   board.py ingest <wp>                        read Codex --json events on stdin, log agent messages
   board.py report <wp> <report.md>            log the agent's final report summary
+  board.py decide "<question>" "<label>|<detail>" ...   ask the user (band above the prompt)
+  board.py decide --clear                     remove the pending decision
 """
 
 from __future__ import annotations
@@ -110,6 +112,18 @@ def main(argv: list[str]) -> None:
                 say(wp, sender, item.get("text", ""))
             elif event.get("type") == "turn.failed":
                 say(wp, sender, "Hata: " + str((event.get("error") or {}).get("message", "")), "error")
+    elif cmd == "decide":
+        path = LEAD / "decision.json"
+        if args == ["--clear"]:
+            path.unlink(missing_ok=True)
+            return
+        options = []
+        for raw in args[1:]:
+            label, _, detail = raw.partition("|")
+            options.append({"label": label.strip(), "detail": detail.strip()})
+        decision = {"id": str(int(time.time() * 1000)), "question": args[0], "options": options, "status": "open"}
+        LEAD.mkdir(exist_ok=True)
+        path.write_text(json.dumps(decision, ensure_ascii=False, indent=2), encoding="utf-8")
     elif cmd == "report":
         wp, path = args
         text = Path(path).read_text(encoding="utf-8") if Path(path).exists() else ""
