@@ -81,7 +81,8 @@ def get_output_file(revision_id: str, filename: str):
 @router.get("/{revision_id}/package")
 def get_package(revision_id: str):
     publication = _outputs(revision_id)
-    files = {name:_file_bytes(publication,name) for name in MIME}
+    published = {item.name for item in publication.files}
+    files = {name:_file_bytes(publication,name) for name in MIME if name in published}
     output = AIOutput.model_validate_json(files["ai.json"])
     # Asset refs come from the authoritative stored revision, not arbitrary output URLs.
     snapshot = get_revision(revision_id)

@@ -20,6 +20,7 @@ from .models import (
     Entity,
     Evidence,
     KnowledgeRevision,
+    ListNode,
     Relation,
     SchemaEntity,
     SourceVersion,
@@ -102,7 +103,8 @@ class OutputPublication(StrictModel):
 
 MIME = {"canonical.json":"application/json", "ai.json":"application/json",
         "ai.schema.json":"application/schema+json", "canonical.md":"text/markdown",
-        "chunks.jsonl":"application/x-ndjson", "manifest.json":"application/json"}
+        "context.md":"text/markdown", "chunks.jsonl":"application/x-ndjson",
+        "manifest.json":"application/json"}
 
 
 def project_ai(snapshot: CanonicalKnowledgeSnapshot, chunks: ChunkSet) -> AIOutput:
@@ -194,6 +196,131 @@ def readable(output: AIOutput) -> str:
     return "\n\n".join(lines) + "\n"
 
 
+def _context_value(value: JsonValue) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return str(value).lower() if isinstance(value, bool) else str(value)
+
+
+def _pipe(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("|", "\\|").replace("\r", " ").replace("\n", "<br>")
+
+
+def _pipe_table(rows: list[list[str]]) -> str:
+    return "\n".join("| " + " | ".join(_pipe(cell) for cell in row) + " |" for row in rows)
+
+
+def _context_table(node: TableNode) -> str:
+    if not node.rows or not any(node.rows):
+        return "[Boş tablo]"
+    width = max(max(len(row), sum(cell.col_span for cell in row
+                                 if not (cell.source_attributes or {}).get("merge_covered")))
+                for row in node.rows)
+    if not width:
+        return "[Boş tablo]"
+    covered: set[tuple[int, int]] = set()
+    grid: list[list[str]] = []
+    for row_index, row in enumerate(node.rows):
+        rendered = [""] * width
+        column = 0
+        explicit_grid = len(row) == width
+        for cell_index, cell in enumerate(row):
+            if explicit_grid:
+                column = cell_index
+            while not explicit_grid and column < width and (row_index, column) in covered:
+                column += 1
+            if column >= width:
+                break
+            if (row_index, column) not in covered and not (cell.source_attributes or {}).get("merge_covered"):
+                value = cell.display_text if cell.display_text is not None else _context_value(
+                    cell.cached_value if cell.value is None and cell.cached_value is not None else cell.value)
+                formula = f"(={cell.formula.lstrip('=')})" if cell.formula else ""
+                rendered[column] = value + (" " if value and formula else "") + formula
+            for r in range(row_index, row_index + cell.row_span):
+                for c in range(column, min(column + cell.col_span, width)):
+                    if r != row_index or c != column:
+                        covered.add((r, c))
+            column += cell.col_span
+        grid.append(rendered)
+    first = node.rows[0]
+    has_header = bool(first) and all(
+        isinstance(cell.value, str) and cell.value.strip() and not cell.formula
+        for cell in first if not (cell.source_attributes or {}).get("merge_covered")
+    )
+    if not has_header:
+        grid.insert(0, [str(column) for column in range(1, width + 1)])
+    grid.insert(1, ["---"] * width)
+    return _pipe_table(grid)
+
+
+def _chart_table(source_data: dict[str, JsonValue]) -> str:
+    rows = [["Seri", "Kategori", "Değer"], ["---", "---", "---"]]
+    for index, series in enumerate(source_data.get("series", []) or []):
+        if not isinstance(series, dict):
+            continue
+        name = _context_value(series.get("title") or series.get("name") or index + 1)
+        categories = series.get("cat", {})
+        values = series.get("val", {})
+        categories = categories.get("cells", []) if isinstance(categories, dict) else []
+        values = values.get("cells", []) if isinstance(values, dict) else []
+        for position, item in enumerate(values):
+            category = categories[position] if position < len(categories) else None
+            rows.append([name, _context_value(category.get("value") if isinstance(category, dict) else category),
+                         _context_value(item.get("value") if isinstance(item, dict) else item)])
+    return _pipe_table(rows) if len(rows) > 2 else ""
+
+
+def context_projection(output: AIOutput) -> str:
+    """Compact, deterministic document facts with a short source key for each block."""
+    evidence = {item.id: item.locator for item in output.evidence}
+    lists = {child: node.ordered for node in output.content if isinstance(node, ListNode) for child in node.children}
+    lines = [f"# {output.source.filename}", "Çıkarılmış belge içeriği.",
+             f"{output.document_id} · {output.canonical_revision_id}"]
+    keys = []
+    for number, node in enumerate(output.content, 1):
+        location = "?"
+        for evidence_id in node.annotation.provenance.evidence_ids:
+            locator = evidence.get(evidence_id)
+            if locator is None:
+                continue
+            if locator.kind == "pdf_page":
+                location = str(locator.page_number)
+            elif locator.kind == "spreadsheet_range":
+                location = locator.sheet
+            elif locator.kind == "docx_block":
+                location = locator.path
+            elif locator.kind == "text_span":
+                location = str(locator.start)
+            else:
+                continue
+            break
+        key = f"[§{number} p.{location}]"
+        keys.append(f"§{number} → {node.id}")
+        if node.kind == "section":
+            content = "#" * min(node.level, 6) + " " + node.heading
+        elif isinstance(node, TextBlock):
+            prefix = "1. " if lists.get(node.id) else "- " if node.id in lists else ""
+            content = prefix + node.text
+        elif isinstance(node, TableNode):
+            content = (node.caption + "\n" if node.caption else "") + _context_table(node)
+        elif isinstance(node, (AssetNode, ChartNode)):
+            content = f"[Görsel: {node.description or 'açıklama yok'}]"
+            if isinstance(node, ChartNode) and node.source_data:
+                chart = _chart_table(node.source_data)
+                if chart:
+                    content += "\n" + chart
+        else:
+            content = ""
+        lines.append(key + ("\n" + content if content else ""))
+    lines.extend(["## Kaynak anahtarları", *keys,
+                  f"Çözümlenmemiş boşluk sayısı: {len(output.quality.gaps)}"])
+    return "\n\n".join(lines) + "\n"
+
+
 def output_schema(version: str = "1.0.0") -> dict:
     from .schema import without_image_locations, without_native_facts
 
@@ -226,6 +353,7 @@ def output_bundle(snapshot: CanonicalKnowledgeSnapshot):
              "ai.json":canonical_json_bytes(output.model_dump(mode="json")),
              "ai.schema.json":canonical_json_bytes(output_schema(output.version)),
              "canonical.md":readable(output).encode(),
+             "context.md":context_projection(output).encode(),
              "chunks.jsonl":b"".join(canonical_json_bytes(c.model_dump(mode="json"))+b"\n" for c in chunks.chunks)}
     manifest = {"format":"docgrain.output-manifest", "version":"1.0.0", "revision":revision.model_dump(mode="json"),
         "canonical_sha256":sha256(files["canonical.json"]).hexdigest(),
