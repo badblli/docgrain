@@ -1,0 +1,43 @@
+{
+  "_doc": "Model routing for Codex agents. The lead picks a tier per WP with a '- Model: <tier>' line in the WP spec; follow-up messages (tell.sh) resume the same thread on the same model so the cached prompt is reused. Escalate a tier only with a reason in the WP.",
+  "default": "standart",
+  "tiers": {
+    "hafif": {
+      "model": "gpt-6-luna",
+      "effort": "low",
+      "label": "Hafif",
+      "use": "mekanik işler: lint/format, yeniden adlandırma, doküman, küçük ve net tarif edilmiş düzeltmeler"
+    },
+    "standart": {
+      "model": "gpt-6.1-sol",
+      "effort": "medium",
+      "label": "Standart",
+      "use": "tipik uygulama: yeni modül, API ucu, testler, bilinen kalıpta UI"
+    },
+    "derin": {
+      "model": "gpt-6.1-sol",
+      "effort": "high",
+      "label": "Derin",
+      "use": "dikkat isteyen işler: ayrıştırma/normalizasyon algoritmaları, veri doğruluğu, kaynak okuma, çok dosyalı değişiklik"
+    },
+    "zirve": {
+      "model": "gpt-6-astra",
+      "effort": "high",
+      "label": "Zirve",
+      "use": "nadir: mimari karar taslağı, derin hata ayıklama, iki denemede çözülemeyen iş; WP'de gerekçe zorunlu"
+    }
+  },
+  "claude_tiers": {
+    "_doc": "Claude subagents (engine: claude) run through the lead's Agent tool.",
+    "hafif": {
+      "model": "haiku",
+      "label": "Hafif",
+      "use": "Notion ilerleme notları, kısa özetler"
+    },
+    "standart": {
+      "model": "sonnet",
+      "label": "Standart",
+      "use": "README ve kullanıcıya dönük dokümanlar"
+    }
+  }
+}

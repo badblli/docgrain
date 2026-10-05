@@ -1,8 +1,9 @@
 # wp12-eval-runner — `docgrain-eval`: measure answers with any OpenAI-compatible model
 
 - Özet: her OpenAI-compatible modelle çalışan docgrain-eval ölçüm aracını yaz (doğruluk, atıf, "bilmiyorum", süre).
+- Model: standart
 - Phase: D1
-- Branch: `codex/wp12-eval-runner` (base: `codex/wp00-team-harness`)
+- Branch: `codex/wp12-eval-runner` (base: `origin/codex/wp00-team-harness`)
 - Depends on: wp00. Runs in parallel with wp11, which writes the golden data. The field contract
   is fixed by the lead (below); implement `docgrain_eval/golden.py` (Pydantic models + loader) for
   it. Do not create `docs/plan/golden-format.md` (wp11 owns it).
@@ -79,6 +80,9 @@ docgrain-eval compare data/eval/<a> data/eval/<b>
 - [ ] Table checker unit-tested on a synthetic canonical snapshot (found / wrong / missing).
 - [ ] `ruff` clean; existing tests unchanged.
 - [ ] Dry run (`--dry-run`) against the live API builds the context for `ws_local` and prints size
-      without calling a model. **Do not call any external model** — the lead runs the first real
+      without calling a model. If your sandbox blocks localhost network, say so; the lead runs it.
+      Python with the project deps: `C:/Users/root/Documents/projects/docgrain/.venv/Scripts/python`
+      (install your new package into it with `pip install -e packages/evaluation` from your worktree
+      only if the sandbox allows; otherwise use `PYTHONPATH`). **Do not call any external model** — the lead runs the first real
       baseline.
 - [ ] `docs/plan/eval.md` documents commands, metrics and limits.

@@ -25,7 +25,9 @@ non-technical (hotel staff): they edit normalized content and upload new file ve
   each milestone (what you found, what you are changing, what you are testing); the user follows
   them live. The lead may send you follow-up messages in the same thread — treat them as review
   feedback for the same WP.
-- Never commit or print secrets, `.env`, user documents or anything under `data/`. Do not modify
+- **This repository is public.** Never commit or print secrets, `.env`, user documents or
+  anything under `data/`, and never put customer content (document names, hotel facts, prices,
+  quotes) into committed files, tests or docs — use synthetic fixtures; keep real labels in `data/`. Do not modify
   or delete user documents, live database rows or MinIO objects unless the WP explicitly says so.
 - No new network/model calls in default code paths. Any LLM call goes through a configurable
   OpenAI-compatible client, **off by default**, and must be explicitly enabled.
@@ -38,6 +40,10 @@ non-technical (hotel staff): they edit normalized content and upload new file ve
   proof of correct meaning — acceptance criteria in the WP are.
 
 ## Commands
+
+Always use the repo venv, which pins the same Ruff/pytest as CI:
+`C:/Users/root/Documents/projects/docgrain/.venv/Scripts/python -m ruff …` / `… -m pytest …`.
+A different Ruff version gives different results; the lead re-runs with this one.
 
 ```sh
 # host (venv mirrors CI)
