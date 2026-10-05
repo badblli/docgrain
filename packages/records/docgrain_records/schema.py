@@ -28,9 +28,17 @@ class ModelResponse(StrictModel):
     records: list[Candidate]
 
 
-def proposal_schema() -> dict:
+def proposal_schema(collection: str | None = None) -> dict:
     """OpenAI strict schema: all properties required, absent facts use empty lists."""
-    schema = ModelResponse.model_json_schema()
+    if collection is None:
+        schema = ModelResponse.model_json_schema()
+    else:
+        if collection not in RECORD_MODELS:
+            raise ValueError("unknown record collection")
+        candidate = CANDIDATES[list(RECORD_MODELS).index(collection)]
+        response = create_model("FocusedResponse", __base__=StrictModel,
+                                records=(list[candidate], ...))
+        schema = response.model_json_schema()
 
     def strict(node):
         if isinstance(node, dict):

@@ -175,6 +175,46 @@ class RejectedField(StrictModel):
     evidence: list[Evidence]
 
 
+CollectionFocus = Literal["policy", "service_price", "activity", "facility"]
+
+
+class ExtractionFailure(StrictModel):
+    section: int = Field(ge=1)
+    source_keys: list[str] = Field(default_factory=list)
+    collection: CollectionFocus | None = None
+    reason: Literal["http_error", "connection_error", "invalid_response"]
+
+
+class CallUsage(StrictModel):
+    """One physical request, including retries/fallbacks; no source or credentials."""
+
+    section: int = Field(ge=1)
+    collection: CollectionFocus | None = None
+    attempt: int = Field(ge=1)
+    status_code: int | None = None
+    prompt_tokens: int | None = Field(default=None, ge=0)
+    completion_tokens: int | None = Field(default=None, ge=0)
+    total_tokens: int | None = Field(default=None, ge=0)
+
+
+class ExtractionUsage(StrictModel):
+    prompt_tokens: int = Field(default=0, ge=0)
+    completion_tokens: int = Field(default=0, ge=0)
+    total_tokens: int = Field(default=0, ge=0)
+    missing_usage_calls: int = Field(default=0, ge=0)
+    calls: list[CallUsage] = Field(default_factory=list)
+
+    def add(self, call: CallUsage):
+        self.calls.append(call)
+        self.prompt_tokens += call.prompt_tokens or 0
+        self.completion_tokens += call.completion_tokens or 0
+        self.total_tokens += call.total_tokens or 0
+        if any(value is None for value in (
+            call.prompt_tokens, call.completion_tokens, call.total_tokens,
+        )):
+            self.missing_usage_calls += 1
+
+
 class ExtractionResult(StrictModel):
     domain: Literal["hospitality"] = "hospitality"
     schema_version: Literal["1.0.0"] = "1.0.0"
@@ -182,6 +222,7 @@ class ExtractionResult(StrictModel):
     lang: Language
     records: list[Record]
     rejected: list[RejectedField] = Field(default_factory=list)
+    failures: list[ExtractionFailure] = Field(default_factory=list)
 
 
 def hospitality_schema() -> dict:

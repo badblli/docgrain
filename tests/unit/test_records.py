@@ -13,6 +13,7 @@ from docgrain_records import (
     FieldValue,
     ModelResponseError,
     RoomType,
+    build_messages,
     extract,
     hospitality_schema,
     verify_response,
@@ -72,7 +73,7 @@ def run_fake(records, context=CONTEXT, lang="en", raw=None, calls=None):
     chat = ChatClient("https://model.example/v1", "fake", "fake-key",
                       transport=httpx.MockTransport(handler))
     try:
-        return extract(context, "doc_example", lang, chat)
+        return extract(context, "doc_example", lang, chat, focused_passes=False)
     finally:
         chat.close()
 
@@ -249,9 +250,10 @@ def test_legacy_docx_locator_still_checks_its_own_block():
     json.dumps({"records": [candidate(name=[{"value": "Standard room", "lang": "en", "evidence": []}])]}),
 ])
 def test_malformed_model_json_fails_without_returning_source(raw):
-    with pytest.raises(ModelResponseError, match="not valid hospitality JSON") as exc:
-        run_fake([], raw=raw)
-    assert raw not in str(exc.value)
+    result = run_fake([], raw=raw)
+    assert not result.records
+    assert result.failures[0].reason == "invalid_response"
+    assert raw not in result.model_dump_json()
 
 
 def test_source_commands_stay_in_user_data():
@@ -286,7 +288,8 @@ def test_model_fallback_keeps_schema_prompt_and_validation(monkeypatch):
                       transport=httpx.MockTransport(handler))
     try:
         with pytest.raises(ModelResponseError):
-            extract(CONTEXT, "doc_example", "en", chat)
+            verify_response(chat.complete(build_messages(CONTEXT, "doc_example", "en")),
+                            CONTEXT, "doc_example", "en")
     finally:
         chat.close()
     assert len(calls) == 3
@@ -300,7 +303,7 @@ def test_malformed_endpoint_envelope(content):
         lambda _: httpx.Response(200, json={"choices": [{"message": {"content": content}}]})))
     try:
         with pytest.raises(ModelResponseError, match="no text content"):
-            extract(CONTEXT, "doc_example", "en", chat)
+            chat.complete(build_messages(CONTEXT, "doc_example", "en"))
     finally:
         chat.close()
 
@@ -359,10 +362,12 @@ def test_cli_writes_verified_json(tmp_path, monkeypatch, capsys):
 
     def handler(request):
         if request.url.host == "model.example":
+            payload = json.loads(request.content)
+            focused = "This pass extracts ONLY" in payload["messages"][0]["content"]
             proposed = candidate(name=[fact("Standard room")], view=[fact("hallucinated")])
             return httpx.Response(200, json={"choices": [{"message": {
-                "content": json.dumps({"records": [proposed]}),
-            }}]})
+                "content": json.dumps({"records": [] if focused else [proposed]}),
+            }}], "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}})
         if request.url.path.endswith("/knowledge"):
             return httpx.Response(200, json=knowledge())
         return httpx.Response(200, text=CONTEXT)
@@ -381,6 +386,14 @@ def test_cli_writes_verified_json(tmp_path, monkeypatch, capsys):
         "document_id": "doc_example", "workspace_id": "workspace-example",
         "knowledge_revision_id": "rev_example", "source_version_id": "source-example-v1",
         "content_sha256": "a" * 64, "lang": "en",
+        "usage": {
+            "prompt_tokens": 50, "completion_tokens": 25, "total_tokens": 75,
+            "missing_usage_calls": 0,
+            "calls": [{"section": 1, "collection": collection, "attempt": 1,
+                       "status_code": 200, "prompt_tokens": 10, "completion_tokens": 5,
+                       "total_tokens": 15}
+                      for collection in [None, "policy", "service_price", "activity", "facility"]],
+        },
     }
     assert "fake-key" not in capsys.readouterr().out
 

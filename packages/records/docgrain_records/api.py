@@ -8,7 +8,7 @@ from docgrain_domain.canonical.chunking import ChunkingSpec, derive_chunk_set
 from docgrain_domain.canonical.models import CanonicalKnowledgeSnapshot
 from pydantic import Field, TypeAdapter, ValidationError
 
-from .models import Language, StrictModel, Text
+from .models import ExtractionUsage, Language, StrictModel, Text
 
 
 class SourceMetadata(StrictModel):
@@ -20,6 +20,7 @@ class SourceMetadata(StrictModel):
     source_version_id: Text
     content_sha256: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
     lang: Language
+    usage: ExtractionUsage | None = None
 
 
 def load_context(client: httpx.Client, document_id: str, lang: str | None = None) -> tuple[str, str]:

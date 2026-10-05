@@ -10,7 +10,7 @@ import httpx
 from pydantic import ValidationError
 
 from .api import load_context_bundle
-from .extractor import build_messages, extract
+from .extractor import build_messages, extract, extraction_plan
 from .match import (
     MatchResult,
     PairClient,
@@ -20,9 +20,14 @@ from .match import (
 )
 from .match_merge import merge_matches, write_json
 from .model import ChatClient
+from .models import ExtractionUsage
 
 
 def run(args):
+    if not 1 <= args.concurrency <= 4:
+        raise ValueError("concurrency must be between 1 and 4")
+    if not 1000 <= args.section_chars <= 10000:
+        raise ValueError("section size must be between 1000 and 10000 characters")
     key = None
     if not args.dry_run:
         if not args.base_url or not args.model or not args.api_key_env:
@@ -34,18 +39,24 @@ def run(args):
         context, lang, source = load_context_bundle(api, args.document, args.lang,
                                                      require_pins=not args.dry_run)
     if args.dry_run:
-        messages = build_messages(context, args.document, lang)
-        size = sum(len(message["content"]) for message in messages)
-        print(f"İstek boyutu: {size} karakter, yaklaşık {(size + 3) // 4} belirteç")
-        return
+        plan = extraction_plan(context, args.section_chars, not args.no_focused_passes)
+        size = sum(len(message["content"]) for section, collection in plan
+                   for message in build_messages(section.context, args.document, lang, collection))
+        print(f"İstek boyutu: {size} karakter, yaklaşık {(size + 3) // 4} belirteç; "
+              f"{len(plan)} istek (yeniden denemeler hariç)")
+        return 0
     chat = ChatClient(args.base_url, args.model, key, args.timeout, args.retries)
+    usage = ExtractionUsage()
     try:
-        result = extract(context, args.document, lang, chat)
+        result = extract(context, args.document, lang, chat, section_chars=args.section_chars,
+                         concurrency=args.concurrency, focused_passes=not args.no_focused_passes,
+                         usage=usage)
     finally:
         chat.close()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     (out / "context.md").write_bytes(context.encode("utf-8"))
+    source.usage = usage
     (out / "source.json").write_text(
         json.dumps(source.model_dump(mode="json"), ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -55,6 +66,11 @@ def run(args):
         encoding="utf-8",
     )
     print(f"{len(result.records)} kayıt; {len(result.rejected)} alan reddedildi")
+    if result.failures:
+        print(f"Uyarı: {len(result.failures)} tarama tamamlanamadı; çıkarılan kayıtlar saklandı. "
+              "Ayrıntılar records.json içindeki failures alanında.", file=sys.stderr)
+        return 1
+    return 0
 
 
 def main(argv=None):
@@ -71,6 +87,12 @@ def main(argv=None):
     runner.add_argument("--dry-run", action="store_true")
     runner.add_argument("--timeout", type=float, default=60)
     runner.add_argument("--retries", type=int, default=3)
+    runner.add_argument("--section-chars", type=int, default=8000,
+                        help="Her bölüm için hedef karakter sayısı (1000–10000)")
+    runner.add_argument("--concurrency", type=int, default=3,
+                        help="Aynı anda gönderilen istek sayısı (1–4)")
+    runner.add_argument("--no-focused-passes", action="store_true",
+                        help="Ek kural, ücret, etkinlik ve tesis taramalarını kapat")
     matcher = commands.add_parser("match")
     matcher.add_argument("--records", required=True)
     matcher.add_argument("--out", required=True)
@@ -90,7 +112,7 @@ def main(argv=None):
         parser.error("extract requires --out unless --dry-run")
     try:
         if args.command == "extract":
-            run(args)
+            return run(args)
         elif args.command == "match":
             configured = [args.base_url, args.model, args.api_key_env]
             chat = None
