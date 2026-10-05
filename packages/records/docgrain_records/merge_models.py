@@ -13,6 +13,8 @@ class SourceRecord(StrictModel):
     # Caller-owned identity, stable across edits; wp41's positional id is not one.
     source_identity: Text
     aliases: list[Text] = Field(default_factory=list)
+    # Explicit matcher vetoes apply to weak normalized-name matching only.
+    match_exclusions: list[Text] = Field(default_factory=list)
     record: Record
 
 
@@ -21,6 +23,7 @@ class MergeDocument(StrictModel):
     document_id: Text
     source_version_id: Text
     knowledge_revision_id: Text
+    content_sha256: str | None = Field(default=None, pattern=r"^[0-9a-fA-F]{64}$")
     context: Text
     records: list[SourceRecord]
 
@@ -36,6 +39,7 @@ class SourcePin(StrictModel):
     document_id: Text
     source_version_id: Text
     knowledge_revision_id: Text
+    content_sha256: str | None = Field(default=None, pattern=r"^[0-9a-fA-F]{64}$")
 
 
 class VersionedEvidence(Evidence):
@@ -114,7 +118,17 @@ class ReviewDecision(StrictModel):
 class MatchIssue(StrictModel):
     key: Text
     source_keys: list[str]
-    reason: Literal["ambiguous_normalized_key"] = "ambiguous_normalized_key"
+    reason: Literal["ambiguous_normalized_key", "excluded_pair"] = "ambiguous_normalized_key"
+
+
+class AliasDecision(StrictModel):
+    """Explicit consolidation of previously distinct IDs; field review is separate."""
+
+    keep_id: Text
+    retired_id: Text
+    proposal_ids: list[Text] = Field(min_length=1)
+    reviewer: Text
+    reason: Text
 
 
 class MergeRevision(StrictModel):
@@ -124,6 +138,7 @@ class MergeRevision(StrictModel):
     records: list[MergedRecord]
     match_issues: list[MatchIssue] = Field(default_factory=list)
     decisions: list[ReviewDecision] = Field(default_factory=list)
+    alias_decisions: list[AliasDecision] = Field(default_factory=list)
 
 
 class FieldChange(StrictModel):

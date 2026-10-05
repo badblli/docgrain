@@ -324,7 +324,13 @@ def install_fake_http(monkeypatch, handler):
 
 def knowledge(snapshot=None):
     return {"document_id": "doc_example", "latest_revision_id": "rev_example", "snapshot": snapshot or {
-        "document_id": "doc_example", "knowledge_revision": {"id": "rev_example"}, "metadata": {"lang": "en"},
+        "document_id": "doc_example", "workspace_id": "workspace-example",
+        "knowledge_revision": {"id": "rev_example", "document_id": "doc_example",
+                               "workspace_id": "workspace-example",
+                               "source_version_id": "source-example-v1"},
+        "source_version": {"id": "source-example-v1", "document_id": "doc_example",
+                           "workspace_id": "workspace-example", "content_sha256": "a" * 64},
+        "metadata": {"lang": "en"},
     }}
 
 
@@ -369,7 +375,105 @@ def test_cli_writes_verified_json(tmp_path, monkeypatch, capsys):
     assert artifact["records"][0]["name"]["value"] == "Standard room"
     assert "view" not in artifact["records"][0]
     assert artifact["rejected"][0]["field"] == "view"
+    assert (tmp_path / "context.md").read_text(encoding="utf-8") == CONTEXT
+    assert (tmp_path / "context.md").read_bytes() == CONTEXT.encode("utf-8")
+    assert json.loads((tmp_path / "source.json").read_text(encoding="utf-8")) == {
+        "document_id": "doc_example", "workspace_id": "workspace-example",
+        "knowledge_revision_id": "rev_example", "source_version_id": "source-example-v1",
+        "content_sha256": "a" * 64, "lang": "en",
+    }
     assert "fake-key" not in capsys.readouterr().out
+
+
+def test_same_document_name_coalesces_facts_and_keeps_conflicts(tmp_path):
+    from docgrain_records.match import source_identity
+    from docgrain_records.merge import JsonMergeStore
+    from docgrain_records.merge_models import MergeDocument, SourceRecord
+
+    context = "[§1 p.1]\nGarden room, 32 m², capacity 2.\n[§2 p.2]\nGarden room, 32 m², capacity 3.\n"
+    first = candidate(name=[fact("Garden room")], size_m2=[fact(32, "32 m²")],
+                      capacity=[fact(2, "capacity 2")])
+    second = candidate(name=[fact("Garden room", locator="§2")],
+                       size_m2=[fact(32, "32 m²", locator="§2")],
+                       capacity=[fact(3, "capacity 3", locator="§2")])
+    result = verify_response(json.dumps({"records": [first, second]}), context, "doc_example", "en")
+    assert len(result.records) == 1
+    record = result.records[0]
+    assert record.review_state == "needs_review"
+    assert record.capacity.value == 2
+    assert [(f.value, f.lang) for f in record.conflicts["capacity"]] == [(3, "en")]
+    assert {e.locator for e in record.size_m2.evidence} == {"§1", "§2"}
+    assert {e.locator for e in record.name.evidence} == {"§1", "§2"}
+    assert record.id == "doc_example:room_type:1"
+    document = MergeDocument(
+        workspace_id="workspace-example", document_id="doc_example",
+        source_version_id="source-example-v1", knowledge_revision_id="rev_example",
+        content_sha256="a" * 64, context=context,
+        records=[SourceRecord(source_identity=source_identity(record), record=record)],
+    )
+    merged = JsonMergeStore(tmp_path / "merge.json", "workspace-example").merge("r1", [document])
+    capacity = merged.records[0].fields["capacity"]
+    assert {c.value for c in capacity.candidates} == {2, 3}
+    assert capacity.review_state == "needs_review" and capacity.primary is None
+    assert len(merged.records[0].fields["size_m2"].primary.evidence) == 2
+    assert merged.documents[0].content_sha256 == "a" * 64
+
+
+def test_same_document_missing_fields_and_languages_are_retained():
+    context = "[§1 p.1]\nGarden room, capacity 2.\n[§2 p.2]\nGarden room, 32 m².\nBahçe odası.\n"
+    first = candidate(name=[fact("Garden room")], capacity=[fact(2, "capacity 2")])
+    second = candidate(name=[fact("Garden room", locator="§2"),
+                             fact("Bahçe odası", lang="tr", locator="§2")],
+                       size_m2=[fact(32, "32 m²", locator="§2")])
+    result = verify_response(json.dumps({"records": [first, second]}), context, "doc_example", "en")
+    assert len(result.records) == 1
+    record = result.records[0]
+    assert record.capacity.value == 2 and record.size_m2.value == 32
+    assert record.i18n["tr"].name.value == "Bahçe odası"
+    assert record.i18n["tr"].name.evidence[0].locator == "§2"
+    assert record.review_state == "proposed" and not record.conflicts
+
+
+def test_missing_source_pin_stops_extract_before_model_call(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("TEST_RECORDS_KEY", "fake-key")
+    calls = []
+    body = knowledge()
+    del body["snapshot"]["source_version"]
+
+    def handler(request):
+        calls.append(request.url.path)
+        if request.url.host == "model.example":
+            pytest.fail("model must not run without a complete source pin")
+        if request.url.path.endswith("/knowledge"):
+            return httpx.Response(200, json=body)
+        return httpx.Response(200, text=CONTEXT)
+
+    install_fake_http(monkeypatch, handler)
+    assert main(["extract", "--document", "doc_example", "--api", "https://api.example",
+                 "--base-url", "https://model.example/v1", "--model", "fake",
+                 "--api-key-env", "TEST_RECORDS_KEY", "--out", str(tmp_path / "out")]) == 1
+    assert calls == ["/v1/documents/doc_example/knowledge"] and not (tmp_path / "out").exists()
+    assert "source pin" in capsys.readouterr().err
+
+
+def test_mismatched_snapshot_source_version_stops_extract(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("TEST_RECORDS_KEY", "fake-key")
+    body = knowledge()
+    body["snapshot"]["source_version"]["document_id"] = "another-document"
+
+    def handler(request):
+        if request.url.host == "model.example":
+            pytest.fail("model must not run with a mismatched source version")
+        if request.url.path.endswith("/knowledge"):
+            return httpx.Response(200, json=body)
+        pytest.fail("context must not be read from a mismatched snapshot")
+
+    install_fake_http(monkeypatch, handler)
+    assert main(["extract", "--document", "doc_example", "--api", "https://api.example",
+                 "--base-url", "https://model.example/v1", "--model", "fake",
+                 "--api-key-env", "TEST_RECORDS_KEY", "--out", str(tmp_path / "out")]) == 1
+    assert not (tmp_path / "out").exists()
+    assert "source pin" in capsys.readouterr().err
 
 
 def test_cli_requires_explicit_configuration_before_network(monkeypatch, capsys, tmp_path):

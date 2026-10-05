@@ -28,11 +28,15 @@ class ChatClient:
     def close(self):
         self.client.close()
 
+    def response_schema(self):
+        return "hospitality_proposals", proposal_schema()
+
     def complete(self, messages: list[dict]) -> str:
+        name, schema = self.response_schema()
         payload = {
             "model": self.model, "messages": messages, "temperature": 0,
             "response_format": {"type": "json_schema", "json_schema": {
-                "name": "hospitality_proposals", "strict": True, "schema": proposal_schema(),
+                "name": name, "strict": True, "schema": schema,
             }},
         }
         for attempt in range(self.retries + 1):
