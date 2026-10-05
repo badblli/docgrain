@@ -14,6 +14,7 @@ from .extractor import build_messages, extract, extraction_plan
 from .match import (
     MatchResult,
     PairClient,
+    accept_strong_matches,
     load_records,
     propose_matches,
     summarize_matches,
@@ -96,6 +97,8 @@ def main(argv=None):
     matcher = commands.add_parser("match")
     matcher.add_argument("--records", required=True)
     matcher.add_argument("--out", required=True)
+    matcher.add_argument("--auto-accept", choices=["strong"],
+                         help="Güçlü, çelişkisiz eşleşmeleri görünür kurallarla onayla")
     matcher.add_argument("--base-url")
     matcher.add_argument("--model")
     matcher.add_argument("--api-key-env")
@@ -107,6 +110,8 @@ def main(argv=None):
     merger.add_argument("--out", required=True)
     merger.add_argument("--workspace", help="Kaynak dosyalarındaki çalışma alanını doğrula")
     merger.add_argument("--revision")
+    merger.add_argument("--auto-accept", choices=["strong"],
+                        help="Güçlü eşleşmeleri kaynak kayıtlarıyla yeniden doğrulayıp onayla")
     args = parser.parse_args(argv)
     if args.command == "extract" and not args.dry_run and not args.out:
         parser.error("extract requires --out unless --dry-run")
@@ -126,19 +131,24 @@ def main(argv=None):
             try:
                 results = load_records(args.records)
                 matches = propose_matches(results, chat)
+                if args.auto_accept == "strong":
+                    matches = accept_strong_matches(results, matches)
             finally:
                 if chat:
                     chat.close()
             write_json(Path(args.out) / "match_proposals.json", matches.model_dump(mode="json"))
             write_json(Path(args.out) / "match_summary.json", summarize_matches(results, matches))
-            print(f"{len(matches.proposals)} eşleştirme önerisi; onay bekliyor")
+            pruned = sum(c["pruned_pairs"] for c in matches.candidate_counts.values())
+            accepted = sum(p.review_state == "accepted" for p in matches.proposals)
+            print(f"{len(matches.proposals)} eşleştirme önerisi; {pruned} aday elendi; "
+                  f"{accepted} onaylandı; {len(matches.proposals) - accepted} inceleme bekliyor")
         else:
             try:
                 matches = MatchResult.model_validate_json(Path(args.matches).read_text(encoding="utf-8"))
             except ValueError as exc:
                 raise ValueError("matches file does not match the proposal schema") from exc
             revision = merge_matches(args.records, load_records(args.records), matches,
-                                     args.out, args.workspace, args.revision)
+                                     args.out, args.workspace, args.revision, args.auto_accept)
             print(f"{len(revision.records)} kayıt; alan değerleri inceleme bekliyor")
     except httpx.HTTPStatusError as exc:
         print(f"Hata: HTTP {exc.response.status_code}", file=sys.stderr)

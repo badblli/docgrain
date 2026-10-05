@@ -9,6 +9,7 @@ from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 
 from .extractor import _blocks, normalize_quote
+from .extractor import _source_key as evidence_source_key
 from .merge_models import (
     AliasDecision,
     FactCandidate,
@@ -67,9 +68,10 @@ def _facts(document, item):
             evidence = []
             for citation in fact.evidence:
                 quote = normalize_quote(citation.quote)
+                locator = evidence_source_key(citation.locator)
                 if (citation.document_id != document.document_id
-                    or (blocks and citation.locator not in blocks)
-                    or not quote or quote not in blocks.get(citation.locator, source)):
+                    or (blocks and locator not in blocks)
+                    or not quote or quote not in blocks.get(locator, source)):
                     raise ValueError("merge requires verified evidence in the pinned source context")
                 evidence.append(VersionedEvidence(
                     **_payload(citation), source_version_id=document.source_version_id,
@@ -110,9 +112,31 @@ def _match(workspace_id, entries, identity_map):
             raise ValueError("explicit identity links multiple existing records")
         for record_id in ids:
             known[record_id].append(index)
-    for indices in list(strong.values()) + list(known.values()):
+    for indices in strong.values():
         for index in indices[1:]:
             union(indices[0], index)
+    for record_id, indices in known.items():
+        excluded = any(keys[b][0] in entries[a][1].match_exclusions
+                       for a in indices for b in indices)
+        if not excluded:
+            for index in indices[1:]:
+                union(indices[0], index)
+            continue
+        # A withdrawn reviewed match must not survive through historical ID
+        # anchors. Keep the ID on the first source partition; detached sources
+        # get stable new IDs. Prior revisions and their review trail are intact.
+        partitions = defaultdict(list)
+        for index in indices:
+            partitions[root(index)].append(index)
+        ordered = sorted(partitions.values(), key=lambda group: min(keys[i][0] for i in group))
+        for partition in ordered[1:]:
+            detached_id = _id("rec_", [workspace_id, "split", record_id,
+                                       min(keys[i][0] for i in partition)])
+            for index in partition:
+                anchors[index] = {detached_id}
+                source, aliases, _ = keys[index]
+                for key in {source} | aliases:
+                    identity_map[key] = [detached_id]
 
     groups = defaultdict(list)
     for index in range(len(entries)):

@@ -1,4 +1,4 @@
-"""Offline pair suggestions. Similarity is never an identity review decision."""
+"""Offline blocked pair suggestions, with opt-in, auditable strong rule reviews."""
 
 import json
 import re
@@ -97,6 +97,7 @@ class MatchProposal(StrictModel):
 class MatchResult(StrictModel):
     schema_version: Literal["1.0.0"] = "1.0.0"
     proposals: list[MatchProposal]
+    candidate_counts: dict[str, dict[str, int]] = Field(default_factory=dict)
 
 
 class PairAnswer(StrictModel):
@@ -180,7 +181,7 @@ def _score(left, right, parallel):
         a, b = getattr(left, field, None), getattr(right, field, None)
         if a and b and a.value != b.value:
             signals.append(Signal(kind="category_conflict", field=field, weight=-.7))
-    if transliterate(left.name.value) == transliterate(right.name.value):
+    if transliterate(normalize_quote(left.name.value)) == transliterate(normalize_quote(right.name.value)):
         signals.append(Signal(kind="name_agreement", field="name", weight=.85))
     a, b = _tokens(left), _tokens(right)
     shared = a & b
@@ -206,8 +207,94 @@ def _score(left, right, parallel):
     return score, signals, decision
 
 
-def propose_matches(results: list[ExtractionResult], client: PairClient | None = None) -> MatchResult:
-    """Generate every same-type cross-document pair; resolve local/global ambiguity."""
+def _blocking_keys(record):
+    """A shared distinguishing name token or numeric signature admits a pair.
+
+    Position alone and generic type words never admit a pair, including for a judge.
+    Conflicting numbers still reach scoring when a name or another number agrees.
+    """
+    for name in [record.name, *(fields.name for fields in record.i18n.values() if fields.name)]:
+        yield "name", transliterate(normalize_quote(name.value))
+    for token in _tokens(record):
+        yield "token", token
+    for field in sorted(_NUMERIC):
+        numbers = _numbers(getattr(record, field, None), field)
+        if numbers is not None:
+            yield field, numbers
+    value = getattr(record, "value", None)
+    if value is not None:
+        yield "value", transliterate(normalize_quote(str(value.value)))
+
+
+def _candidate_pairs(entries):
+    blocks = defaultdict(list)
+    pairs = set()
+    for index, (document, _, _, record) in enumerate(entries):
+        for key in set(_blocking_keys(record)):
+            for other in blocks[key]:
+                if entries[other][0] != document:
+                    pairs.add((other, index))
+            blocks[key].append(index)
+    return sorted(pairs)
+
+
+def _strong_rule(left, right, proposal):
+    if proposal.decision != "same" or any(s.kind in {
+        "ambiguous", "identity_collision",
+    } for s in proposal.signals):
+        return None
+    if identical_name(left, right):
+        return "identical-name"
+    if any(s.kind in {"numeric_conflict", "category_conflict", "source_conflict"} for s in proposal.signals):
+        return None
+    a, b = _tokens(left), _tokens(right)
+    similarity = len(a & b) / len(a | b) if a | b else 0
+    if similarity >= .75 and any(s.kind == "numeric_agreement" for s in proposal.signals):
+        return "name-and-numbers"
+    return None
+
+
+def identical_name(left, right):
+    return transliterate(normalize_quote(left.name.value)) == transliterate(normalize_quote(right.name.value))
+
+
+def identity_conflict(left, right, *, strong_names=False):
+    return _score(left, right, False)[2] == "different" and not (strong_names and identical_name(left, right))
+
+
+def accept_strong_matches(results, matches):
+    """Recompute deterministic support; saved/model signals cannot grant approval.
+
+    Human reviews and rejections remain intact. Rule reviews approve identity only;
+    field values, translations and conflicts still require their own review.
+    """
+    matches = matches.model_copy(deep=True)
+    deterministic = {p.id: p for p in propose_matches(results, strong_names=True).proposals}
+    records = {ref_key(record_ref(d.document_id, r)): r for d in results for r in d.records}
+    for proposal in matches.proposals:
+        if proposal.review_state != "proposed":
+            continue
+        if proposal.decision != "same" and any(s.kind == "model" for s in proposal.signals):
+            continue
+        checked = deterministic.get(proposal.id)
+        if checked is None or checked.left != proposal.left or checked.right != proposal.right:
+            continue
+        rule = _strong_rule(records[ref_key(checked.left)], records[ref_key(checked.right)], checked)
+        if rule:
+            proposal.decision = "same"
+            proposal.signals = checked.signals
+            proposal.review_state = "accepted"
+            proposal.reviewer = "rule:" + rule
+            proposal.reason = ("Identical normalized primary names; field disagreements remain visible for review"
+                               if rule == "identical-name" else
+                               "Distinguishing name token similarity >= 0.75 and agreeing numeric evidence; "
+                               "no conflicting or ambiguous signals")
+    return matches
+
+
+def propose_matches(results: list[ExtractionResult], client: PairClient | None = None, *,
+                    strong_names=False) -> MatchResult:
+    """Block same-type cross-document pairs before scoring; resolve ambiguity."""
     by_type = defaultdict(list)
     identities = defaultdict(int)
     for result in sorted(results, key=lambda result: result.document_id):
@@ -218,41 +305,51 @@ def propose_matches(results: list[ExtractionResult], client: PairClient | None =
         for kind, records in grouped.items():
             for position, record in enumerate(records):
                 by_type[kind].append((result.document_id, position, len(records), record))
-    proposals = []
-    for entries in by_type.values():
-        for index, (doc_a, pos_a, count_a, a) in enumerate(entries):
-            for doc_b, pos_b, count_b, b in entries[index + 1:]:
-                if doc_a == doc_b:
-                    continue
-                score, signals, decision = _score(a, b, count_a == count_b and pos_a == pos_b)
-                collision = (identities[(doc_a, source_identity(a))] > 1
-                             or identities[(doc_b, source_identity(b))] > 1)
-                if collision:
-                    signals.append(Signal(kind="identity_collision", detail="duplicate type/name identity within a document"))
-                    if decision == "same":
-                        decision = "unsure"
-                if a.conflicts or b.conflicts:
-                    signals.append(Signal(kind="source_conflict", detail="same-document field alternatives need review"))
-                    if decision == "same":
-                        decision = "unsure"
-                if client is not None and decision == "unsure" and not collision and not (a.conflicts or b.conflicts):
-                    raw = client.complete([
-                        {"role": "system", "content": SYSTEM},
-                        {"role": "user", "content": json.dumps({"untrusted_records": [
-                            a.model_dump(mode="json"), b.model_dump(mode="json")],
-                        }, ensure_ascii=False)},
-                    ])
-                    try:
-                        answer = PairAnswer.model_validate_json(raw)
-                    except ValidationError as exc:
-                        raise ModelResponseError("model output is not a valid pair decision") from exc
-                    decision = answer.decision
-                    signals.append(Signal(kind="model", detail=decision))
-                left, right = record_ref(doc_a, a), record_ref(doc_b, b)
-                proposals.append(MatchProposal(
-                    id="match_" + fingerprint([left.model_dump(), right.model_dump()]),
-                    left=left, right=right, score=score, signals=signals, decision=decision,
-                ))
+    proposals, counts = [], {}
+    for kind, entries in by_type.items():
+        document_counts = defaultdict(int)
+        for document, _, _, _ in entries:
+            document_counts[document] += 1
+        possible = (len(entries) ** 2 - sum(n ** 2 for n in document_counts.values())) // 2
+        pairs = _candidate_pairs(entries)
+        counts[kind] = {"possible_pairs": possible, "scored_pairs": len(pairs),
+                        "pruned_pairs": possible - len(pairs)}
+        for index, other in pairs:
+            doc_a, pos_a, count_a, a = entries[index]
+            doc_b, pos_b, count_b, b = entries[other]
+            score, signals, decision = _score(a, b, count_a == count_b and pos_a == pos_b)
+            exact = strong_names and identical_name(a, b)
+            if exact:
+                decision = "same"
+                score = 1.0
+            collision = (identities[(doc_a, source_identity(a))] > 1
+                         or identities[(doc_b, source_identity(b))] > 1)
+            if collision:
+                signals.append(Signal(kind="identity_collision", detail="duplicate type/name identity within a document"))
+                if decision == "same":
+                    decision = "unsure"
+            if a.conflicts or b.conflicts:
+                signals.append(Signal(kind="source_conflict", detail="same-document field alternatives need review"))
+                if decision == "same" and not exact:
+                    decision = "unsure"
+            if client is not None and decision == "unsure" and not collision and not (a.conflicts or b.conflicts):
+                raw = client.complete([
+                    {"role": "system", "content": SYSTEM},
+                    {"role": "user", "content": json.dumps({"untrusted_records": [
+                        a.model_dump(mode="json"), b.model_dump(mode="json")],
+                    }, ensure_ascii=False)},
+                ])
+                try:
+                    answer = PairAnswer.model_validate_json(raw)
+                except ValidationError as exc:
+                    raise ModelResponseError("model output is not a valid pair decision") from exc
+                decision = answer.decision
+                signals.append(Signal(kind="model", detail=decision))
+            left, right = record_ref(doc_a, a), record_ref(doc_b, b)
+            proposals.append(MatchProposal(
+                id="match_" + fingerprint([left.model_dump(), right.model_dump()]),
+                left=left, right=right, score=score, signals=signals, decision=decision,
+            ))
     # A matching recommendation must be the unique best pair for BOTH ends within
     # each document pair. Equal numeric room descriptions never break ties by order.
     rivals = defaultdict(list)
@@ -261,11 +358,15 @@ def propose_matches(results: list[ExtractionResult], client: PairClient | None =
             rivals[(ref_key(p.left), p.right.document_id)].append(p)
             rivals[(ref_key(p.right), p.left.document_id)].append(p)
     ambiguous = set()
+    def exact_name(p):
+        return strong_names and any(s.kind == "name_agreement" and s.field == "name" for s in p.signals)
     for choices in rivals.values():
         if len(choices) < 2:
             continue
-        ordered = sorted(choices, key=lambda p: (-p.score, p.id))
-        if ordered[0].score - ordered[1].score < .15:
+        ordered = sorted(choices, key=lambda p: (not exact_name(p), -p.score, p.id))
+        if exact_name(ordered[0]) and not exact_name(ordered[1]):
+            ambiguous.update(p.id for p in ordered[1:])
+        elif ordered[0].score - ordered[1].score < .15:
             ambiguous.update(p.id for p in ordered)
         else:
             ambiguous.update(p.id for p in ordered[1:])
@@ -277,17 +378,22 @@ def propose_matches(results: list[ExtractionResult], client: PairClient | None =
     # or bypass a conflicting numeric pair through a sparse third record.
     groups = candidate_groups(proposals)
     lookup = {ref_key(p.left): p.left for p in proposals} | {ref_key(p.right): p.right for p in proposals}
+    records = {ref_key(record_ref(d.document_id, r)): r for d in results for r in d.records}
     conflicts = {(ref_key(p.left), ref_key(p.right)) for p in proposals if p.decision == "different"}
     bad = set()
     for group in groups:
         docs = [lookup[key].document_id for key in group]
-        if len(docs) != len(set(docs)) or any(a in group and b in group for a, b in conflicts):
+        ordered = sorted(group)
+        hidden_conflict = any(identity_conflict(records[a], records[b], strong_names=strong_names)
+                              for i, a in enumerate(ordered) for b in ordered[i + 1:])
+        if (len(docs) != len(set(docs)) or hidden_conflict
+            or any(a in group and b in group for a, b in conflicts)):
             bad.update(group)
     for p in proposals:
         if p.decision == "same" and ref_key(p.left) in bad:
             p.decision = "unsure"
             p.signals.append(Signal(kind="ambiguous", detail="inconsistent transitive component"))
-    return MatchResult(proposals=sorted(proposals, key=lambda p: p.id))
+    return MatchResult(proposals=sorted(proposals, key=lambda p: p.id), candidate_counts=counts)
 
 
 def candidate_groups(proposals, accepted_only=False):
@@ -321,7 +427,13 @@ def summarize_matches(results, matches):
     """
     entries = {ref_key(record_ref(d.document_id, r)): r for d in results for r in d.records}
     groups = candidate_groups(matches.proposals)
-    summary = {"status": "proposed_only", "counts": {}, "groups": {}, "unmatched": {}}
+    summary = {"status": "reviewed" if any(p.review_state == "accepted" for p in matches.proposals)
+               else "proposed_only", "counts": {}, "groups": {}, "unmatched": {},
+               "candidate_counts": matches.candidate_counts,
+               "review_counts": {state: sum(p.review_state == state for p in matches.proposals)
+                                 for state in ("proposed", "needs_review", "accepted", "rejected")},
+               "review_proposal_ids": [p.id for p in matches.proposals
+                                       if p.review_state in {"proposed", "needs_review"}]}
     for kind in sorted({r.type for r in entries.values()}):
         keys = {key for key, record in entries.items() if record.type == kind}
         selected = sorted([sorted(group) for group in groups if next(iter(group))[1] == kind])

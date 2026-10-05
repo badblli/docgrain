@@ -13,7 +13,8 @@ from docgrain_records.extractor import (
     build_messages,
     extraction_plan,
 )
-from docgrain_records.match_merge import load_merge_documents
+from docgrain_records.match import propose_matches
+from docgrain_records.match_merge import load_merge_documents, merge_matches, write_json
 from docgrain_records.models import RECORD_MODELS, ExtractionUsage
 from docgrain_records.sections import split_context
 from jsonschema import Draft202012Validator
@@ -105,6 +106,53 @@ def test_every_section_and_every_focused_list_item_is_retained():
     assert [(call.section, call.collection) for call in usage.calls] == [
         (i, focus) for i in range(1, 4) for focus in (None, *FOCUSED_COLLECTIONS)
     ]
+
+
+def test_sectioned_extraction_merges_with_original_locator_rules(tmp_path):
+    source = context_for([
+        "Garden room; capacity 2; 32 m².",
+        "Garden room; capacity 3; 32 m².",
+        "Garden room; sea view; 32 m².",
+    ], padding=True)
+    locators = ["[§1 p.1]", "§2 p.2", "node_3"]
+
+    def handler(request):
+        context, _, _ = request_parts(request)
+        section = int(re.search(r"\[§(\d+)", context).group(1))
+        locator = locators[section - 1]
+        fields = {"name": [fact("Garden room", locator)],
+                  "size_m2": [fact(32, locator, "32 m²")]}
+        if section < 3:
+            fields["capacity"] = [fact(section + 1, locator, f"capacity {section + 1}")]
+        else:
+            fields["view"] = [fact("sea view", locator)]
+        return response([candidate("room_type", **fields)])
+
+    result = run(source, handler, focused_passes=False)
+    assert len(result.records) == 1 and not result.rejected and not result.failures
+    write_json(tmp_path / "in" / "records.json", result.model_dump(mode="json"))
+    write_json(tmp_path / "in" / "source.json", {
+        "document_id": "doc_example", "workspace_id": "workspace-example", "lang": "en",
+        "source_version_id": "source-v1", "knowledge_revision_id": "revision-v1",
+        "content_sha256": "a" * 64,
+    })
+    (tmp_path / "in" / "context.md").write_text(source, encoding="utf-8")
+    merged = merge_matches(tmp_path / "in", [result], propose_matches([result]), tmp_path / "out")
+    fields = merged.records[0].fields
+    assert {e.locator for e in fields["size_m2"].primary.evidence} == set(locators)
+    assert all(e.source_version_id == "source-v1" for e in fields["size_m2"].primary.evidence)
+    assert fields["capacity"].primary is None
+    assert {c.value for c in fields["capacity"].conflicts["en"]} == {2, 3}
+    assert fields["view"].primary.value == "sea view"
+    # Whole-source verification must still reject a quote in the wrong block,
+    # a footer-only quote, a missing key and another document's citation.
+    for changes in ({"quote": "sea view"}, {"quote": "node_1"},
+                    {"locator": "§999 p.1"}, {"document_id": "other-document"}):
+        invalid = result.model_copy(deep=True)
+        for field, value in changes.items():
+            setattr(invalid.records[0].name.evidence[0], field, value)
+        with pytest.raises(ValueError, match="verified evidence"):
+            merge_matches(tmp_path / "in", [invalid], propose_matches([invalid]), tmp_path / "out")
 
 
 def test_cross_section_duplicates_union_evidence_i18n_and_conflicts(tmp_path):

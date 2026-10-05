@@ -6,7 +6,16 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from .api import SourceMetadata
-from .match import candidate_groups, fingerprint, record_ref, ref_key, source_identity
+from .match import (
+    accept_strong_matches,
+    candidate_groups,
+    fingerprint,
+    identity_conflict,
+    record_ref,
+    ref_key,
+    source_identity,
+    summarize_matches,
+)
 from .merge import JsonMergeStore, _source_key
 from .merge_models import AliasDecision, MergeDocument, SourceRecord
 from .models import RECORD_MODELS
@@ -63,21 +72,31 @@ def apply_matches(documents, matches):
         docs = [key[0] for key in group]
         if len(docs) != len(set(docs)):
             raise ValueError("accepted aliases would merge distinct records from one document")
-        if any(p.decision == "different" and ref_key(p.left) in group and ref_key(p.right) in group
+        if any((p.decision == "different" or p.review_state == "rejected")
+               and ref_key(p.left) in group and ref_key(p.right) in group
                for p in matches.proposals):
+            raise ValueError("accepted aliases would bypass a conflicting pair")
+        ordered = sorted(group)
+        if any(identity_conflict(entries[a][1].record, entries[b][1].record, strong_names=True)
+               for i, a in enumerate(ordered) for b in ordered[i + 1:]):
             raise ValueError("accepted aliases would bypass a conflicting pair")
         alias = "reviewed-match:" + fingerprint(sorted(group))
         for key in group:
             entries[key][1].aliases.append(alias)
     for p in matches.proposals:
-        if p.decision != "same" or p.review_state == "rejected":
+        if p.review_state != "accepted":
             a, b = entries[ref_key(p.left)], entries[ref_key(p.right)]
             a[1].match_exclusions.append(_source_key(*b))
             b[1].match_exclusions.append(_source_key(*a))
     return documents, groups, entries
 
 
-def merge_matches(directory, results, matches, out, workspace_id=None, revision_id=None):
+def merge_matches(directory, results, matches, out, workspace_id=None, revision_id=None,
+                  auto_accept=None):
+    if auto_accept not in {None, "strong"}:
+        raise ValueError("unknown automatic acceptance rule")
+    if auto_accept == "strong":
+        matches = accept_strong_matches(results, matches)
     documents = load_merge_documents(directory, results, workspace_id)
     documents, groups, entries = apply_matches(documents, matches)
     out = Path(out)
@@ -107,6 +126,11 @@ def merge_matches(directory, results, matches, out, workspace_id=None, revision_
         decisions = state.revisions[revision_id].alias_decisions
     revision = store.merge(revision_id, documents, alias_decisions=decisions)
     write_json(out / "merge_revision.json", revision.model_dump(mode="json"))
+    write_json(out / "match_proposals.json", matches.model_dump(mode="json"))
+    summary = summarize_matches(results, matches)
+    for kind, counts in summary["counts"].items():
+        counts["merged_records"] = sum(r.type == kind for r in revision.records)
+    write_json(out / "merge_summary.json", summary)
     write_json(out / "aliases.json", {
         "accepted_proposals": [p.model_dump(mode="json") for p in matches.proposals
                                if p.review_state == "accepted"],
