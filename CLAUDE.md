@@ -14,3 +14,7 @@ Read `AGENTS.md` (team rules) and `docs/plan/ROADMAP.md` (goal, glossary, decisi
 - Escalate to the user only critical product/privacy decisions.
 - Host tests: `.venv/Scripts/python -m pytest -q` (CI mirror). Parser/OCR/DB integration needs the
   Docker worker image.
+
+## agent-crew
+
+This project uses the agent-crew plugin (`.crew/config.json` points it at `docs/plan` and `.lead`). Follow the crew-lead skill; the project-specific notes above still apply.
