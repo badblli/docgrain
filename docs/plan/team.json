@@ -35,6 +35,13 @@
       "name": "Ece",
       "color": "#a78bfa",
       "role": "Codex · test / kalite"
+    },
+    {
+      "id": "chatot",
+      "name": "Chatot",
+      "color": "#38bdf8",
+      "role": "Claude · Notion & dokümantasyon",
+      "engine": "claude"
     }
   ],
   "steps": [
@@ -144,6 +151,10 @@
         "ece": {
           "name": "Ece",
           "avatar": "●"
+        },
+        "chatot": {
+          "name": "Chatot",
+          "avatar": "●"
         }
       }
     },
@@ -185,6 +196,11 @@
           "name": "Sue",
           "avatar": "ᗣ",
           "color": "#a78bfa"
+        },
+        "chatot": {
+          "name": "Chatot",
+          "avatar": "🦜",
+          "color": "#38bdf8"
         }
       }
     },
@@ -226,6 +242,11 @@
           "name": "Oracle",
           "avatar": "👁",
           "color": "#a78bfa"
+        },
+        "chatot": {
+          "name": "Chatot",
+          "avatar": "🦜",
+          "color": "#38bdf8"
         }
       }
     },
@@ -267,6 +288,11 @@
           "name": "Bulbasaur",
           "avatar": "🌱",
           "color": "#4ade80"
+        },
+        "chatot": {
+          "name": "Chatot",
+          "avatar": "🦜",
+          "color": "#38bdf8"
         }
       }
     }

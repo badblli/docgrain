@@ -1,6 +1,7 @@
 # wp21-compact-context — Compact AI context projection (`context.md`)
 
 - Özet: AI'a giden belge metnini küçült: tabloları hücre-hücre JSON yerine markdown tablo olarak yazan yeni context.md çıktısını ekle (Dobedan 339k → ~40k karakter hedefi).
+- Model: standart
 - Phase: D2
 - Branch: `codex/wp21-compact-context` (base: `origin/dev`)
 - Depends on: none (wp12 eval runner will read it later)

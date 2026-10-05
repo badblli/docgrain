@@ -1,6 +1,7 @@
 # wp12-eval-runner — `docgrain-eval`: measure answers with any OpenAI-compatible model
 
 - Özet: her OpenAI-compatible modelle çalışan docgrain-eval ölçüm aracını yaz (doğruluk, atıf, "bilmiyorum", süre).
+- Model: standart
 - Phase: D1
 - Branch: `codex/wp12-eval-runner` (base: `origin/codex/wp00-team-harness`)
 - Depends on: wp00. Runs in parallel with wp11, which writes the golden data. The field contract
