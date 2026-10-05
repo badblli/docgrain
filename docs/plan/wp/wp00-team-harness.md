@@ -1,6 +1,7 @@
 # wp00-team-harness — Green CI and team harness
 
 - Özet: dev CI'ını kıran 36 Ruff hatasını davranış değiştirmeden düzelt; ekip harness dosyalarını ekle.
+- Model: hafif
 - Phase: D0
 - Branch: `codex/wp00-team-harness` (base: `origin/dev`, already checked out in the main checkout)
 - Depends on: none

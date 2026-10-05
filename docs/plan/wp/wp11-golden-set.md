@@ -1,8 +1,9 @@
 # wp11-golden-set — Golden questions and table facts from the six live documents
 
 - Özet: altı belgenin orijinalinden 60+ soru ve 40+ tablo hücresinden oluşan cevap anahtarını hazırla (Docgrain çıktısına bakmadan).
+- Model: derin
 - Phase: D1
-- Branch: `codex/wp11-golden-set` (base: `codex/wp00-team-harness`)
+- Branch: `codex/wp11-golden-set` (base: `origin/codex/wp00-team-harness`)
 - Depends on: wp00
 - Role: implementer
 
@@ -25,10 +26,11 @@ The six live documents (`GET http://localhost:8000/v1/documents`):
 | doc_0f906728 | Misafir İlişkileri Sıkça Sorulan Sorular Exclusive).docx |
 | doc_2a54df6f | dobedan_exc_custom_talimatlar.txt |
 
-Originals: `GET /v1/knowledge/revisions/{revision_id}/source` (revision id from
-`GET /v1/documents/{id}/knowledge` → `latest_revision_id`), or the copies under
-`data/reviews/fidelity-review/doc_*/original.*`. Copy what you use to `data/golden/sources/`
-(ignored) and record SHA-256.
+Originals are already downloaded by the lead (read-only for you):
+`C:/Users/root/Documents/projects/docgrain/data/golden/sources/<document_id>.<ext>` with
+`manifest.json` (filename, SHA-256, size, revision). Use the Python at
+`C:/Users/root/Documents/projects/docgrain/.venv/Scripts/python` (has pymupdf, openpyxl,
+python-docx). Write your outputs to `data/golden/` **inside your own worktree**; the lead copies them.
 
 **Read sources with PyMuPDF/openpyxl/python-docx or by viewing rendered pages. Do not read
 `canonical.json`, `ai.json`, chunks or any Docgrain output while writing answers.** The key must not
