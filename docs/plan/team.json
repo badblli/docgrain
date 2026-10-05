@@ -42,6 +42,12 @@
       "color": "#38bdf8",
       "role": "Claude · Notion & dokümantasyon",
       "engine": "claude"
+    },
+    {
+      "id": "pm",
+      "name": "PM",
+      "color": "#e879f9",
+      "role": "Codex · proje yöneticisi"
     }
   ],
   "steps": [
@@ -155,6 +161,10 @@
         "chatot": {
           "name": "Chatot",
           "avatar": "●"
+        },
+        "pm": {
+          "name": "PM",
+          "avatar": "●"
         }
       }
     },
@@ -201,6 +211,11 @@
           "name": "Chatot",
           "avatar": "🦜",
           "color": "#38bdf8"
+        },
+        "pm": {
+          "name": "Cherry",
+          "avatar": "🍒",
+          "color": "#e879f9"
         }
       }
     },
@@ -247,6 +262,11 @@
           "name": "Chatot",
           "avatar": "🦜",
           "color": "#38bdf8"
+        },
+        "pm": {
+          "name": "Keeper",
+          "avatar": "💡",
+          "color": "#e879f9"
         }
       }
     },
@@ -293,6 +313,11 @@
           "name": "Chatot",
           "avatar": "🦜",
           "color": "#38bdf8"
+        },
+        "pm": {
+          "name": "Slowking",
+          "avatar": "👑",
+          "color": "#e879f9"
         }
       }
     }
