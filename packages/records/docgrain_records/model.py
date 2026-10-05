@@ -1,0 +1,58 @@
+"""Explicit, opt-in OpenAI-compatible client, following docgrain_eval.model."""
+
+import time
+
+import httpx
+
+from .schema import proposal_schema
+
+
+class ModelResponseError(ValueError):
+    """Malformed/invalid model output; never expose its untrusted content in errors."""
+
+
+class ChatClient:
+    def __init__(self, base_url: str, model: str, api_key: str, timeout: float = 60,
+                 retries: int = 3, transport: httpx.BaseTransport | None = None):
+        if not base_url or not model or not api_key:
+            raise ValueError("model calls require explicit base_url, model and api_key")
+        if retries < 0:
+            raise ValueError("retries must be nonnegative")
+        self.model = model
+        self.retries = retries
+        self.client = httpx.Client(
+            base_url=base_url.rstrip("/") + "/", timeout=timeout, transport=transport,
+            headers={"Authorization": f"Bearer {api_key}"},
+        )
+
+    def close(self):
+        self.client.close()
+
+    def complete(self, messages: list[dict]) -> str:
+        payload = {
+            "model": self.model, "messages": messages, "temperature": 0,
+            "response_format": {"type": "json_schema", "json_schema": {
+                "name": "hospitality_proposals", "strict": True, "schema": proposal_schema(),
+            }},
+        }
+        for attempt in range(self.retries + 1):
+            response = self.client.post("chat/completions", json=payload)
+            # Older compatible endpoints may not implement structured output. The schema
+            # remains in the system prompt and local validation is never relaxed.
+            if response.status_code in {400, 422} and "response_format" in payload:
+                payload.pop("response_format")
+                response = self.client.post("chat/completions", json=payload)
+            if (response.status_code == 429 or response.status_code >= 500) and attempt < self.retries:
+                time.sleep(min(2 ** attempt, 8))
+                continue
+            response.raise_for_status()
+            try:
+                raw = response.json()["choices"][0]["message"]["content"]
+                if isinstance(raw, list):
+                    raw = "".join(part.get("text", "") for part in raw if isinstance(part, dict))
+                if not isinstance(raw, str):
+                    raise TypeError
+                return raw
+            except (ValueError, TypeError, KeyError, IndexError) as exc:
+                raise ModelResponseError("model response has no text content") from exc
+        raise RuntimeError("unreachable")

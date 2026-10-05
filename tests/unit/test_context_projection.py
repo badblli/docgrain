@@ -97,3 +97,25 @@ def test_no_header_vertical_merge_and_formula_without_cached_value():
     assert "| 1 | 2 |" in context
     assert "| 10 | A |" in context
     assert "|  | (=A1*2) |" in context
+
+
+def test_docx_context_uses_short_heading_and_preserves_xml_path_in_footer():
+    value = context_snapshot().model_dump(mode="json")
+    paragraph = next(node for node in value["content"] if node["kind"] == "text_block")
+    source_evidence = value["evidence"][0].copy()
+    source_evidence["id"] = "docx-paragraph"
+    source_evidence["locator"] = {
+        "kind": "docx_block", "part": "word/document.xml",
+        "path": "/document/body/p[1]#paraId=AB12",
+    }
+    value["evidence"].append(source_evidence)
+    paragraph["annotation"]["provenance"]["evidence_ids"] = [source_evidence["id"]]
+    output = AIOutput.model_validate(value)
+
+    context = context_projection(output)
+    body, key_map = context.split("## Kaynak anahtarları", 1)
+    paragraph_number = value["content"].index(paragraph) + 1
+    assert f"[§{paragraph_number} p.¶1]" in body
+    assert "/document/body/p[1]" not in body
+    assert (f"§{paragraph_number} → {paragraph['id']} · "
+            "word/document.xml:/document/body/p[1]#paraId=AB12") in key_map

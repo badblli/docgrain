@@ -1,6 +1,7 @@
 """A format-neutral, fidelity-preserving pre-embedding projection; not semantic inference."""
 
 import json
+import re
 from hashlib import sha256
 from typing import Literal
 
@@ -283,6 +284,7 @@ def context_projection(output: AIOutput) -> str:
     keys = []
     for number, node in enumerate(output.content, 1):
         location = "?"
+        docx_path = None
         for evidence_id in node.annotation.provenance.evidence_ids:
             locator = evidence.get(evidence_id)
             if locator is None:
@@ -292,14 +294,17 @@ def context_projection(output: AIOutput) -> str:
             elif locator.kind == "spreadsheet_range":
                 location = locator.sheet
             elif locator.kind == "docx_block":
-                location = locator.path
+                docx_path = f"{locator.part}:{locator.path}"
+                block = re.search(r"/(p|tbl)\[(\d+)\](?:#.*)?$", locator.path)
+                if block:
+                    location = ("¶" if block.group(1) == "p" else "T") + block.group(2)
             elif locator.kind == "text_span":
                 location = str(locator.start)
             else:
                 continue
             break
         key = f"[§{number} p.{location}]"
-        keys.append(f"§{number} → {node.id}")
+        keys.append(f"§{number} → {node.id}" + (f" · {docx_path}" if docx_path else ""))
         if node.kind == "section":
             content = "#" * min(node.level, 6) + " " + node.heading
         elif isinstance(node, TextBlock):
