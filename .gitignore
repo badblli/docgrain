@@ -32,6 +32,7 @@ redis_data/
 *.png
 *.jpg
 *.jpeg
+!tests/fixtures/structural/printed-tr-en.png
 
 # Editor and OS
 .DS_Store

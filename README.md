@@ -8,25 +8,31 @@ Docgrain genel amaçlıdır. LUWI gelecekteki tüketicilerinden biridir; core i�
 
 Hedef mimaride **canonical structured knowledge kaynak doğrusudur**. Markdown, chunks, embeddings ve uygulamaya özel görünümler bu modelden türetilir. Orijinal belgeler ve ham extraction sonuçları kanıt olarak korunur. Core schema ile kullanıcı/domain JSON Schema ayrı kalır.
 
-**Durum: pre-alpha / M1b structural parsing.** Canonical 0.1.0 foundation korunur; 0.2.0 table-cell sözleşmesi, multi-format parser ve worker canonical mapping eklendi. Canonical revision yalnız doğrulanmış, sürümlenmiş kaynak nesnesiyle persist edilir; `canonical.json` henüz publish edilmez.
+**Durum: pre-alpha / normalizasyon ve kaynak doğruluğu kabulü.** Altı format için ortak canonical model ve JSON/ZIP yolu; N1 PNG/JPEG + yerel basılı TR/EN OCR ve N2 native yapı/hücre kanıtı uygulanmıştır. Yeni N2 profili canonical 0.6.0 / `ai.json` 1.2.0 üretir; tarihsel schema/output byte'ları korunur. PDF tablo/sütun karşılaştırması, DOCX gerçek part/path/header/footer/drawing ve XLSX sayı biçimi/native chart facts kaynak kanıtı taşır. Çelişkiler ve görsel anlam hâlâ inceleme gerektirir. N3 yerel görsel envanteri/sınıflandırma önerileri ve seçilmiş OCR uygulanmıştır; görsel anlam için yerel model kabulü, N4 reconciliation ve N5 corpus kapıları açık; embedding en son. M2a–M2g backend foundations korunur; ingestion otomatik index üretmez. [N2 uygulaması ve sınırları](docs/N2_SOURCE_STRUCTURE.md), [N1](docs/N1_IMAGE_OCR.md), [scope/teknoloji kararı](docs/adr/0017-normalization-first-scope.md) ve [ADR dizini](docs/adr/README.md).
 
 | Alan | Bugünkü implementasyon |
 | --- | --- |
-| Ingestion | PDF/DOCX/TXT/XLSX kaydı → API upload proxy → MinIO → confirmation → Redis → worker |
+| Ingestion | PDF/DOCX/TXT/XLSX/PNG/JPEG kaydı → API upload proxy → MinIO → confirmation → Redis → worker |
 | Rendering | PyMuPDF ile PDF sayfaları, 200 DPI PNG |
-| Extraction | Gemini key varsa tüm sayfalarda Gemini; yoksa OCR kapalı Docling |
-| Çıktılar | Provider-specific `document.json`, `document.md`, `pages.json`, page PNG; Gemini yolunda başarılı sayfa JSON dosyaları |
+| Extraction | Canonical: Docling + pinned local EasyOCR TR/EN CPU; TXT deterministic, XLSX native facts. Seçilmiş görsel OCR doğrudan yerel Reader kullanır. Harici Vision varsayılan kapalı; key tek başına worker çağrısını açmaz |
+| Çıktılar | Otomatik canonical JSON/Markdown, ortak `ai.json` + schema, chunks ve checksum manifest; verified binary ekleriyle ZIP. Legacy extraction dosyaları ayrı korunur |
 | Metadata | PostgreSQL document/version/job kayıtları |
 | Kısmi hata | Bazı extraction hataları page failure olarak kaydedilir; bu recovery garantisi değildir |
-| Console | API kayıtları, page render, doküman düzeyinde extraction Markdown; açık demo modu |
-| Canonical structure | Docling-first PDF/DOCX/XLSX, deterministik TXT, format-aware evidence ve ayrı canonical PostgreSQL revision; yalnız object version ID varsa |
-| Henüz yok | Canonical artifact publication, Vision reconciliation, processing manifest, genel table/asset catalog, chunking, embedding, indexing, Structured Knowledge Patch, stage retry, crash recovery |
+| Console | Varsayılan AI çıktısı: okunabilir içerik, exact tablolar, resim/evidence, eksikler ve JSON/ZIP. Canonical Inspector ve açık demo modu |
+| Canonical structure | Docling layout/image/OCR; native PDF hücre kontrolü, DOCX OOXML parts ve XLSX cells/charts; deterministik TXT; gerçek source evidence/EXIF geometry ve ayrı canonical PostgreSQL revision |
+| Entities | Dış schema kaydı, explicit candidate publication, leaf-level JSON Pointer evidence, extracted → needs_review → accepted/rejected ve ayrı JSON retrieval projection; otomatik semantik extraction henüz yok |
+| Canonical chunks | Bölüm/list context, lossless text slices, atomik table rows ve accepted entity JSON; explicit revision-scoped API, karakter bütçesi ve kaynak kanıtları |
+| Incremental lifecycle | Exact canonical JSON diff, lineage invalidation candidates, selective embedding checkpoints, immutable PostgreSQL generations ve atomic head/CAS; explicit injected adapter, boş generation ile removal ve full rebuild |
+| Retrieval | Tek scoped API; accepted JSON exact filters, precomputed direct context, BM25/cosine/RRF; conditional phrase baseline veya explicit reranker adapter. Vektörler caller-supplied; production semantic model seçilmiş değil |
+| Evaluation | Golden source/evidence labels, recall/MRR/nDCG, no-answer checks; tiny/small/medium/large cold/warm/concurrent HTTP p50/p95/p99. Production SLO belirlenmedi |
+| Live source foundation | Explicit filesystem/versioned object scan → PostgreSQL cursor/CAS/outbox → idempotent callback/ack; source deletion tüm current retrieval yollarını kapatır, history korunur. Pathway spike sonrası runtime dependency eklenmedi |
+| Henüz yok | Vision reconciliation/OCR quality routing, otomatik semantic extraction/index job stage, live model/Qdrant adapter, adaptive router/knowledge profile, registered background connectors/webhook receiver, Structured Knowledge Patch, stage retry, ingestion crash recovery |
 
 `document.json` içeriği kullanılan parser'a bağlıdır; canonical knowledge sözleşmesi değildir. `pages.json` yalnızca render boyutlarını içerir; processing manifest değildir. Job `done`, mevcut extraction yolunun tamamlandığını ifade eder; hedef pipeline'ın tamamlandığı anlamına gelmez.
 
 ## Sabitlenen ilk format scope'u
 
-**PDF, DOCX, TXT, XLSX.** API MIME/extension ve upload byte biçimini doğrular. Desteklenmeyen veya uyuşmayan biçimler `415`, bozuk destekli içerik `422` döner. PPTX, HTML ve bağımsız image ingestion ilk scope dışında kalır.
+**PDF, DOCX, TXT, XLSX, PNG, JPEG (.jpg/.jpeg).** API MIME/extension/magic ve image decode doğrular. Desteklenmeyen veya uyuşmayan biçimler `415`, bozuk destekli içerik `422` döner. PPTX, HTML, legacy .doc/.xls ve animated images scope dışında kalır. İlk OCR profili basılı Türkçe/İngilizcedir; bu scope bütün anlamın kusursuz çıkarıldığı anlamına gelmez.
 
 ## Hedef pipeline — sonraki aşamalar
 
@@ -37,9 +43,9 @@ source → Docling structural parsing → quality/routing → Vision enrichment
                              → optional embeddings / Qdrant
 ```
 
-M1b canonical structural yolunda Docling PDF/DOCX/XLSX için ana parser, TXT için deterministik decoder'dır. Mevcut PDF legacy JSON/Markdown akışı Gemini-or-Docling olarak kalır; Gemini sonucu canonical snapshot'a eklenmez. Selective Vision ve reconciliation resmî M2 kapsamındadır.
+M1b canonical structural yolunda Docling PDF/DOCX/XLSX için ana parser, TXT için deterministik decoder'dır. Mevcut PDF legacy JSON/Markdown akışı Gemini-or-Docling olarak kalır; Gemini sonucu canonical snapshot'a eklenmez. Güncel dependency sırası identity/lineage → entities → chunks → diff/invalidation → retrieval → evaluation → live-source spike tamamlandı; selective Vision/reconciliation ayrı capability track'tir. Inspector/image ve M2 foundations `codex/canonical-ai-output-integration` üzerinde birleşip yerelde deploy edildi. İnceleme worker'ında Gemini devre dışıdır; `.env` korunur.
 
-Hedef artifact seti: `canonical.json`, `canonical.md`, `manifest.json`, `assets/`, `chunks.jsonl`; embeddings ve Qdrant opsiyoneldir. Bu artifact seti bugün üretilmez. Gelecekteki canonical export path sözleşmesi `documents/{document_id}/knowledge/{knowledge_revision_id}/canonical.json`; M1 bu nesneyi yazmaz ve mevcut raw artifact path'lerini değiştirmez.
+Yayımlanan artifact seti: `canonical.json`, `canonical.md`, `manifest.json`, `chunks.jsonl`, `ai.json`, `ai.schema.json`; ZIP'te binary `assets/` ekleri bulunur. Versioned storage yolu `knowledge/<document>/<canonical_revision>/<projection_revision>/<file>`; [salt okunur çıktı API'si](docs/PRE_EMBEDDING_OUTPUT.md) yalnız stored byte'ları sunar. Mevcut raw artifact path'leri korunur. Embeddings ve Qdrant opsiyoneldir.
 
 M1 contract'ı `packages/domain/docgrain_domain/canonical/` altındadır. Eski 0.1.0 JSON Schema korunur; M1b `TableCell` genişlemesini 0.2.0 artifact'iyle sürümler. Core ve domain schema ayrıdır. `SourceVersion` ve `KnowledgeRevision` satırları immutable, revision'lar append-only ve latest/approved head ayrıdır. Mevcut upload key'i overwrite edilebilir; worker yalnız SHA-256 doğrulaması ve gerçek MinIO object `versionId` ile canonical persistence yapar. Version ID olmayan eski kaynaklar gate dışında kalır. [ADR 0005](docs/adr/0005-canonical-knowledge-foundation.md) ve [ADR 0006](docs/adr/0006-m1b-structural-parsing.md) ayrıntıları açıklar.
 
@@ -51,7 +57,7 @@ M1 contract'ı `packages/domain/docgrain_domain/canonical/` altındadır. Eski 0
 - Console modu API'den alır; API erişilemiyorsa hata gösterir. Demo verisiyle devam etmez.
 - Demo chunk, similarity ve ileri pipeline örnekleri simülasyondur. Gerçek embedding veya extraction sonucu değildir.
 - Stage retry her iki modda `501` döndürür; herhangi bir iş planlamaz.
-- Live chunk lookup/neighbors ve boundary analysis `501` döndürür. Mevcut live version'ın table/asset/chunk listeleri boş döner.
+- Legacy live chunk lookup/neighbors ve boundary analysis `501` döndürür. Canonical chunk üretim/okuma için [revision-scoped API](docs/M2C_CHUNKS.md) kullanılır. Legacy live version listeleri bu chunk revision'larını temsil etmez.
 - Live version diff yalnızca aynı dokümana ait sürümlerin sayaç farkıdır; semantic diff veya patch değildir.
 - Provider envanteri bağlantı testi yapmaz. `healthy: null` kontrol edilmedi, `false` yapılandırılmadı/implement edilmedi anlamındadır. Live page `confidence: null` ölçülmedi demektir.
 
@@ -105,7 +111,7 @@ npm run build
 
 Redis list dispatch acknowledgment/lease/recovery sağlamaz; worker çökmesi işi kaybettirebilir veya `running` bırakabilir. Stage özetleri işlem sonunda yazılır; ayrıntılı stage timing/progress yoktur. Önceki sürümlerde kaydedilmiş stage metadatası M0 tarafından geriye dönük düzeltilmez.
 
-Deduplication, mevcut dokümana yeni revision yükleme, source/artifact write-once garantisi, checksum doğrulamalı upload, atomic publication ve tenant authorization henüz yoktur. Source URI ingestion `501` ile reddedilir. Yeni kayıtların source URI'si gerçek upload key ve configured bucket ile eşleşir; eski kayıtlar migrate edilmez.
+Deduplication, mevcut dokümana yeni revision yükleme, source key write-once garantisi ve tenant authorization henüz yoktur. Source SHA/version doğrulaması ve output paketinin atomic metadata publication'ı vardır; bu distributed ingestion recovery garantisi değildir. Source URI ingestion `501` ile reddedilir. Yeni kayıtların source URI'si gerçek upload key ve configured bucket ile eşleşir; eski kayıtlar migrate edilmez.
 
 Compose'ta özel S3 credentials ve API public URL için API environment wiring eksikleri, dependency pinning ve migration gereksinimleri devam eder. Bunlar M0'da altyapı rewrite'ı yapılarak çözülmedi.
 
@@ -115,8 +121,12 @@ Jev ve decision-provider framework; LangChain/LangGraph; çoklu Vision/embedding
 
 ## Sonraki çalışma
 
-M1b structural parsing M1 milestone'un ikinci yarısıdır. Resmî M2 selective multimodal enrichment + reconciliation'dır. [Milestone planı](docs/DEVELOPMENT_HARNESS.md), [mimari](docs/ARCHITECTURE.md) ve [M1b kararı](docs/adr/0006-m1b-structural-parsing.md).
+Embedding öncesi kaynak↔çıktı fidelity kabulü, yerel görsel inceleme/OCR ve evidence reconciliation. Tek format, her belgenin bütün anlamının eksiksiz çıkarılması garantisi değildir. Mevcut iki PDF'teki 23 görselin açıklaması kaynak kontrolüyle yeni manuel revision'lara eklendi; dört planın ölçü/ayrıntı belirsizlikleri korunuyor. CPU görsel modeli deneysel öneri üretir; otomatik anlam kabulü ve geniş corpus doğrulaması açık. [ADR 0023](docs/adr/0023-local-cpu-visual-proposals.md), [N3 yerel inceleme](docs/N3_LOCAL_VISUAL_REVIEW.md), [ortak çıktı](docs/PRE_EMBEDDING_OUTPUT.md), [milestone planı](docs/DEVELOPMENT_HARNESS.md), [mimari](docs/ARCHITECTURE.md).
 
 ## License
 
 MIT; [LICENSE](LICENSE). Gizli belgeler, credential'lar ve generated artifact'lar Git'e eklenmez.
+
+## Belgeyi incele ve revision kaydet
+
+Varsayılan belge ekranı kaynakla yan yana okunabilir metin, tablo hücreleri, görsel açıklamaları, açık eksikler ve canonical revision geçmişi sunar. Kaynakla kontrol edilen sınırlı alanlar önizleme/CAS ile yeni immutable revision olarak kaydedilir; eski kaynak/paketler korunur. Seçili revision için açık onaylı deneysel Gemini Q&A ayrıca erişilebilir. Embedding üretilmez. Kullanım ve sınırlar: [USER_REVIEW](docs/USER_REVIEW.md).

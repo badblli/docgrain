@@ -11,6 +11,7 @@ from .models import (
     ChartNode,
     DocumentNode,
     ListNode,
+    SchemaEntity,
     SectionNode,
 )
 
@@ -54,7 +55,8 @@ def validate_snapshot(snapshot: CanonicalKnowledgeSnapshot) -> None:
     _unique(all_ids, "canonical ID across collections")
     _unique([f"{node.kind}:{node.identity_key}" for node in snapshot.structure], "node identity key")
     for collection in (snapshot.entities, snapshot.relations, snapshot.records):
-        _unique([item.identity_key for item in collection], "identity key within collection")
+        _unique([f"{item.schema_id}:{item.identity_key}" if isinstance(item, SchemaEntity) else item.identity_key
+                 for item in collection], "identity key within collection")
 
     roots = [node for node in snapshot.structure if isinstance(node, DocumentNode)]
     if len(roots) != 1 or roots[0].id != snapshot.root_node_id:
@@ -121,9 +123,17 @@ def validate_snapshot(snapshot: CanonicalKnowledgeSnapshot) -> None:
     for item in [*snapshot.structure, *snapshot.entities, *snapshot.relations, *snapshot.records]:
         check_annotation(item.annotation)
         for field_name, annotation in item.field_annotations.items():
-            if not field_name:
+            if not field_name and not isinstance(item, SchemaEntity):
                 raise ValueError("field annotation name must be nonempty")
             check_annotation(annotation)
+    from .lifecycle import entity_id as schema_entity_id
+    for entity in snapshot.entities:
+        if isinstance(entity, SchemaEntity):
+            schema = schemas.get(entity.schema_id)
+            if schema is None or schema.version != entity.schema_version:
+                raise ValueError("entity schema ID/version differs from snapshot schema reference")
+            if entity.id != schema_entity_id(snapshot.document_id, entity.schema_id, entity.identity_key):
+                raise ValueError("entity ID differs from document/schema/key identity")
     for node in snapshot.structure:
         if node.kind == "table":
             for row in node.rows:

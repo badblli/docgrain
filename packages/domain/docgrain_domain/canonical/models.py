@@ -5,9 +5,18 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Annotated, Literal
 
-from pydantic import ConfigDict, Field, JsonValue, field_validator, model_validator
+from pydantic import (
+    ConfigDict,
+    Field,
+    JsonValue,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
-from .identity import IDENTITY_POLICY_VERSION
+from .identity import IDENTITY_POLICY_VERSION, deterministic_item_id
+from .lifecycle import ProcessingSpec, processing_revision_id, source_revision_id
 from .locations import Locator, StrictModel
 
 ReviewStatus = Literal["unreviewed", "proposed", "approved", "rejected", "overridden"]
@@ -60,6 +69,15 @@ class KnowledgeRevision(StrictModel):
     created_at: datetime
     producers: tuple[Producer, ...] = Field(min_length=1)
     coverage: str | None = None
+    processing: ProcessingSpec | None = None
+
+    @model_serializer(mode="wrap")
+    def serialize_revision(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
+        payload = handler(self)
+        if self.processing is None:
+            # Preserve historical snapshot bytes/hashes and their strict schema on replay.
+            payload.pop("processing", None)
+        return payload
 
     @field_validator("created_at")
     @classmethod
@@ -196,6 +214,15 @@ class TableCell(StrictModel):
     display_text: str | None = None
     row_span: int = Field(default=1, ge=1)
     col_span: int = Field(default=1, ge=1)
+    # 0.6.0: literal source type/format/merge or parser conflict facts.
+    source_attributes: dict[str, JsonValue] | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_historical_bytes(self, handler: SerializerFunctionWrapHandler):
+        value = handler(self)
+        if self.source_attributes is None:
+            value.pop("source_attributes", None)
+        return value
 
 
 class TableNode(NodeBase):
@@ -214,6 +241,15 @@ class ChartNode(NodeBase):
     kind: Literal["chart"] = "chart"
     artifact_id: str | None = None
     description: str | None = None
+    # Native chart facts are source data, not a generated visual description.
+    source_data: dict[str, JsonValue] | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_historical_bytes(self, handler: SerializerFunctionWrapHandler):
+        value = handler(self)
+        if self.source_data is None:
+            value.pop("source_data", None)
+        return value
 
 
 class ListNode(NodeBase):
@@ -237,6 +273,77 @@ class Entity(StrictModel):
     annotation: Annotation
     field_annotations: dict[str, Annotation] = Field(default_factory=dict)
     validity: TemporalValidity | None = None
+
+
+EntityReviewStatus = Literal["extracted", "needs_review", "accepted", "rejected"]
+
+
+class EntityReviewEvent(StrictModel):
+    decision_id: str = Field(min_length=1)
+    from_status: EntityReviewStatus
+    to_status: EntityReviewStatus
+    reviewer_id: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+    occurred_at: datetime
+
+    @field_validator("occurred_at")
+    @classmethod
+    def aware_time(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("review timestamp must be timezone-aware")
+        return value
+
+
+class SchemaEntity(StrictModel):
+    """Schema-bound business JSON; never a retrieval text representation."""
+
+    kind: Literal["schema_entity"] = "schema_entity"
+    id: str = Field(min_length=1)
+    identity_key: str = Field(min_length=1)
+    type: str = Field(min_length=1)
+    label: str
+    schema_id: str = Field(min_length=1)
+    schema_version: str = Field(min_length=1)
+    data: dict[str, JsonValue]
+    annotation: Annotation
+    field_annotations: dict[str, Annotation]
+    validation: DomainValidationResult = Field(default_factory=DomainValidationResult)
+    review_status: EntityReviewStatus = "extracted"
+    review_events: list[EntityReviewEvent] = Field(default_factory=list)
+    validity: TemporalValidity | None = None
+
+    @model_validator(mode="after")
+    def fields_and_review(self) -> SchemaEntity:
+        from .entity_fields import leaf_pointers, resolve_pointer
+
+        for path, annotation in self.field_annotations.items():
+            resolve_pointer(self.data, path)
+            if not annotation.provenance.evidence_ids:
+                raise ValueError("entity field provenance requires source evidence")
+        if set(self.field_annotations) != leaf_pointers(self.data):
+            raise ValueError("entity field provenance must cover every JSON leaf exactly")
+        if not self.annotation.provenance.evidence_ids:
+            raise ValueError("entity provenance requires source evidence")
+        status = "extracted"
+        decisions: set[str] = set()
+        previous_time = None
+        allowed = {"extracted": {"needs_review"}, "needs_review": {"accepted", "rejected"}}
+        for event in self.review_events:
+            if event.from_status != status or event.to_status not in allowed.get(status, set()):
+                raise ValueError("invalid entity review transition")
+            if event.decision_id in decisions or (previous_time and event.occurred_at < previous_time):
+                raise ValueError("entity review decisions must be unique and chronological")
+            decisions.add(event.decision_id)
+            previous_time = event.occurred_at
+            status = event.to_status
+        if status != self.review_status:
+            raise ValueError("entity review state differs from its decision history")
+        if status == "accepted" and self.validation.status != "valid":
+            raise ValueError("only schema-valid entities can be accepted")
+        annotation_status = {"extracted": "proposed", "needs_review": "proposed", "accepted": "approved", "rejected": "rejected"}
+        if self.annotation.review_status != annotation_status[status]:
+            raise ValueError("entity annotation review state mismatch")
+        return self
 
 
 class Relation(StrictModel):
@@ -270,15 +377,15 @@ class DomainRecord(StrictModel):
 
 
 class CanonicalKnowledgeSnapshot(StrictModel):
-    schema_version: Literal["0.1.0", "0.2.0"] = "0.2.0"
-    identity_policy_version: Literal["0.1.0"] = IDENTITY_POLICY_VERSION
+    schema_version: Literal["0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0"] = "0.2.0"
+    identity_policy_version: Literal["0.1.0", "0.2.0"] = IDENTITY_POLICY_VERSION
     document_id: str = Field(min_length=1)
     workspace_id: str = Field(min_length=1)
     source_version: SourceVersion
     knowledge_revision: KnowledgeRevision
     root_node_id: str = Field(min_length=1)
     structure: list[StructuralNode] = Field(min_length=1)
-    entities: list[Entity] = Field(default_factory=list)
+    entities: list[Entity | SchemaEntity] = Field(default_factory=list)
     relations: list[Relation] = Field(default_factory=list)
     records: list[DomainRecord] = Field(default_factory=list)
     evidence: list[Evidence] = Field(default_factory=list)
@@ -290,6 +397,36 @@ class CanonicalKnowledgeSnapshot(StrictModel):
     def semantic_validation(self) -> CanonicalKnowledgeSnapshot:
         from .validation import validate_snapshot
 
+        processing = self.knowledge_revision.processing
+        if self.schema_version in {"0.3.0", "0.4.0", "0.5.0", "0.6.0"}:
+            if processing is None or self.identity_policy_version != processing.identity_policy_version:
+                raise ValueError("0.3.0 requires a processing spec and its identity policy")
+            if processing.schema_version != self.schema_version:
+                raise ValueError("processing spec schema version mismatch")
+            if self.source_version.id != source_revision_id(
+                self.workspace_id, self.document_id, self.source_version.content_sha256
+            ):
+                raise ValueError("source revision ID differs from verified content identity")
+            if self.knowledge_revision.id != processing_revision_id(self.source_version.id, processing):
+                raise ValueError("processing revision ID differs from source/configuration")
+            if any(p.configuration_digest != processing.digest for p in self.knowledge_revision.producers):
+                raise ValueError("producer configuration must match processing spec")
+            if any(node.id != deterministic_item_id(self.document_id, node.kind, node.identity_key,
+                                                   policy_version=self.identity_policy_version)
+                   for node in self.structure):
+                raise ValueError("canonical node ID differs from document/key/policy")
+        elif processing is not None or self.identity_policy_version != "0.1.0":
+            raise ValueError("processing spec and identity policy 0.2.0 require schema_version 0.3.0")
+        if self.schema_version not in {"0.4.0", "0.5.0", "0.6.0"} and any(isinstance(entity, SchemaEntity) for entity in self.entities):
+            raise ValueError("schema entities require canonical schema_version 0.4.0")
+        if self.schema_version not in {"0.5.0", "0.6.0"} and any(e.locator.kind == "image_region" for e in self.evidence):
+            raise ValueError("image locations require canonical schema_version 0.5.0")
+        if self.schema_version != "0.6.0" and any(
+            (isinstance(n, ChartNode) and n.source_data is not None) or
+            (isinstance(n, TableNode) and any(c.source_attributes is not None for row in n.rows for c in row))
+            for n in self.structure
+        ):
+            raise ValueError("native chart/cell source facts require canonical schema_version 0.6.0")
         if self.schema_version == "0.1.0":
             for node in self.structure:
                 if isinstance(node, TableNode):

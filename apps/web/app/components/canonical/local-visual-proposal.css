@@ -1,0 +1,21 @@
+/* Local visual proposal — reuses the review workspace tokens (.rw scope). */
+.lvp { margin-top: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; min-width: 0;
+  border: 1px dashed var(--rw-rule); border-left: 4px solid var(--rw-teal); border-radius: 6px; background: var(--rw-sheet); }
+.lvp-head { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.lvp-head .rw-chip { max-width: 100%; overflow-wrap: anywhere; }
+.lvp-problem { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.lvp-result { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding-top: 10px; border-top: 1px solid var(--rw-rule2); }
+.lvp-result.is-stale { opacity: .55; }
+.lvp-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.lvp-chips .rw-chip { max-width: 100%; overflow-wrap: anywhere; }
+.lvp-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.lvp-field > span { font: 700 10px/1.4 var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--rw-muted); }
+.lvp-text { margin: 0; padding: 8px 12px; border-left: 3px solid var(--rw-redline); background: var(--rw-redline-soft);
+  font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.lvp-list { margin: 0; padding-left: 18px; font-size: 12.5px; line-height: 1.55; overflow-wrap: anywhere; }
+.lvp-list code { font: 12px/1.5 var(--f-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.lvp .rw-meta { overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .lvp { padding: 10px; }
+  .lvp .rw-row .rw-btn { flex: 1 1 100%; }
+}

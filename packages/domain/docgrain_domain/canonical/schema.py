@@ -10,13 +10,91 @@ SCHEMA_ID = "urn:docgrain:canonical-knowledge:0.2.0"
 DIALECT = "https://json-schema.org/draft/2020-12/schema"
 
 
-def generated_core_schema() -> dict[str, object]:
-    schema = CanonicalKnowledgeSnapshot.model_json_schema(mode="validation")
-    schema["$schema"] = DIALECT
-    schema["$id"] = SCHEMA_ID
-    schema["properties"]["schema_version"] = {"const": "0.2.0", "title": "Schema Version", "type": "string"}
+def without_image_locations(schema: dict) -> dict:
+    """Keep historical locator unions byte-for-byte stable when generating old schemas."""
+    def walk(value):
+        if isinstance(value, dict):
+            for key in ("oneOf", "anyOf"):
+                if key in value:
+                    value[key] = [item for item in value[key] if item.get("$ref") != "#/$defs/ImageRegionLocator"]
+            discriminator = value.get("discriminator", {})
+            discriminator.get("mapping", {}).pop("image_region", None)
+            for child in value.values():
+                walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+    schema.get("$defs", {}).pop("ImageRegionLocator", None)
+    walk(schema)
     return schema
 
 
-def generated_core_schema_text() -> str:
-    return json.dumps(generated_core_schema(), ensure_ascii=False, sort_keys=True, indent=2) + "\n"
+def generated_core_schema(version: str = "0.2.0") -> dict[str, object]:
+    if version not in {"0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0"}:
+        raise ValueError("unsupported generated schema version")
+    schema = CanonicalKnowledgeSnapshot.model_json_schema(mode="validation")
+    if version != "0.6.0":
+        without_native_facts(schema)
+    if version not in {"0.5.0", "0.6.0"}:
+        without_image_locations(schema)
+    schema["$schema"] = DIALECT
+    schema["$id"] = f"urn:docgrain:canonical-knowledge:{version}"
+    schema["properties"]["schema_version"] = {"const": version, "title": "Schema Version", "type": "string"}
+    if version not in {"0.4.0", "0.5.0", "0.6.0"}:
+        schema["properties"]["entities"]["items"] = {"$ref": "#/$defs/Entity"}
+        for name in ("SchemaEntity", "EntityReviewEvent"):
+            schema["$defs"].pop(name)
+    if version == "0.2.0":
+        schema["properties"]["identity_policy_version"]["const"] = "0.1.0"
+        schema["properties"]["identity_policy_version"].pop("enum", None)
+        schema["$defs"]["KnowledgeRevision"]["properties"].pop("processing")
+        schema["$defs"].pop("ProcessingSpec")
+    else:
+        schema["properties"]["identity_policy_version"] = {
+            "const": "0.2.0", "title": "Identity Policy Version", "type": "string"}
+        schema["$defs"]["KnowledgeRevision"]["properties"]["processing"] = {"$ref": "#/$defs/ProcessingSpec"}
+        schema["$defs"]["KnowledgeRevision"]["required"].append("processing")
+        schema["$defs"]["ProcessingSpec"]["properties"]["schema_version"] = {
+            "const": version, "default": version, "title": "Schema Version", "type": "string"}
+    return schema
+
+
+def without_native_facts(schema: dict) -> dict:
+    for model, prop in (("TableCell", "source_attributes"), ("ChartNode", "source_data")):
+        schema["$defs"][model]["properties"].pop(prop, None)
+    return schema
+
+
+def generated_core_schema_text(version: str = "0.2.0") -> str:
+    return json.dumps(generated_core_schema(version), ensure_ascii=False, sort_keys=True, indent=2) + "\n"
+
+
+def generated_lineage_schema_text(version: str = "0.1.0") -> str:
+    from .lineage import DerivedManifest
+
+    if version not in {"0.1.0", "0.2.0", "0.3.0"}:
+        raise ValueError("unsupported derived manifest schema version")
+    schema = DerivedManifest.model_json_schema(mode="validation")
+    schema["$schema"] = DIALECT
+    schema["$id"] = f"urn:docgrain:derived-manifest:{version}"
+    schema["properties"]["schema_version"] = {"const": version, "default": version, "title": "Schema Version", "type": "string"}
+    if version != "0.3.0":
+        for name in ("chunks", "chunk_omissions"):
+            schema["properties"].pop(name)
+        for name in ("ChunkPayload", "ChunkSource", "ChunkContext", "ChunkOmission"):
+            schema["$defs"].pop(name)
+    if version == "0.1.0":
+        schema["properties"].pop("projections")
+        schema["$defs"].pop("ProjectionArtifact")
+        schema["$defs"]["ObjectRef"]["properties"]["kind"]["enum"].remove("projection")
+        schema["$defs"]["DerivedRevision"]["properties"]["stage"]["enum"].remove("projection")
+    return json.dumps(schema, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
+
+
+def generated_index_schema_text() -> str:
+    from .indexing import IndexGeneration
+
+    schema = IndexGeneration.model_json_schema(mode="validation")
+    schema["$schema"] = DIALECT
+    schema["$id"] = "urn:docgrain:index-generation:0.1.0"
+    return json.dumps(schema, ensure_ascii=False, sort_keys=True, indent=2) + "\n"

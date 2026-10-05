@@ -1,6 +1,7 @@
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+ENV DOCGRAIN_OCR_ENABLED=true DOCGRAIN_OCR_MODEL_DIR=/opt/docgrain/easyocr OMP_NUM_THREADS=2 MKL_NUM_THREADS=2
 WORKDIR /srv
 
 RUN apt-get update \
@@ -26,5 +27,8 @@ RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu 
 COPY apps/worker/docgrain_worker /srv/apps/worker/docgrain_worker
 COPY apps/api/docgrain_api /srv/apps/api/docgrain_api
 COPY packages/domain/docgrain_domain /srv/packages/domain/docgrain_domain
+
+# Fetch verified CRAFT/Latin checkpoints at build time; runtime never downloads OCR weights.
+RUN python -m docgrain_worker.ocr --download
 
 CMD ["python", "-m", "docgrain_worker.main"]

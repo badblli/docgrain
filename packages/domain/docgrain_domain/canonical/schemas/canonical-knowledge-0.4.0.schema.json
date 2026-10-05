@@ -1,0 +1,1803 @@
+{
+  "$defs": {
+    "Annotation": {
+      "additionalProperties": false,
+      "properties": {
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        },
+        "review_status": {
+          "default": "unreviewed",
+          "enum": [
+            "unreviewed",
+            "proposed",
+            "approved",
+            "rejected",
+            "overridden"
+          ],
+          "title": "Review Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provenance"
+      ],
+      "title": "Annotation",
+      "type": "object"
+    },
+    "ArtifactObjectLocator": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "minLength": 1,
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "artifact_object",
+          "default": "artifact_object",
+          "title": "Kind",
+          "type": "string"
+        },
+        "object_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Object Path"
+        }
+      },
+      "required": [
+        "artifact_id"
+      ],
+      "title": "ArtifactObjectLocator",
+      "type": "object"
+    },
+    "ArtifactRef": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_size": {
+          "minimum": 0,
+          "title": "Byte Size",
+          "type": "integer"
+        },
+        "content_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Sha256",
+          "type": "string"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "mime_type": {
+          "minLength": 1,
+          "title": "Mime Type",
+          "type": "string"
+        },
+        "role": {
+          "minLength": 1,
+          "title": "Role",
+          "type": "string"
+        },
+        "storage_uri": {
+          "minLength": 1,
+          "title": "Storage Uri",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "role",
+        "storage_uri",
+        "content_sha256",
+        "byte_size",
+        "mime_type"
+      ],
+      "title": "ArtifactRef",
+      "type": "object"
+    },
+    "AssetNode": {
+      "additionalProperties": false,
+      "properties": {
+        "annotation": {
+          "$ref": "#/$defs/Annotation"
+        },
+        "artifact_id": {
+          "minLength": 1,
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "field_annotations": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Annotation"
+          },
+          "title": "Field Annotations",
+          "type": "object"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "identity_key": {
+          "minLength": 1,
+          "title": "Identity Key",
+          "type": "string"
+        },
+        "kind": {
+          "const": "asset",
+          "default": "asset",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "identity_key",
+        "annotation",
+        "artifact_id"
+      ],
+      "title": "AssetNode",
+      "type": "object"
+    },
+    "ChartNode": {
+      "additionalProperties": false,
+      "properties": {
+        "annotation": {
+          "$ref": "#/$defs/Annotation"
+        },
+        "artifact_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Artifact Id"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "field_annotations": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Annotation"
+          },
+          "title": "Field Annotations",
+          "type": "object"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "identity_key": {
+          "minLength": 1,
+          "title": "Identity Key",
+          "type": "string"
+        },
+        "kind": {
+          "const": "chart",
+          "default": "chart",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "identity_key",
+        "annotation"
+      ],
+      "title": "ChartNode",
+      "type": "object"
+    },
+    "DateRange": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "date_range",
+          "default": "date_range",
+          "title": "Kind",
+          "type": "string"
+        },
+        "valid_from": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Valid From"
+        },
+        "valid_until": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Valid Until"
+        }
+      },
+      "title": "DateRange",
+      "type": "object"
+    },
+    "DatetimeRange": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "datetime_range",
+          "default": "datetime_range",
+          "title": "Kind",
+          "type": "string"
+        },
+        "valid_from": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Valid From"
+        },
+        "valid_until": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Valid Until"
+        }
+      },
+      "title": "DatetimeRange",
+      "type": "object"
+    },
+    "DocumentNode": {
+      "additionalProperties": false,
+      "properties": {
+        "annotation": {
+          "$ref": "#/$defs/Annotation"
+        },
+        "children": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Children",
+          "type": "array"
+        },
+        "field_annotations": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Annotation"
+          },
+          "title": "Field Annotations",
+          "type": "object"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "identity_key": {
+          "minLength": 1,
+          "title": "Identity Key",
+          "type": "string"
+        },
+        "kind": {
+          "const": "document",
+          "default": "document",
+          "title": "Kind",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        }
+      },
+      "required": [
+        "id",
+        "identity_key",
+        "annotation"
+      ],
+      "title": "DocumentNode",
+      "type": "object"
+    },
+    "DocxBlockLocator": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "docx_block",
+          "default": "docx_block",
+          "title": "Kind",
+          "type": "string"
+        },
+        "part": {
+          "description": "DOCX package part, e.g. word/document.xml",
+          "minLength": 1,
+          "title": "Part",
+          "type": "string"
+        },
+        "path": {
+          "description": "Stable path within the package part",
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "part",
+        "path"
+      ],
+      "title": "DocxBlockLocator",
+      "type": "object"
+    },
+    "DomainRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "annotation": {
+          "$ref": "#/$defs/Annotation"
+        },
+        "entity_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Entity Ids",
+          "type": "array"
+        },
+        "field_annotations": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Annotation"
+          },
+          "title": "Field Annotations",
+          "type": "object"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "identity_key": {
+          "minLength": 1,
+          "title": "Identity Key",
+          "type": "string"
+        },
+        "schema_id": {
+          "minLength": 1,
+          "title": "Schema Id",
+          "type": "string"
+        },
+        "validation": {
+          "$ref": "#/$defs/DomainValidationResult"
+        },
+        "validity": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "date_range": "#/$defs/DateRange",
+                  "datetime_range": "#/$defs/DatetimeRange"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/DateRange"
+                },
+                {
+                  "$ref": "#/$defs/DatetimeRange"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Validity"
+        },
+        "values": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Values",
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "identity_key",
+        "schema_id",
+        "values",
+        "annotation"
+      ],
+      "title": "DomainRecord",
+      "type": "object"
+    },
+    "DomainSchemaRef": {
+      "additionalProperties": false,
+      "properties": {
+        "content_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Sha256",
+          "type": "string"
+        },
+        "dialect": {
+          "const": "https://json-schema.org/draft/2020-12/schema",
+          "default": "https://json-schema.org/draft/2020-12/schema",
+          "title": "Dialect",
+          "type": "string"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "content_sha256"
+      ],
+      "title": "DomainSchemaRef",
+      "type": "object"
+    },
+    "DomainValidationResult": {
+      "additionalProperties": false,
+      "properties": {
+        "errors": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Errors",
+          "type": "array"
+        },
+        "status": {
+          "default": "not_validated",
+          "enum": [
+            "not_validated",
+            "valid",
+            "invalid",
+            "unavailable"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "title": "DomainValidationResult",
+      "type": "object"
+    },
+    "Entity": {
+      "additionalProperties": false,
+      "properties": {
+        "annotation": {
+          "$ref": "#/$defs/Annotation"
+        },
+        "field_annotations": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Annotation"
+          },
+          "title": "Field Annotations",
+          "type": "object"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "identity_key": {
+          "minLength": 1,
+          "title": "Identity Key",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "properties": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Properties",
+          "type": "object"
+        },
+        "type": {
+          "minLength": 1,
+          "title": "Type",
+          "type": "string"
+        },
+        "validity": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "date_range": "#/$defs/DateRange",
+                  "datetime_range": "#/$defs/DatetimeRange"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/DateRange"
+                },
+                {
+                  "$ref": "#/$defs/DatetimeRange"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Validity"
+        }
+      },
+      "required": [
+        "id",
+        "identity_key",
+        "type",
+        "label",
+        "annotation"
+      ],
+      "title": "Entity",
+      "type": "object"
+    },
+    "EntityReviewEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "decision_id": {
+          "minLength": 1,
+          "title": "Decision Id",
+          "type": "string"
+        },
+        "from_status": {
+          "enum": [
+            "extracted",
+            "needs_review",
+            "accepted",
+            "rejected"
+          ],
+          "title": "From Status",
+          "type": "string"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "title": "Occurred At",
+          "type": "string"
+        },
+        "reason": {
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "reviewer_id": {
+          "minLength": 1,
+          "title": "Reviewer Id",
+          "type": "string"
+        },
+        "to_status": {
+          "enum": [
+            "extracted",
+            "needs_review",
+            "accepted",
+            "rejected"
+          ],
+          "title": "To Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "decision_id",
+        "from_status",
+        "to_status",
+        "reviewer_id",
+        "reason",
+        "occurred_at"
+      ],
+      "title": "EntityReviewEvent",
+      "type": "object"
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "locator": {
+          "discriminator": {
+            "mapping": {
+              "artifact_object": "#/$defs/ArtifactObjectLocator",
+              "docx_block": "#/$defs/DocxBlockLocator",
+              "pdf_page": "#/$defs/PdfPageLocator",
+              "spreadsheet_range": "#/$defs/SpreadsheetRangeLocator",
+              "text_span": "#/$defs/TextSpanLocator"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/PdfPageLocator"
+            },
+            {
+              "$ref": "#/$defs/DocxBlockLocator"
+            },
+            {
+              "$ref": "#/$defs/TextSpanLocator"
+            },
+            {
+              "$ref": "#/$defs/SpreadsheetRangeLocator"
+            },
+            {
+              "$ref": "#/$defs/ArtifactObjectLocator"
+            }
+          ],
+          "title": "Locator"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "source_version_id": {
+          "minLength": 1,
+          "title": "Source Version Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "source_version_id",
+        "locator"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "KnowledgeRevision": {
+      "additionalProperties": false,
+      "properties": {
+        "coverage": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Coverage"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "document_id": {
+          "minLength": 1,
+          "title": "Document Id",
+          "type": "string"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "parent_revision_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Revision Id"
+        },
+        "processing": {
+          "$ref": "#/$defs/ProcessingSpec"
+        },
+        "producers": {
+          "items": {
+            "$ref": "#/$defs/Producer"
+          },
+          "minItems": 1,
+          "title": "Producers",
+          "type": "array"
+        },
+        "source_version_id": {
+          "minLength": 1,
+          "title": "Source Version Id",
+          "type": "string"
+        },
+        "workspace_id": {
+          "minLength": 1,
+          "title": "Workspace Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "document_id",
+        "workspace_id",
+        "source_version_id",
+        "created_at",
+        "producers",
+        "processing"
+      ],
+      "title": "KnowledgeRevision",
+      "type": "object"
+    },
+    "ListNode": {
+      "additionalProperties": false,
+      "properties": {
+        "annotation": {
+          "$ref": "#/$defs/Annotation"
+        },
+        "children": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Children",
+          "type": "array"
+        },
+        "field_annotations": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Annotation"
+          },
+          "title": "Field Annotations",
+          "type": "object"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "identity_key": {
+          "minLength": 1,
+          "title": "Identity Key",
+          "type": "string"
+        },
+        "kind": {
+          "const": "list",
+          "default": "list",
+          "title": "Kind",
+          "type": "string"
+        },
+        "ordered": {
+          "default": false,
+          "title": "Ordered",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "identity_key",
+        "annotation"
+      ],
+      "title": "ListNode",
+      "type": "object"
+    },
+    "NormalizedBox": {
+      "additionalProperties": false,
+      "description": "PDF page box with top-left origin and coordinates normalized to [0, 1].",
+      "properties": {
+        "height": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Height",
+          "type": "number"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Width",
+          "type": "number"
+        },
+        "x": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "title": "NormalizedBox",
+      "type": "object"
+    },
+    "PdfPageLocator": {
+      "additionalProperties": false,
+      "properties": {
+        "bbox": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NormalizedBox"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "const": "pdf_page",
+          "default": "pdf_page",
+          "title": "Kind",
+          "type": "string"
+        },
+        "page_number": {
+          "minimum": 1,
+          "title": "Page Number",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "page_number"
+      ],
+      "title": "PdfPageLocator",
+      "type": "object"
+    },
+    "ProcessingSpec": {
+      "additionalProperties": false,
+      "description": "All output-affecting implementation versions and effective settings.",
+      "properties": {
+        "dependencies": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Dependencies",
+          "type": "object"
+        },
+        "identity_policy_version": {
+          "const": "0.2.0",
+          "default": "0.2.0",
+          "title": "Identity Policy Version",
+          "type": "string"
+        },
+        "mapper_version": {
+          "default": "m2a-1",
+          "minLength": 1,
+          "title": "Mapper Version",
+          "type": "string"
+        },
+        "options": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Options",
+          "type": "object"
+        },
+        "parser": {
+          "minLength": 1,
+          "title": "Parser",
+          "type": "string"
+        },
+        "parser_version": {
+          "minLength": 1,
+          "title": "Parser Version",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "0.4.0",
+          "default": "0.4.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "parser",
+        "parser_version"
+      ],
+      "title": "ProcessingSpec",
+      "type": "object"
+    },
+    "Producer": {
+      "additionalProperties": false,
+      "properties": {
+        "configuration_digest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Configuration Digest"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "title": "Producer",
+      "type": "object"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
+        "confidence_method": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence Method"
+        },
+        "derivation": {
+          "enum": [
+            "direct",
+            "normalized",
+            "visual_description",
+            "inferred",
+            "overridden"
+          ],
+          "title": "Derivation",
+          "type": "string"
+        },
+        "evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "method": {
+          "enum": [
+            "source",
+            "parser",
+            "vision",
+            "model",
+            "manual"
+          ],
+          "title": "Method",
+          "type": "string"
+        },
+        "producer_id": {
+          "minLength": 1,
+          "title": "Producer Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "method",
+        "derivation",
+        "producer_id"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    },
+    "Relation": {
+      "additionalProperties": false,
+      "properties": {
+        "annotation": {
+          "$ref": "#/$defs/Annotation"
+        },
+        "field_annotations": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Annotation"
+          },
+          "title": "Field Annotations",
+          "type": "object"
+        },
+        "from_entity_id": {
+          "minLength": 1,
+          "title": "From Entity Id",
+          "type": "string"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "identity_key": {
+          "minLength": 1,
+          "title": "Identity Key",
+          "type": "string"
+        },
+        "properties": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Properties",
+          "type": "object"
+        },
+        "to_entity_id": {
+          "minLength": 1,
+          "title": "To Entity Id",
+          "type": "string"
+        },
+        "type": {
+          "minLength": 1,
+          "title": "Type",
+          "type": "string"
+        },
+        "validity": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "date_range": "#/$defs/DateRange",
+                  "datetime_range": "#/$defs/DatetimeRange"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/DateRange"
+                },
+                {
+                  "$ref": "#/$defs/DatetimeRange"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Validity"
+        }
+      },
+      "required": [
+        "id",
+        "identity_key",
+        "type",
+        "from_entity_id",
+        "to_entity_id",
+        "annotation"
+      ],
+      "title": "Relation",
+      "type": "object"
+    },
+    "SchemaEntity": {
+      "additionalProperties": false,
+      "description": "Schema-bound business JSON; never a retrieval text representation.",
+      "properties": {
+        "annotation": {
+          "$ref": "#/$defs/Annotation"
+        },
+        "data": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Data",
+          "type": "object"
+        },
+        "field_annotations": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Annotation"
+          },
+          "title": "Field Annotations",
+          "type": "object"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "identity_key": {
+          "minLength": 1,
+          "title": "Identity Key",
+          "type": "string"
+        },
+        "kind": {
+          "const": "schema_entity",
+          "default": "schema_entity",
+          "title": "Kind",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "review_events": {
+          "items": {
+            "$ref": "#/$defs/EntityReviewEvent"
+          },
+          "title": "Review Events",
+          "type": "array"
+        },
+        "review_status": {
+          "default": "extracted",
+          "enum": [
+            "extracted",
+            "needs_review",
+            "accepted",
+            "rejected"
+          ],
+          "title": "Review Status",
+          "type": "string"
+        },
+        "schema_id": {
+          "minLength": 1,
+          "title": "Schema Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "minLength": 1,
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "type": {
+          "minLength": 1,
+          "title": "Type",
+          "type": "string"
+        },
+        "validation": {
+          "$ref": "#/$defs/DomainValidationResult"
+        },
+        "validity": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "date_range": "#/$defs/DateRange",
+                  "datetime_range": "#/$defs/DatetimeRange"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/DateRange"
+                },
+                {
+                  "$ref": "#/$defs/DatetimeRange"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Validity"
+        }
+      },
+      "required": [
+        "id",
+        "identity_key",
+        "type",
+        "label",
+        "schema_id",
+        "schema_version",
+        "data",
+        "annotation",
+        "field_annotations"
+      ],
+      "title": "SchemaEntity",
+      "type": "object"
+    },
+    "SectionNode": {
+      "additionalProperties": false,
+      "properties": {
+        "annotation": {
+          "$ref": "#/$defs/Annotation"
+        },
+        "children": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Children",
+          "type": "array"
+        },
+        "field_annotations": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Annotation"
+          },
+          "title": "Field Annotations",
+          "type": "object"
+        },
+        "heading": {
+          "title": "Heading",
+          "type": "string"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "identity_key": {
+          "minLength": 1,
+          "title": "Identity Key",
+          "type": "string"
+        },
+        "kind": {
+          "const": "section",
+          "default": "section",
+          "title": "Kind",
+          "type": "string"
+        },
+        "level": {
+          "minimum": 1,
+          "title": "Level",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "identity_key",
+        "annotation",
+        "heading",
+        "level"
+      ],
+      "title": "SectionNode",
+      "type": "object"
+    },
+    "SourceVersion": {
+      "additionalProperties": false,
+      "description": "Immutable metadata contract; current overwriteable MinIO uploads are not verified sources.",
+      "properties": {
+        "byte_size": {
+          "minimum": 0,
+          "title": "Byte Size",
+          "type": "integer"
+        },
+        "content_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Sha256",
+          "type": "string"
+        },
+        "document_id": {
+          "minLength": 1,
+          "title": "Document Id",
+          "type": "string"
+        },
+        "filename": {
+          "minLength": 1,
+          "title": "Filename",
+          "type": "string"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "mime_type": {
+          "minLength": 1,
+          "title": "Mime Type",
+          "type": "string"
+        },
+        "recorded_at": {
+          "format": "date-time",
+          "title": "Recorded At",
+          "type": "string"
+        },
+        "storage_uri": {
+          "minLength": 1,
+          "title": "Storage Uri",
+          "type": "string"
+        },
+        "storage_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Storage Version"
+        },
+        "workspace_id": {
+          "minLength": 1,
+          "title": "Workspace Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "document_id",
+        "workspace_id",
+        "content_sha256",
+        "storage_uri",
+        "byte_size",
+        "mime_type",
+        "filename",
+        "recorded_at"
+      ],
+      "title": "SourceVersion",
+      "type": "object"
+    },
+    "SpreadsheetRangeLocator": {
+      "additionalProperties": false,
+      "properties": {
+        "a1_range": {
+          "description": "Uppercase normalized A1 range",
+          "minLength": 2,
+          "title": "A1 Range",
+          "type": "string"
+        },
+        "kind": {
+          "const": "spreadsheet_range",
+          "default": "spreadsheet_range",
+          "title": "Kind",
+          "type": "string"
+        },
+        "sheet": {
+          "minLength": 1,
+          "title": "Sheet",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sheet",
+        "a1_range"
+      ],
+      "title": "SpreadsheetRangeLocator",
+      "type": "object"
+    },
+    "TableCell": {
+      "additionalProperties": false,
+      "properties": {
+        "annotation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Annotation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "cached_value": {
+          "$ref": "#/$defs/JsonValue",
+          "default": null
+        },
+        "col_span": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Col Span",
+          "type": "integer"
+        },
+        "display_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Display Text"
+        },
+        "formula": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Formula"
+        },
+        "row_span": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Row Span",
+          "type": "integer"
+        },
+        "value": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "TableCell",
+      "type": "object"
+    },
+    "TableNode": {
+      "additionalProperties": false,
+      "properties": {
+        "annotation": {
+          "$ref": "#/$defs/Annotation"
+        },
+        "caption": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Caption"
+        },
+        "field_annotations": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Annotation"
+          },
+          "title": "Field Annotations",
+          "type": "object"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "identity_key": {
+          "minLength": 1,
+          "title": "Identity Key",
+          "type": "string"
+        },
+        "kind": {
+          "const": "table",
+          "default": "table",
+          "title": "Kind",
+          "type": "string"
+        },
+        "rows": {
+          "items": {
+            "items": {
+              "$ref": "#/$defs/TableCell"
+            },
+            "type": "array"
+          },
+          "title": "Rows",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "identity_key",
+        "annotation"
+      ],
+      "title": "TableNode",
+      "type": "object"
+    },
+    "TextBlock": {
+      "additionalProperties": false,
+      "properties": {
+        "annotation": {
+          "$ref": "#/$defs/Annotation"
+        },
+        "field_annotations": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Annotation"
+          },
+          "title": "Field Annotations",
+          "type": "object"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "identity_key": {
+          "minLength": 1,
+          "title": "Identity Key",
+          "type": "string"
+        },
+        "kind": {
+          "const": "text_block",
+          "default": "text_block",
+          "title": "Kind",
+          "type": "string"
+        },
+        "role": {
+          "default": "paragraph",
+          "enum": [
+            "paragraph",
+            "heading",
+            "caption",
+            "other"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "identity_key",
+        "annotation",
+        "text"
+      ],
+      "title": "TextBlock",
+      "type": "object"
+    },
+    "TextSpanLocator": {
+      "additionalProperties": false,
+      "description": "Zero-based Unicode code-point offsets, [start, end), in decoded text.",
+      "properties": {
+        "end": {
+          "exclusiveMinimum": 0,
+          "title": "End",
+          "type": "integer"
+        },
+        "kind": {
+          "const": "text_span",
+          "default": "text_span",
+          "title": "Kind",
+          "type": "string"
+        },
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "TextSpanLocator",
+      "type": "object"
+    }
+  },
+  "$id": "urn:docgrain:canonical-knowledge:0.4.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "artifacts": {
+      "items": {
+        "$ref": "#/$defs/ArtifactRef"
+      },
+      "title": "Artifacts",
+      "type": "array"
+    },
+    "document_id": {
+      "minLength": 1,
+      "title": "Document Id",
+      "type": "string"
+    },
+    "domain_schemas": {
+      "items": {
+        "$ref": "#/$defs/DomainSchemaRef"
+      },
+      "title": "Domain Schemas",
+      "type": "array"
+    },
+    "entities": {
+      "items": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/Entity"
+          },
+          {
+            "$ref": "#/$defs/SchemaEntity"
+          }
+        ]
+      },
+      "title": "Entities",
+      "type": "array"
+    },
+    "evidence": {
+      "items": {
+        "$ref": "#/$defs/Evidence"
+      },
+      "title": "Evidence",
+      "type": "array"
+    },
+    "identity_policy_version": {
+      "const": "0.2.0",
+      "title": "Identity Policy Version",
+      "type": "string"
+    },
+    "knowledge_revision": {
+      "$ref": "#/$defs/KnowledgeRevision"
+    },
+    "metadata": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Metadata",
+      "type": "object"
+    },
+    "records": {
+      "items": {
+        "$ref": "#/$defs/DomainRecord"
+      },
+      "title": "Records",
+      "type": "array"
+    },
+    "relations": {
+      "items": {
+        "$ref": "#/$defs/Relation"
+      },
+      "title": "Relations",
+      "type": "array"
+    },
+    "root_node_id": {
+      "minLength": 1,
+      "title": "Root Node Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.4.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_version": {
+      "$ref": "#/$defs/SourceVersion"
+    },
+    "structure": {
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "asset": "#/$defs/AssetNode",
+            "chart": "#/$defs/ChartNode",
+            "document": "#/$defs/DocumentNode",
+            "list": "#/$defs/ListNode",
+            "section": "#/$defs/SectionNode",
+            "table": "#/$defs/TableNode",
+            "text_block": "#/$defs/TextBlock"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/DocumentNode"
+          },
+          {
+            "$ref": "#/$defs/SectionNode"
+          },
+          {
+            "$ref": "#/$defs/TextBlock"
+          },
+          {
+            "$ref": "#/$defs/TableNode"
+          },
+          {
+            "$ref": "#/$defs/AssetNode"
+          },
+          {
+            "$ref": "#/$defs/ChartNode"
+          },
+          {
+            "$ref": "#/$defs/ListNode"
+          }
+        ]
+      },
+      "minItems": 1,
+      "title": "Structure",
+      "type": "array"
+    },
+    "workspace_id": {
+      "minLength": 1,
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "document_id",
+    "workspace_id",
+    "source_version",
+    "knowledge_revision",
+    "root_node_id",
+    "structure"
+  ],
+  "title": "CanonicalKnowledgeSnapshot",
+  "type": "object"
+}

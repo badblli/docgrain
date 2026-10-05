@@ -4,7 +4,7 @@ test:
 	python -m pytest -q
 
 lint:
-	ruff check apps packages tests
+	ruff check apps packages tests benchmarks docs/examples
 
 web-build:
 	cd apps/web && npm ci && npm run build

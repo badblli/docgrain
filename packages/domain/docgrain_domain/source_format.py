@@ -13,6 +13,8 @@ class SourceFormat(StrEnum):
     DOCX = "docx"
     TXT = "txt"
     XLSX = "xlsx"
+    PNG = "png"
+    JPEG = "jpeg"
 
 
 MIME_TYPES = {
@@ -20,6 +22,8 @@ MIME_TYPES = {
     SourceFormat.DOCX: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     SourceFormat.TXT: "text/plain",
     SourceFormat.XLSX: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    SourceFormat.PNG: "image/png",
+    SourceFormat.JPEG: "image/jpeg",
 }
 
 
@@ -33,7 +37,8 @@ class CorruptSource(ValueError):
 
 def declared_format(filename: str, mime_type: str) -> SourceFormat:
     try:
-        source_format = SourceFormat(Path(filename).suffix.lower().lstrip("."))
+        extension = Path(filename).suffix.lower().lstrip(".")
+        source_format = SourceFormat("jpeg" if extension == "jpg" else extension)
     except ValueError as exc:
         raise FormatMismatch("unsupported file extension") from exc
     if mime_type not in (MIME_TYPES[source_format], "application/octet-stream"):
@@ -61,6 +66,23 @@ def verify_format(data: bytes, source_format: SourceFormat) -> None:
                     raise CorruptSource("OOXML package contains a damaged entry")
         except BadZipFile as exc:
             raise CorruptSource("invalid OOXML ZIP package") from exc
+    elif source_format in (SourceFormat.PNG, SourceFormat.JPEG):
+        from PIL import Image, UnidentifiedImageError
+
+        signature = b"\x89PNG\r\n\x1a\n" if source_format is SourceFormat.PNG else b"\xff\xd8\xff"
+        if not data.startswith(signature):
+            raise FormatMismatch("image signature does not match extension")
+        try:
+            with Image.open(BytesIO(data)) as image:
+                if image.format != ("PNG" if source_format is SourceFormat.PNG else "JPEG"):
+                    raise FormatMismatch("decoded image format does not match extension")
+                if getattr(image, "n_frames", 1) != 1:
+                    raise FormatMismatch("animated images are not supported")
+                image.verify()
+            with Image.open(BytesIO(data)) as image:
+                image.load()
+        except (UnidentifiedImageError, OSError, SyntaxError, Image.DecompressionBombError) as exc:
+            raise CorruptSource("image cannot be safely decoded") from exc
     else:
         if b"\x00" in data:
             raise FormatMismatch("binary content is not TXT")

@@ -24,9 +24,13 @@ class Settings(BaseSettings):
     api_public_url: str = "http://localhost:8000"
 
     qdrant_url: str = "http://qdrant:6333"
+    gemini_chat_enabled: bool = False
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.7-flash"
     qwen_base_url: str = ""
+    docgrain_local_vision_enabled: bool = False
+    docgrain_local_vision_url: str = "http://127.0.0.1:11435"
+    docgrain_local_vision_api_key: str = ""
 
     # Demo is explicit and read-only. Live mode never falls back to fixtures.
     use_fixtures: bool = False

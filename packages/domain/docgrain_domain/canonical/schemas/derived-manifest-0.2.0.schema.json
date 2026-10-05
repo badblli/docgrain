@@ -1,0 +1,210 @@
+{
+  "$defs": {
+    "DerivedRevision": {
+      "additionalProperties": false,
+      "description": "Separate immutable chunking/embedding/indexing runs; no runtime backend types.",
+      "properties": {
+        "configuration": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Configuration",
+          "type": "object"
+        },
+        "document_id": {
+          "minLength": 1,
+          "title": "Document Id",
+          "type": "string"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "processing_revision_id": {
+          "minLength": 1,
+          "title": "Processing Revision Id",
+          "type": "string"
+        },
+        "stage": {
+          "enum": [
+            "projection",
+            "chunking",
+            "embedding",
+            "indexing"
+          ],
+          "title": "Stage",
+          "type": "string"
+        },
+        "strategy": {
+          "minLength": 1,
+          "title": "Strategy",
+          "type": "string"
+        },
+        "strategy_version": {
+          "minLength": 1,
+          "title": "Strategy Version",
+          "type": "string"
+        },
+        "upstream_revision_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Upstream Revision Ids",
+          "type": "array"
+        },
+        "workspace_id": {
+          "minLength": 1,
+          "title": "Workspace Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "workspace_id",
+        "document_id",
+        "processing_revision_id",
+        "stage",
+        "upstream_revision_ids",
+        "strategy",
+        "strategy_version"
+      ],
+      "title": "DerivedRevision",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "LineageEdge": {
+      "additionalProperties": false,
+      "properties": {
+        "downstream": {
+          "$ref": "#/$defs/ObjectRef"
+        },
+        "upstream": {
+          "$ref": "#/$defs/ObjectRef"
+        }
+      },
+      "required": [
+        "upstream",
+        "downstream"
+      ],
+      "title": "LineageEdge",
+      "type": "object"
+    },
+    "ObjectRef": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "source",
+            "processing",
+            "canonical",
+            "projection",
+            "chunk",
+            "embedding",
+            "index"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "object_id": {
+          "minLength": 1,
+          "title": "Object Id",
+          "type": "string"
+        },
+        "revision_id": {
+          "minLength": 1,
+          "title": "Revision Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "revision_id",
+        "object_id"
+      ],
+      "title": "ObjectRef",
+      "type": "object"
+    },
+    "ProjectionArtifact": {
+      "additionalProperties": false,
+      "properties": {
+        "content_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Sha256",
+          "type": "string"
+        },
+        "mime_type": {
+          "const": "application/json",
+          "default": "application/json",
+          "title": "Mime Type",
+          "type": "string"
+        },
+        "object_ref": {
+          "$ref": "#/$defs/ObjectRef"
+        },
+        "role": {
+          "const": "retrieval-text",
+          "default": "retrieval-text",
+          "title": "Role",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "object_ref",
+        "content_sha256",
+        "text"
+      ],
+      "title": "ProjectionArtifact",
+      "type": "object"
+    }
+  },
+  "$id": "urn:docgrain:derived-manifest:0.2.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "edges": {
+      "items": {
+        "$ref": "#/$defs/LineageEdge"
+      },
+      "minItems": 1,
+      "title": "Edges",
+      "type": "array"
+    },
+    "objects": {
+      "items": {
+        "$ref": "#/$defs/ObjectRef"
+      },
+      "minItems": 1,
+      "title": "Objects",
+      "type": "array"
+    },
+    "projections": {
+      "items": {
+        "$ref": "#/$defs/ProjectionArtifact"
+      },
+      "title": "Projections",
+      "type": "array"
+    },
+    "revision": {
+      "$ref": "#/$defs/DerivedRevision"
+    },
+    "schema_version": {
+      "const": "0.2.0",
+      "default": "0.2.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "revision",
+    "objects",
+    "edges"
+  ],
+  "title": "DerivedManifest",
+  "type": "object"
+}

@@ -18,13 +18,16 @@ import pymupdf
 import redis
 from docgrain_api.canonical_repository import CanonicalRepository
 from docgrain_domain.canonical import SourceVersion
+from docgrain_domain.canonical.lifecycle import source_revision_id
 from docgrain_domain.source_format import SourceFormat, declared_format, verify_format
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from minio import Minio
 
-from .canonical_mapper import CanonicalMapper
+from .canonical_assets import store_asset
+from .canonical_writer import persist_structural, processing_spec
+from .output_writer import publish_outputs
 from .quality import missing_extraction_pages, page_failures
 from .structural import (
     DocumentParser,
@@ -76,8 +79,13 @@ def stage_update(
     structural_status: str | None = None,
     structural_issues: list[dict[str, object]] | None = None,
     canonical_persisted: bool = False,
+    outputs_published: bool = False,
+    chunk_count: int = 0,
+    output_revision_id: str | None = None,
 ) -> list[dict[str, object]]:
     done = {"register", "render", "extract", "quality", "publish"}
+    if outputs_published:
+        done.update({"normalize", "chunk"})
     missing_pages = missing_pages or []
     for stage in stages:
         name = str(stage["stage"])
@@ -110,12 +118,18 @@ def stage_update(
                 else f"{len(missing_pages)} pages failed; stage replay is not implemented."
             ))
             stage["attributes"] = {"failed_pages": missing_pages, "structural_issues": structural_issues or []}
-        if name in {"normalize", "chunk", "enrich", "embed"}:
+        if name in {"normalize", "chunk"} and outputs_published and not failed:
+            stage["summary"] = ("Common ai.json + canonical JSON/Markdown and verified manifest published; semantic content is not verified."
+                                if name == "normalize" else f"{chunk_count} canonical chunks published; no embedding performed.")
+            stage["attributes"] = {"output_revision_id":output_revision_id,"chunk_count":chunk_count}
+        elif name in {"normalize", "chunk", "enrich", "embed"}:
             stage["summary"] = "Not implemented."
         elif name == "vision":
             stage["summary"] = "No separate enrichment stage; configured Vision runs under extract."
         elif name == "publish" and not failed:
-            stage["summary"] = ("Canonical revision persisted; no canonical artifact/manifest or index was produced."
+            stage["summary"] = ("Verified canonical.json, ai.json, canonical.md, chunks.jsonl and manifest published; no index produced."
+                                if outputs_published else
+                                "Canonical revision persisted; no canonical artifact/manifest or index was produced."
                                 if canonical_persisted else
                                 ("Structural extraction completed; no canonical revision or PDF artifacts were published."
                                  if non_pdf else "Extraction JSON/Markdown stored; no canonical manifest or index was produced."))
@@ -263,8 +277,15 @@ def process(job_id: str) -> None:
             if expected_sha != "0" * 64 and expected_sha != content_hash:
                 raise ValueError("source SHA-256 differs from registration")
             verify_format(source_bytes, source_format)
+            canonical_repository = CanonicalRepository(lambda: psycopg.connect(db_url()))
+            expected_head = None
+            if os.getenv("CANONICAL_PERSISTENCE_ENABLED", "false").lower() == "true":
+                heads = canonical_repository.get_heads(document_id)
+                expected_head = heads[0] if heads else None
             try:
-                structural = DocumentParser().parse(VerifiedSource(source, content_hash, len(source_bytes)), source_format)
+                structural = DocumentParser(ocr_enabled=os.getenv("DOCGRAIN_OCR_ENABLED", "true").lower() == "true",
+                    native_fidelity=os.getenv("DOCGRAIN_NATIVE_FIDELITY_ENABLED", "true").lower() == "true").parse(
+                    VerifiedSource(source, content_hash, len(source_bytes)), source_format)
             except Exception as exc:
                 if source_format is not SourceFormat.PDF:
                     raise
@@ -277,20 +298,14 @@ def process(job_id: str) -> None:
             if structural.status == "failed" and source_format is not SourceFormat.PDF:
                 raise ValueError("structural parser failed: " + "; ".join(i.reason for i in structural.issues))
             canonical_persisted = False
+            outputs_published = False
+            chunk_count = 0
+            output_revision_id = None
             structural_issues = [i.__dict__ for i in structural.issues]
             if os.getenv("CANONICAL_PERSISTENCE_ENABLED", "false").lower() == "true":
                 if storage_version and storage_version != "null" and structural.status != "failed":
-                    for item in structural.items:
-                        if item.asset_bytes:
-                            digest = sha256(item.asset_bytes).hexdigest()
-                            object_name = f"{prefix}/structural/assets/{digest}"
-                            stored_asset = client.put_object(bucket, object_name, BytesIO(item.asset_bytes),
-                                                             len(item.asset_bytes), content_type=item.asset_mime or "application/octet-stream")
-                            if not stored_asset.version_id:
-                                raise ValueError("extracted asset has no immutable object version")
-                            item.asset_path = f"s3://{bucket}/{object_name}?versionId={stored_asset.version_id}"
                     stat = client.stat_object(bucket, object_key, version_id=storage_version)
-                    source_id = "source_" + sha256(f"{version_id}:{storage_version}".encode()).hexdigest()[:32]
+                    source_id = source_revision_id(workspace_id, document_id, content_hash)
                     source_version = SourceVersion(
                         id=source_id, document_id=document_id, workspace_id=workspace_id,
                         content_sha256=content_hash,
@@ -298,14 +313,22 @@ def process(job_id: str) -> None:
                         storage_version=storage_version, byte_size=len(source_bytes), mime_type=mime_type,
                         filename=filename, recorded_at=stat.last_modified or datetime.now(UTC),
                     )
-                    revision_id = "revision_" + sha256(
-                        f"{source_id}:{structural.parser}:{structural.parser_version}:m1b-0.2.0".encode()
-                    ).hexdigest()[:32]
-                    snapshot = CanonicalMapper().map(structural, source_version, revision_id=revision_id,
-                                                     created_at=source_version.recorded_at,
-                                                     pdf_path=source if source_format is SourceFormat.PDF else None)
-                    CanonicalRepository(lambda: psycopg.connect(db_url())).append(
-                        snapshot, expected_latest_revision_id=None
+                    stored_source = canonical_repository.get_source(source_id)
+                    if stored_source:
+                        source_version = stored_source
+                    # The first verified receipt owns canonical asset storage on source replay.
+                    source_key = urlparse(source_version.storage_uri).path.strip("/").split("/")
+                    canonical_prefix = f"artifacts/{document_id}/{source_key[2]}"
+                    for item in structural.items:
+                        if item.asset_bytes:
+                            digest = sha256(item.asset_bytes).hexdigest()
+                            object_name = f"{canonical_prefix}/structural/assets/{digest}"
+                            item.asset_path = store_asset(client, bucket, object_name, item.asset_bytes,
+                                                          item.asset_mime or "application/octet-stream")
+                    snapshot, _ = persist_structural(
+                        canonical_repository, structural, source_version, spec=processing_spec(structural),
+                        pdf_path=source if source_format is SourceFormat.PDF else None,
+                        expected_latest_revision_id=expected_head,
                     )
                     canonical_persisted = True
                     structural_issues = snapshot.metadata["structural_parse"]["issues"]
@@ -320,7 +343,7 @@ def process(job_id: str) -> None:
                 active_stage = "extract"
                 gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
                 gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.7-flash")
-                if gemini_key:
+                if gemini_key and os.getenv("DOCGRAIN_REMOTE_VISION_ENABLED", "false").lower() == "true":
                     markdown, structured, missing_pages, failures, table_count, asset_count = gemini_extraction(
                         rendered, prefix, bucket, gemini_key, gemini_model
                     )
@@ -328,14 +351,18 @@ def process(job_id: str) -> None:
                     vision_provider = gemini_model
                     extraction_provider = gemini_model
                 else:
-                    document = document_converter().convert(source).document
-                    markdown = document.export_to_markdown().encode()
-                    structured_dict = document.export_to_dict()
+                    if structural.legacy_json is not None and structural.legacy_markdown is not None:
+                        markdown = structural.legacy_markdown
+                        structured_dict = json.loads(structural.legacy_json)
+                    else:
+                        document = document_converter().convert(source).document
+                        markdown = document.export_to_markdown().encode()
+                        structured_dict = document.export_to_dict()
                     structured = json.dumps(structured_dict, ensure_ascii=False).encode()
                     missing_pages = missing_extraction_pages(structured_dict, rendered_page_count)
                     failures = page_failures(missing_pages)
-                    table_count = len(getattr(document, "tables", []))
-                    asset_count = len(getattr(document, "pictures", []))
+                    table_count = len(structured_dict.get("tables", []))
+                    asset_count = len(structured_dict.get("pictures", []))
                     parser = "docling-fallback"
                     vision_provider = None
                     extraction_provider = "docling-fallback"
@@ -347,16 +374,22 @@ def process(job_id: str) -> None:
                 missing_pages = []
                 failures = []
                 table_count = sum(i.kind == "table" for i in structural.items)
-                asset_count = 0
+                asset_count = sum(i.kind == "picture" and bool(i.asset_bytes) for i in structural.items)
                 parser = structural.parser
                 vision_provider = None
                 extraction_provider = structural.parser
+            if canonical_persisted:
+                active_stage = "publish"
+                output, publication, _ = publish_outputs(canonical_repository,snapshot,client,bucket)
+                outputs_published = True
+                chunk_count = output.quality.measurements["chunks"]
+                output_revision_id = publication.revision.id
             final_status = "partial" if failures or structural_issues or not canonical_persisted else "done"
         with closing(psycopg.connect(db_url())) as conn, conn.cursor() as cur:
             cur.execute(
                 """UPDATE document_versions
                 SET status=%s, parser=%s, vision_provider=%s, content_sha256=%s,
-                    page_count=%s, table_count=%s, asset_count=%s, published_at=NOW()
+                    page_count=%s, table_count=%s, asset_count=%s, chunk_count=%s, published_at=NOW()
                 WHERE id=%s""",
                 (
                     final_status,
@@ -366,6 +399,7 @@ def process(job_id: str) -> None:
                     rendered_page_count,
                     table_count,
                     asset_count,
+                    chunk_count,
                     version_id,
                 ),
             )
@@ -387,6 +421,9 @@ def process(job_id: str) -> None:
                             structural_status=structural.status,
                             structural_issues=structural_issues,
                             canonical_persisted=canonical_persisted,
+                            outputs_published=outputs_published,
+                            chunk_count=chunk_count,
+                            output_revision_id=output_revision_id,
                         )
                     ),
                     json.dumps(failures),
