@@ -48,8 +48,9 @@ def normalize_quote(text: str) -> str:
 
 def _blocks(context: str) -> dict[str, str]:
     """Resolve compact source keys to block bodies, excluding projection metadata."""
-    markers = list(re.finditer(r"(?m)^\[§(\d+) p\.[^\]\r\n]+\]\s*$", context))
-    end = re.search(r"(?m)^## Kaynak anahtarları\s*$", context)
+    # Match the whole line: legacy DOCX paths contain inner `]` characters.
+    markers = list(re.finditer(r"(?m)^\[§(\d+) p\.[^\r\n]*\]\r?$", context))
+    end = re.search(r"(?m)^## Kaynak anahtarları\r?$", context)
     boundary = end.start() if end else len(context)
     blocks = {}
     for index, marker in enumerate(markers):
@@ -59,10 +60,17 @@ def _blocks(context: str) -> dict[str, str]:
             blocks[f"§{marker.group(1)}"] = body
             blocks[marker.group().strip()] = body
     # The footer maps source keys to canonical object IDs; allow those as locators too.
-    for key, object_id in re.findall(r"(?m)^§(\d+) → (\S+)\s*$", context):
+    footer = context[boundary:]
+    for key, object_id in re.findall(r"(?m)^§(\d+) → (\S+)(?: · [^\r\n]*)?\r?$", footer):
         if f"§{key}" in blocks:
             blocks[object_id] = blocks[f"§{key}"]
     return blocks
+
+
+def _source_key(locator: str) -> str:
+    """Resolve `§N`, `[§N p.X]`, and `§N p.X` to the same source block."""
+    match = re.search(r"§\d+", locator)
+    return match.group() if match else locator
 
 
 def verify_response(raw: str, context: str, document_id: str, lang: str) -> ExtractionResult:
@@ -85,11 +93,12 @@ def verify_response(raw: str, context: str, document_id: str, lang: str) -> Extr
                 reason = None
                 for evidence in alternative.evidence:
                     quote = normalize_quote(evidence.quote)
+                    source_key = _source_key(evidence.locator)
                     if evidence.document_id != document_id:
                         reason = "document_mismatch"
-                    elif blocks and evidence.locator not in blocks:
+                    elif blocks and source_key not in blocks:
                         reason = "locator_not_found"
-                    elif not quote or quote not in blocks.get(evidence.locator, source):
+                    elif not quote or quote not in blocks.get(source_key, source):
                         reason = "quote_not_found"
                     if reason:
                         break

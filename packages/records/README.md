@@ -36,8 +36,10 @@ language is rejected rather than silently overwriting the first. Multi-document
 identity reconciliation and conflict review belong to later work packages.
 
 Every quote must match after NFKC and whitespace normalization, case-sensitively.
-In compact projections, locators must resolve to a block (`§2`, `[§2 p.3]`, or its
+In compact projections, locators must resolve to a block (`§2`, `§2 p.3`, `[§2 p.3]`, or its
 canonical object ID from the footer) and the quote must occur in that block's body.
+DOCX headings use short paragraph or table positions; the complete XML path stays
+in the source-key footer. Older projections with bracketed XML paths also verify.
 For caller-supplied plain context without compact markers, verification checks the
 whole context; the locator is descriptive only. Any invalid evidence drops the entire
 language alternative and is listed in `rejected`. If no verified name remains, the

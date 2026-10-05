@@ -15,6 +15,7 @@ from docgrain_records import (
     RoomType,
     extract,
     hospitality_schema,
+    verify_response,
 )
 from docgrain_records.api import load_context
 from docgrain_records.cli import main
@@ -207,7 +208,7 @@ def test_duplicate_language_is_visible_and_does_not_overwrite():
     assert result.rejected[0].reason == "duplicate_language"
 
 
-@pytest.mark.parametrize("locator", ["§1", "[§1 p.1]", "node_room"])
+@pytest.mark.parametrize("locator", ["§1", "§1 p.1", "[§1 p.1]", "node_room"])
 def test_nfkc_whitespace_and_locator_variants(locator):
     context = CONTEXT.replace("32 m²", "３２\u00a0\n m²")
     result = run_fake([candidate(name=[fact("Standard room")],
@@ -215,6 +216,30 @@ def test_nfkc_whitespace_and_locator_variants(locator):
     assert result.records[0].size_m2.value == 32
     assert result.records[0].size_m2.evidence[0].quote == "32 m2"
     assert not result.rejected
+
+
+@pytest.mark.parametrize("locator", [
+    "§2", "§2 p./document/body/p[1]", "[§2 p./document/body/p[1]]", "node_docx",
+])
+def test_legacy_docx_path_and_locator_variants(locator):
+    context = ("[§1 p.1]\nOther room\n\n"
+               "[§2 p./document/body/p[1]]\nGarden room\n\n"
+               "## Kaynak anahtarları\n§1 → node_other\n"
+               "§2 → node_docx · word/document.xml:/document/body/p[1]\n")
+    proposed = candidate(name=[fact("Garden room", locator=locator)])
+    result = verify_response(json.dumps({"records": [proposed]}), context, "doc_example", "en")
+    assert len(result.records) == 1 and not result.rejected
+    assert result.records[0].name.evidence[0].locator == locator
+
+
+def test_legacy_docx_locator_still_checks_its_own_block():
+    context = ("[§1 p.1]\nSea room\n\n"
+               "[§2 p./document/body/p[1]]\nGarden room\n\n"
+               "## Kaynak anahtarları\n§1 → node_other\n§2 → node_docx\n")
+    proposed = candidate(name=[fact("Sea room", locator="§2 p./document/body/p[1]")])
+    result = verify_response(json.dumps({"records": [proposed]}), context, "doc_example", "en")
+    assert not result.records
+    assert result.rejected[0].reason == "quote_not_found"
 
 
 @pytest.mark.parametrize("raw", [
