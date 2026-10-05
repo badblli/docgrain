@@ -1,20 +1,274 @@
 {
-  "lead": { "id": "claude", "name": "Claude", "color": "#d97757", "role": "Tech lead · plan, inceleme, commit/PR" },
+  "lead": {
+    "id": "claude",
+    "name": "Claude",
+    "color": "#d97757",
+    "role": "Tech lead · plan, inceleme, commit/PR"
+  },
   "agents": [
-    { "id": "ada", "name": "Ada", "color": "#22d3ee", "role": "Codex · backend / ingestion" },
-    { "id": "bora", "name": "Bora", "color": "#facc15", "role": "Codex · ölçüm / veri" },
-    { "id": "cem", "name": "Cem", "color": "#4ade80", "role": "Codex · API / erişim" },
-    { "id": "duru", "name": "Duru", "color": "#f472b6", "role": "Codex · arayüz" },
-    { "id": "ece", "name": "Ece", "color": "#a78bfa", "role": "Codex · test / kalite" }
+    {
+      "id": "ada",
+      "name": "Ada",
+      "color": "#22d3ee",
+      "role": "Codex · backend / ingestion"
+    },
+    {
+      "id": "bora",
+      "name": "Bora",
+      "color": "#facc15",
+      "role": "Codex · ölçüm / veri"
+    },
+    {
+      "id": "cem",
+      "name": "Cem",
+      "color": "#4ade80",
+      "role": "Codex · API / erişim"
+    },
+    {
+      "id": "duru",
+      "name": "Duru",
+      "color": "#f472b6",
+      "role": "Codex · arayüz"
+    },
+    {
+      "id": "ece",
+      "name": "Ece",
+      "color": "#a78bfa",
+      "role": "Codex · test / kalite"
+    }
   ],
   "steps": [
-    { "id": "assigned", "label": "Atandı" },
-    { "id": "working", "label": "Çalışıyor" },
-    { "id": "reported", "label": "Rapor verdi" },
-    { "id": "reviewing", "label": "Claude inceliyor" },
-    { "id": "changes_requested", "label": "Düzeltme istendi" },
-    { "id": "approved", "label": "Onaylandı" },
-    { "id": "pr_open", "label": "PR açık" },
-    { "id": "merged", "label": "Birleşti" }
-  ]
+    {
+      "id": "assigned",
+      "label": "Atandı"
+    },
+    {
+      "id": "working",
+      "label": "Çalışıyor"
+    },
+    {
+      "id": "reported",
+      "label": "Rapor verdi"
+    },
+    {
+      "id": "reviewing",
+      "label": "Claude inceliyor"
+    },
+    {
+      "id": "changes_requested",
+      "label": "Düzeltme istendi"
+    },
+    {
+      "id": "approved",
+      "label": "Onaylandı"
+    },
+    {
+      "id": "pr_open",
+      "label": "PR açık"
+    },
+    {
+      "id": "merged",
+      "label": "Birleşti"
+    }
+  ],
+  "user": {
+    "id": "user",
+    "name": "Sen",
+    "color": "#60a5fa",
+    "role": "Ürün sahibi"
+  },
+  "phases": [
+    {
+      "id": "D0",
+      "label": "Ekip & CI"
+    },
+    {
+      "id": "D1",
+      "label": "Ölçüm"
+    },
+    {
+      "id": "D2",
+      "label": "Çıkarım"
+    },
+    {
+      "id": "D3",
+      "label": "Sürümler"
+    },
+    {
+      "id": "D4",
+      "label": "Bilgi listeleri"
+    },
+    {
+      "id": "D5",
+      "label": "Erişim"
+    },
+    {
+      "id": "D6",
+      "label": "Yayılım"
+    },
+    {
+      "id": "D7",
+      "label": "Arayüz"
+    }
+  ],
+  "theme": "pokemon",
+  "themes": {
+    "klasik": {
+      "title": "Klasik",
+      "bar": "blocks",
+      "lead": {
+        "name": "Claude",
+        "avatar": "◆"
+      },
+      "user": {
+        "name": "Sen",
+        "avatar": "★"
+      },
+      "agents": {
+        "ada": {
+          "name": "Ada",
+          "avatar": "●"
+        },
+        "bora": {
+          "name": "Bora",
+          "avatar": "●"
+        },
+        "cem": {
+          "name": "Cem",
+          "avatar": "●"
+        },
+        "duru": {
+          "name": "Duru",
+          "avatar": "●"
+        },
+        "ece": {
+          "name": "Ece",
+          "avatar": "●"
+        }
+      }
+    },
+    "pacman": {
+      "title": "Pac-Man",
+      "bar": "pacman",
+      "lead": {
+        "name": "Pac-Man",
+        "avatar": "ᗧ",
+        "color": "#facc15"
+      },
+      "user": {
+        "name": "Oyuncu 1",
+        "avatar": "🕹",
+        "color": "#60a5fa"
+      },
+      "agents": {
+        "ada": {
+          "name": "Blinky",
+          "avatar": "ᗣ",
+          "color": "#ef4444"
+        },
+        "bora": {
+          "name": "Inky",
+          "avatar": "ᗣ",
+          "color": "#22d3ee"
+        },
+        "cem": {
+          "name": "Clyde",
+          "avatar": "ᗣ",
+          "color": "#fb923c"
+        },
+        "duru": {
+          "name": "Pinky",
+          "avatar": "ᗣ",
+          "color": "#f472b6"
+        },
+        "ece": {
+          "name": "Sue",
+          "avatar": "ᗣ",
+          "color": "#a78bfa"
+        }
+      }
+    },
+    "dota": {
+      "title": "Dota 2",
+      "bar": "mana",
+      "lead": {
+        "name": "Invoker",
+        "avatar": "🔮",
+        "color": "#d97757"
+      },
+      "user": {
+        "name": "Kaptan",
+        "avatar": "👑",
+        "color": "#60a5fa"
+      },
+      "agents": {
+        "ada": {
+          "name": "Tinker",
+          "avatar": "⚙",
+          "color": "#22d3ee"
+        },
+        "bora": {
+          "name": "Sniper",
+          "avatar": "🎯",
+          "color": "#facc15"
+        },
+        "cem": {
+          "name": "Io",
+          "avatar": "🔗",
+          "color": "#4ade80"
+        },
+        "duru": {
+          "name": "Crystal Maiden",
+          "avatar": "❄",
+          "color": "#f472b6"
+        },
+        "ece": {
+          "name": "Oracle",
+          "avatar": "👁",
+          "color": "#a78bfa"
+        }
+      }
+    },
+    "pokemon": {
+      "title": "Pokémon",
+      "bar": "pokeball",
+      "lead": {
+        "name": "Pikachu",
+        "avatar": "⚡",
+        "color": "#facc15"
+      },
+      "user": {
+        "name": "Ash",
+        "avatar": "🧢",
+        "color": "#60a5fa"
+      },
+      "agents": {
+        "ada": {
+          "name": "Charizard",
+          "avatar": "🔥",
+          "color": "#f97316"
+        },
+        "bora": {
+          "name": "Alakazam",
+          "avatar": "🔮",
+          "color": "#a78bfa"
+        },
+        "cem": {
+          "name": "Porygon",
+          "avatar": "💠",
+          "color": "#22d3ee"
+        },
+        "duru": {
+          "name": "Jigglypuff",
+          "avatar": "🎤",
+          "color": "#f472b6"
+        },
+        "ece": {
+          "name": "Bulbasaur",
+          "avatar": "🌱",
+          "color": "#4ade80"
+        }
+      }
+    }
+  }
 }

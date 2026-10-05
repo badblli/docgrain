@@ -39,6 +39,10 @@ non-technical (hotel staff): they edit normalized content and upload new file ve
 
 ## Commands
 
+Always use the repo venv, which pins the same Ruff/pytest as CI:
+`C:/Users/root/Documents/projects/docgrain/.venv/Scripts/python -m ruff …` / `… -m pytest …`.
+A different Ruff version gives different results; the lead re-runs with this one.
+
 ```sh
 # host (venv mirrors CI)
 python -m pytest -q
