@@ -108,6 +108,24 @@ class RecordsRepository:
             raise ValueError("invalid record artifact manifest")
         return manifest
 
+    def list_revisions(self, workspace):
+        path = self._path(workspace)
+        if not path.is_dir():
+            return []
+        published = []
+        for d in path.iterdir():
+            if not d.is_dir():
+                continue
+            manifest_path = d / "published" / "manifest.json"
+            try:
+                manifest = json.loads(manifest_path.read_bytes())
+                if manifest["workspace_id"] == workspace:
+                    published.append((manifest_path.stat().st_mtime, manifest["revision_id"]))
+            except (OSError, ValueError, KeyError):
+                continue
+        published.sort(key=lambda x: x[0], reverse=True)
+        return [rev for _, rev in published]
+
     def read(self, workspace, revision, collection, lang=None, compact=False,
              mode="preview"):
         if mode not in MODES:

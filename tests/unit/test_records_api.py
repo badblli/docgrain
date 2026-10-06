@@ -25,6 +25,7 @@ def setup(tmp_path, monkeypatch):
     monkeypatch.setattr(records, "repository", lambda: store)
     app = FastAPI()
     app.include_router(records.router)
+    app.include_router(records.workspace_router)
     with TestClient(app) as client:
         # Windows asyncio creates a loopback socketpair when its portal starts.
         # The application runs only after this point; every connect is blocked.
@@ -132,3 +133,18 @@ def test_manifest_identity_gate_and_no_path_traversal(setup):
     manifest.write_text(json.dumps(data))
     assert client.get(BASE).status_code == 404
     assert client.get(BASE + "/rooms?lang=../../source").status_code == 404
+
+
+def test_list_revisions_newest_first(setup):
+    client, _ = setup
+    response = client.get("/v1/workspaces/workspace-example/revisions")
+    assert response.status_code == 200
+    assert response.json() == ["r2", "r1"]
+    
+    response = client.get("/v1/workspaces/workspace-foreign/revisions")
+    assert response.status_code == 200
+    assert response.json() == ["foreign-revision"]
+    
+    response = client.get("/v1/workspaces/unknown/revisions")
+    assert response.status_code == 200
+    assert response.json() == []
