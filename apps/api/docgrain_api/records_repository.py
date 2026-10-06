@@ -12,8 +12,9 @@ import tempfile
 from hashlib import sha256
 from pathlib import Path
 
-from docgrain_records.export import COLLECTIONS, MODES, SCHEMA_VERSION, encode, export_bundle
+from docgrain_records.export import MODES, SCHEMA_VERSION, encode, export_bundle
 from docgrain_records.merge_models import MergeRevision
+from docgrain_records.runtime import revision_runtime
 
 
 class PackMissing(LookupError):
@@ -60,11 +61,14 @@ class RecordsRepository:
         if published.exists():
             return  # Never regenerate an old publication.
         files = {mode: export_bundle(revision, mode) for mode in MODES}
+        runtime = revision_runtime(revision)
         manifest = {"schema_version": SCHEMA_VERSION, "workspace_id": revision.workspace_id,
-                    "revision_id": revision.id, "collections": list(COLLECTIONS.values()),
+                    "revision_id": revision.id, "collections": list(runtime.collections.values()),
                     "modes": {mode: {"files": {name: sha256(body).hexdigest()
                                                for name, body in artifacts.items()}}
                               for mode, artifacts in files.items()}}
+        if runtime.schema:
+            manifest["workspace_schema_version"] = runtime.schema["version"]
         temporary = Path(tempfile.mkdtemp(dir=path))
         try:
             for mode, artifacts in files.items():
@@ -98,11 +102,17 @@ class RecordsRepository:
         manifest = json.loads(publication.read_bytes())
         if (manifest["workspace_id"], manifest["revision_id"]) != (workspace, revision):
             raise PackMissing("publication outside workspace/revision")
+        source = MergeRevision.model_validate_json((path / "source.json").read_bytes())
+        if (source.workspace_id, source.id) != (workspace, revision):
+            raise ValueError("record source outside workspace/revision")
+        runtime = revision_runtime(source)
         if (manifest["schema_version"] != SCHEMA_VERSION or
-                manifest["collections"] != list(COLLECTIONS.values()) or
+                manifest["collections"] != list(runtime.collections.values()) or
+                manifest.get("workspace_schema_version") != (
+                    runtime.schema["version"] if runtime.schema else None) or
                 set(manifest["modes"]) != set(MODES) or
                 any(not re.fullmatch(
-                    r"(?:" + "|".join(COLLECTIONS.values()) +
+                    r"(?:" + "|".join(runtime.collections.values()) +
                     r")(?:\.[a-z]{2,3}(?:-[a-z0-9]{2,8})*)?\.(?:json|context\.md)", name)
                     for mode in MODES for name in manifest["modes"][mode]["files"])):
             raise ValueError("invalid record artifact manifest")

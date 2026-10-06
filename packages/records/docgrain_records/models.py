@@ -102,12 +102,17 @@ class RecordBase(StrictModel):
                     raise ValueError("i18n language key must match the field language")
                 if lang.split("-")[0] == "en":
                     raise ValueError("English fields belong in primary values")
-        if any(field not in RECORD_MODELS[self.type][1].model_fields or not values
+        if any(field not in self.field_names() or not values
                for field, values in self.conflicts.items()):
             raise ValueError("record conflicts require known fields and candidates")
         if self.conflicts and self.review_state != "needs_review":
             raise ValueError("record conflicts require needs_review")
         return self
+
+    @classmethod
+    def field_names(cls):
+        return tuple(key for key in cls.model_fields
+                     if key not in {"id", "type", "review_state", "conflicts", "i18n"})
 
 
 class Property(PropertyFields, RecordBase):
@@ -175,7 +180,7 @@ class RejectedField(StrictModel):
     evidence: list[Evidence]
 
 
-CollectionFocus = Literal["policy", "service_price", "activity", "facility"]
+CollectionFocus = Text
 
 
 class ExtractionFailure(StrictModel):
