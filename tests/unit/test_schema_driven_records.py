@@ -351,3 +351,16 @@ def test_dynamic_cli_extract_pins_schema_and_never_calls_model_in_dry_run(tmp_pa
     other = doc.source.model_copy(update={"workspace_id": "foreign"})
     monkeypatch.setattr(cli, "load_context_bundle", lambda *args, **kwargs: (doc.context, "en", other))
     assert main([*args, "--dry-run"]) == 1 and len(requests) == 2
+
+
+def test_older_extraction_without_new_defaulted_schema_keys_still_loads(tmp_path):
+    runtime = accepted(tmp_path)
+    root = tmp_path / "records"
+    bundle(root, runtime)
+    path = root / "doc-a" / "records.json"
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    # An extraction written before a defaulted schema key existed (e.g. collection aliases).
+    for collection in raw["workspace_schema"]["collections"]:
+        collection.pop("aliases", None)
+    write_json(path, raw)
+    assert load_records(root, runtime=runtime)[0].records

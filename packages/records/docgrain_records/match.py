@@ -126,7 +126,10 @@ def load_records(directory: str | Path, *, runtime=None) -> list[ExtractionResul
             active = runtime or (RuntimeRecords(raw["workspace_schema"])
                                  if raw.get("workspace_schema") else HOSPITALITY)
             result = active.result.model_validate(raw)
-            if raw.get("workspace_schema") != active.schema:
+            # Compare normalized schemas: a newer model may add defaulted keys (e.g. aliases)
+            # to the same accepted schema version, which must not orphan older extractions.
+            embedded = raw.get("workspace_schema")
+            if (RuntimeRecords(embedded).schema if embedded else None) != active.schema:
                 raise ValueError("extraction uses a different workspace schema")
         except ValidationError as exc:
             raise ValueError("records.json does not match the extraction schema") from exc
