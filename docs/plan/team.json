@@ -48,6 +48,13 @@
       "name": "PM",
       "color": "#e879f9",
       "role": "Codex · proje yöneticisi"
+    },
+    {
+      "id": "smeargle",
+      "name": "Smeargle",
+      "color": "#c2410c",
+      "role": "Claude · UI/UX ve grafik tasarım (marka, logo, ekranlar)",
+      "engine": "claude"
     }
   ],
   "steps": [
@@ -165,6 +172,10 @@
         "pm": {
           "name": "PM",
           "avatar": "●"
+        },
+        "smeargle": {
+          "name": "Smeargle",
+          "avatar": "●"
         }
       }
     },
@@ -216,6 +227,11 @@
           "name": "Cherry",
           "avatar": "🍒",
           "color": "#e879f9"
+        },
+        "smeargle": {
+          "name": "Smeargle",
+          "avatar": "🎨",
+          "color": "#c2410c"
         }
       }
     },
@@ -267,6 +283,11 @@
           "name": "Keeper",
           "avatar": "💡",
           "color": "#e879f9"
+        },
+        "smeargle": {
+          "name": "Smeargle",
+          "avatar": "🎨",
+          "color": "#c2410c"
         }
       }
     },
@@ -318,6 +339,11 @@
           "name": "Slowking",
           "avatar": "👑",
           "color": "#e879f9"
+        },
+        "smeargle": {
+          "name": "Smeargle",
+          "avatar": "🎨",
+          "color": "#c2410c"
         }
       }
     }

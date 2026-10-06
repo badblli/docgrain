@@ -1,0 +1,221 @@
+/*
+ * Docgrain design tokens (wp62).
+ * Direction: a quiet company ledger. Teal-biased neutrals, one deep teal accent,
+ * semantic colour only for state, hairline borders, document text in a serif.
+ *
+ * Names keep the wp60 console names (--ground, --paper, --sheet, --ink, --ink2, --muted,
+ * --faint, --line, --line2, --accent, --accent-soft, --ok, --warn ...) so apps/web can
+ * swap this file in without renaming. --err / --err-soft are kept as aliases of --danger.
+ *
+ * Light values live on bare :root. Dark is designed separately (not inverted) and is
+ * applied by the OS setting unless data-theme="light", or forced with data-theme="dark".
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Raw teal scale. Same in both themes; use the role tokens below in components. */
+  --teal-50: #f2f7f7;
+  --teal-100: #eaf2f2;
+  --teal-200: #cfe1e2;
+  --teal-300: #9fc2c5;
+  --teal-400: #6a9fa5;
+  --teal-500: #3a7a82;
+  --teal-600: #245d65; /* brand accent */
+  --teal-700: #1c4b52;
+  --teal-800: #163c42;
+  --teal-900: #0f2c30;
+
+  /* Surfaces */
+  --ground: #fafbf9;      /* app background */
+  --paper: #ffffff;       /* cards, sidebar, inputs */
+  --sheet: #f5f7f6;       /* quiet fills: table header, hover, code */
+  --sunken: #eef2f0;      /* tracks, disabled fills, skeletons */
+
+  /* Ink */
+  --ink: #223333;         /* headings, values */
+  --ink2: #445554;        /* body text */
+  --muted: #647573;       /* secondary text */
+  --faint: #73817f;       /* meta, counters, captions (>= 11px only) */
+
+  /* Lines */
+  --line: #dce3e0;        /* card and input borders */
+  --line2: #edf0ee;       /* dividers inside a card */
+  --line-strong: #c4cfcb; /* hover border on neutral controls */
+
+  /* Accent: brand, primary action, current location, links */
+  --accent: #245d65;
+  --accent2: var(--accent); /* wp60 alias */
+  --accent-hover: #1c4b52;
+  --accent-soft: #eaf2f2;   /* selected nav, chosen option */
+  --accent-line: #c4dadb;   /* border of accent-soft areas */
+  --on-accent: #ffffff;
+  --focus: #245d65;
+  --mark: #dcecea;          /* highlight of the quoted value inside a source quote */
+
+  /* State: never decorative */
+  --ok: #327251;            /* Onaylandı, kaynağı var */
+  --ok-soft: #eff6f1;
+  --ok-line: #cfe4d7;
+  --warn: #956316;          /* Kaynaklar farklı söylüyor, İnceleme bekliyor */
+  --warn-soft: #fff5df;
+  --warn-line: #f0ddb0;
+  --danger: #a5423a;        /* Reddedildi, hata */
+  --danger-soft: #fbefed;
+  --danger-line: #efcdc8;
+  --err: var(--danger);
+  --err-soft: var(--danger-soft);
+  --idle: #647573;          /* Öneri, henüz bakılmadı */
+  --idle-soft: #eef2f0;
+
+  /* Shadows: only for things that float (menus, toasts, dialogs). Cards use a hairline. */
+  --shadow-1: 0 1px 2px rgb(24 48 48 / 0.05);
+  --shadow-2: 0 10px 28px -14px rgb(24 48 48 / 0.22), 0 1px 2px rgb(24 48 48 / 0.05);
+  --scrim: rgb(18 30 30 / 0.32);
+
+  /* Type */
+  --f-ui: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-doc: "Source Serif 4", "Source Serif Pro", Georgia, "Times New Roman", serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
+
+  --text-2xs: 11px;   /* meta, pill, counter */
+  --text-xs: 12px;    /* captions, helper */
+  --text-sm: 13px;    /* secondary body, nav */
+  --text-base: 14px;  /* body */
+  --text-md: 16px;    /* card title */
+  --text-lg: 18px;    /* section heading */
+  --text-xl: 23px;    /* question heading */
+  --text-2xl: 30px;   /* page title, option value */
+  --text-3xl: 36px;   /* metric value, summary title */
+
+  --leading-tight: 1.2;
+  --leading-snug: 1.35;
+  --leading-body: 1.55;
+  --leading-doc: 1.6;
+
+  --tracking-display: -0.035em;
+  --tracking-heading: -0.02em;
+  --tracking-label: 0.06em;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  /* Spacing (4 px base) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Radius */
+  --radius-xs: 4px;   /* chips, file-type tags */
+  --radius-sm: 6px;   /* badges, small buttons */
+  --radius: 8px;      /* buttons, inputs, nav items, inner panels */
+  --radius-card: 12px;/* cards, question card, screens */
+  --radius-pill: 999px;
+  --r: var(--radius);         /* wp60 alias */
+  --r-card: var(--radius-card);
+
+  /* Layout */
+  --sidebar-width: 244px;
+  --content-max: 1200px;
+  --control-height: 38px;
+  --control-height-sm: 30px;
+
+  /* Motion */
+  --dur-fast: 120ms;   /* hover, press */
+  --dur-base: 180ms;   /* state change */
+  --dur-enter: 280ms;  /* next question slides in */
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.45, 0, 0.2, 1);
+  --motion-fast: var(--dur-fast);   /* wp60 alias */
+  --motion-enter: var(--dur-enter); /* wp60 alias */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ground: #0e1514;
+    --paper: #141c1b;
+    --sheet: #18211f;
+    --sunken: #0b1110;
+    --ink: #e2eae7;
+    --ink2: #c0ccc9;
+    --muted: #92a29f;
+    --faint: #7f8f8c;
+    --line: #283331;
+    --line2: #1e2826;
+    --line-strong: #3a4745;
+    --accent: #79b7bd;
+    --accent-hover: #97cacf;
+    --accent-soft: #17302f;
+    --accent-line: #2c5154;
+    --on-accent: #0b1d1f;
+    --focus: #79b7bd;
+    --mark: #1f3d3d;
+    --ok: #7cc39a;
+    --ok-soft: #142a1f;
+    --ok-line: #24452f;
+    --warn: #e2b45f;
+    --warn-soft: #2b2313;
+    --warn-line: #4b3d1d;
+    --danger: #ec8f86;
+    --danger-soft: #2f1a18;
+    --danger-line: #52302b;
+    --idle: #92a29f;
+    --idle-soft: #1e2826;
+    --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-2: 0 12px 30px -12px rgb(0 0 0 / 0.65), 0 0 0 1px rgb(255 255 255 / 0.03);
+    --scrim: rgb(0 0 0 / 0.55);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ground: #0e1514;
+  --paper: #141c1b;
+  --sheet: #18211f;
+  --sunken: #0b1110;
+  --ink: #e2eae7;
+  --ink2: #c0ccc9;
+  --muted: #92a29f;
+  --faint: #7f8f8c;
+  --line: #283331;
+  --line2: #1e2826;
+  --line-strong: #3a4745;
+  --accent: #79b7bd;
+  --accent-hover: #97cacf;
+  --accent-soft: #17302f;
+  --accent-line: #2c5154;
+  --on-accent: #0b1d1f;
+  --focus: #79b7bd;
+  --mark: #1f3d3d;
+  --ok: #7cc39a;
+  --ok-soft: #142a1f;
+  --ok-line: #24452f;
+  --warn: #e2b45f;
+  --warn-soft: #2b2313;
+  --warn-line: #4b3d1d;
+  --danger: #ec8f86;
+  --danger-soft: #2f1a18;
+  --danger-line: #52302b;
+  --idle: #92a29f;
+  --idle-soft: #1e2826;
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-2: 0 12px 30px -12px rgb(0 0 0 / 0.65), 0 0 0 1px rgb(255 255 255 / 0.03);
+  --scrim: rgb(0 0 0 / 0.55);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-base: 0ms;
+    --dur-enter: 0ms;
+  }
+}
