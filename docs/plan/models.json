@@ -39,5 +39,27 @@
       "label": "Standart",
       "use": "README ve kullanıcıya dönük dokümanlar"
     }
+  },
+  "agy_tiers": {
+    "hafif": {
+      "model": "gemini-3.8-flash-low",
+      "effort": "low",
+      "label": "Hafif (Gemini)"
+    },
+    "standart": {
+      "model": "gemini-3.8-flash-medium",
+      "effort": "medium",
+      "label": "Standart (Gemini)"
+    },
+    "derin": {
+      "model": "gemini-3.1-pro-high",
+      "effort": "high",
+      "label": "Derin (Gemini Pro)"
+    },
+    "zirve": {
+      "model": "gemini-3.1-pro-high",
+      "effort": "high",
+      "label": "Zirve (Gemini Pro)"
+    }
   }
 }
