@@ -1,4 +1,7 @@
-# Hospitality records
+# Collection discovery and records
+
+For workspace schemas, start with [collection discovery](#workspace-collection-discovery-wp51).
+The commands below retain the earlier hospitality example pipeline.
 
 This opt-in package extracts one record per real thing from a document's compact
 `context_projection`. It does not modify the API, worker, or published knowledge.
@@ -365,3 +368,81 @@ Neither score measures distinct canonical entities or certifies unannotated extr
 fields. Inspect `report.json` for omissions, wrong values, conflicts and alignment
 ambiguities. The helper's successful exit means measurement completed; its
 `d4_target.measurement_met` remains false when quality misses the target.
+## Workspace collection discovery (WP51)
+
+`discover` derives a workspace schema from normalized source structures for any kind
+of company. No industry schema is loaded by this path. Tables with repeated rows,
+similar list items, repeated headings/field blocks, and recurring units, times and
+prices become deterministic signals. Counts cover all supplied documents; up to six
+quoted samples per pattern are sent to the model. This is schema discovery, not a
+complete record extraction pass.
+
+With no model flags it scans sources locally, writes `discovery.signals.json` and
+an empty `schema.proposed.json`, and makes **no model call**. With an explicitly
+configured OpenAI-compatible endpoint it proposes collections and fields, merges
+identical keys across the workspace, and verifies each example value's quotes in
+the cited source blocks using the existing extractor's NFKC/whitespace/locator
+rules. Unsupported fields disappear; rejection reasons remain in `rejected`.
+Conflicting field types or units retain `alternatives` and `needs_review`.
+
+Run discovery on every document of a workspace through the live API (paginated
+document list, filtered by workspace; every input must have a normalized revision):
+
+```powershell
+$env:PYTHONPATH = 'packages/records;packages/domain'
+& 'C:/Users/root/Documents/projects/docgrain/.venv/Scripts/python' -m docgrain_records discover `
+  --workspace <workspace-id> --api http://localhost:8000 `
+  --base-url <openai-compatible-base-url> --model <model-name> `
+  --api-key-env DOCGRAIN_DISCOVERY_API_KEY --out data/discovery/<workspace-id>
+```
+
+Set `DOCGRAIN_DISCOVERY_API_KEY` securely before running; the command never prints
+credentials or source samples. Alternatively, replace `--api` with `--sources
+<normalized-context-directory>` containing one `source.json` and `context.md` per
+document (existing extraction bundles work; `records.json` is not needed). Pins must
+belong to the requested workspace and only one revision per document is allowed.
+`--dry-run` reports request size and signal count without a model call or output
+writes, even if model flags are supplied. `--max-prompt-chars` defaults to 120000;
+oversized requests fail before contacting the model, without silently omitting
+documents. It can be raised explicitly for a suitable model.
+
+`schema.proposed.json` uses English snake_case collection and field keys. Collection
+keys must have a plural-shaped final word (including common irregular plurals).
+Actual English meaning and semantic identity require review; syntax cannot prove
+either. `label_i18n` is an array of `{lang, value}` entries, allowing any locale and
+requiring an English label. Labels may be translated; factual example values retain
+the source language. Every collection and field has its own `review_state`.
+Example values have `{key, value, lang, evidence}`. Supported types are `string`,
+`integer`, `number`, `boolean`, and `string_list`; units are optional (`null`).
+
+Review the proposed keys, labels, definitions and examples, set retained collections
+and fields to `accepted`, and set unwanted entries to `rejected`. Resolve type/unit
+conflicts by selecting a definition, removing `alternatives`, and correcting or
+removing incompatible examples. Keep the top-level state `proposed` and version
+`null`, then publish the reviewed schema locally:
+
+```powershell
+& 'C:/Users/root/Documents/projects/docgrain/.venv/Scripts/python' -m docgrain_records accept-schema `
+  --proposal data/discovery/<workspace-id>/schema.proposed.json `
+  --out data/discovery/<workspace-id>
+```
+
+Acceptance rechecks typed examples and quotes against preserved source contexts
+under `schema.sources/`, including a context SHA-256 alongside source-version and
+knowledge-revision pins. All retained fields require supporting examples; pending
+reviews and unresolved alternatives block publication. The command creates
+`schema.v1.json`, `schema.v2.json`, etc., exclusively, without modifying older
+versions. Rediscovery includes the latest accepted definitions in the prompt so
+equivalent structures can reuse stable keys; definition changes remain reviewable.
+Keep source contexts beside the schema artifacts and outside version control.
+Quote presence proves source location, not that an example's interpretation is
+correct; reviewers must check meaning before accepting.
+
+`WorkspaceSchema` and `collection_record_schema(accepted_schema, collection_key)`
+are the industry-independent runtime contract. Record JSON Schema is generated
+from reviewed workspace fields, with typed, language-tagged, evidenced values.
+Hospitality is one synthetic fixture (`tests/fixtures/collections/hospitality.*`),
+alongside clinic and gym tests, and never supplies the discovery/runtime default.
+The existing fixed hospitality `extract`/`match`/`merge` commands and Python models
+remain available for compatibility with earlier work packages; their artifacts do
+not define a workspace schema and are not inputs to the generic runtime contract.

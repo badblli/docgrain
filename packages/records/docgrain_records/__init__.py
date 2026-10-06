@@ -1,5 +1,12 @@
-"""Opt-in hospitality extraction, verified evidence, and JSON Schema contracts."""
+"""Workspace collection discovery, verified evidence, and optional domain examples."""
 
+from .discovery import DiscoveryClient, discover, verify_discovery
+from .discovery_models import (
+    WorkspaceSchema,
+    collection_record_schema,
+    discovery_schema,
+)
+from .discovery_store import accept_schema
 from .extractor import build_messages, extract, verify_response
 from .merge import JsonMergeStore, compare_revisions
 from .merge_models import (
@@ -39,6 +46,7 @@ __all__ = [
     "AliasDecision",
     "ChatClient",
     "Contact",
+    "DiscoveryClient",
     "Evidence",
     "ExtractionResult",
     "Facility",
@@ -63,9 +71,15 @@ __all__ = [
     "SourcePin",
     "SourceRecord",
     "VersionedEvidence",
+    "WorkspaceSchema",
+    "accept_schema",
     "build_messages",
+    "collection_record_schema",
     "compare_revisions",
+    "discover",
+    "discovery_schema",
     "extract",
     "hospitality_schema",
+    "verify_discovery",
     "verify_response",
 ]

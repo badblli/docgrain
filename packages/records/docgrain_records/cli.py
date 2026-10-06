@@ -10,6 +10,7 @@ import httpx
 from pydantic import ValidationError
 
 from .api import load_context_bundle
+from .discovery_cli import add_discovery_commands, run_discovery
 from .extractor import build_messages, extract, extraction_plan
 from .match import (
     MatchResult,
@@ -77,6 +78,7 @@ def run(args):
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="docgrain-records")
     commands = parser.add_subparsers(dest="command", required=True)
+    add_discovery_commands(commands)
     runner = commands.add_parser("extract")
     runner.add_argument("--document", required=True)
     runner.add_argument("--api", required=True)
@@ -116,7 +118,9 @@ def main(argv=None):
     if args.command == "extract" and not args.dry_run and not args.out:
         parser.error("extract requires --out unless --dry-run")
     try:
-        if args.command == "extract":
+        if args.command in {"discover", "accept-schema"}:
+            return run_discovery(args)
+        elif args.command == "extract":
             return run(args)
         elif args.command == "match":
             configured = [args.base_url, args.model, args.api_key_env]
