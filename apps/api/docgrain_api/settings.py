@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     # Demo is explicit and read-only. Live mode never falls back to fixtures.
     use_fixtures: bool = False
     canonical_persistence_enabled: bool = False
+    records_publication_root: str = ""
 
 
 @lru_cache

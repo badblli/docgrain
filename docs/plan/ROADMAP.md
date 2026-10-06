@@ -48,6 +48,13 @@ mobile apps and websites.
 11. User decision 2026-10-05: measurement (D1) and development may send normalized content of the
     current hotel documents to a cloud model (Gemini via its OpenAI-compatible endpoint). In the
     product each workspace chooses its model; LLM calls stay off by default.
+12. User decision 2026-10-05 (evening): Docgrain's job is the most hallucination-free, stable
+    knowledge feed for AI and apps — not "AI accuracy". Success = unsupported fields 0,
+    run-to-run stability, coverage, field accuracy against independent keys.
+13. Companies are not only hotels: collections are **discovered** per workspace from the normalized
+    content (English snake_case keys like `rooms`, localized labels), with AI assistance and
+    review; fixed domain packs are examples only. Each company is ingested as one bundle into its
+    own workspace so consistency can be compared across companies.
 
 ## Phases
 
