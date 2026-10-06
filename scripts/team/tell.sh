@@ -28,14 +28,26 @@ board step "$wp" working
 echo running >"$run/status"
 
 status=0
-resume_codex "$wp" "$run" "$workdir" "Message from the tech lead (Claude): $message
+read -r model effort tier engine < <(board model "$wp" | tr -d '\r')
+if [[ "$engine" == "agy" ]]; then
+  resume_agy "$wp" "$run" "$workdir" "Message from the tech lead (Claude): $message
 
 Act on it inside this work package, do not commit, then finish with the report format from AGENTS.md." \
-  || status=$?
+    || status=$?
+else
+  resume_codex "$wp" "$run" "$workdir" "Message from the tech lead (Claude): $message
+
+Act on it inside this work package, do not commit, then finish with the report format from AGENTS.md." \
+    || status=$?
+fi
 if [[ $status -ne 0 ]] && is_transient_failure "$run"; then
   sleep 60
   status=0
-  resume_codex "$wp" "$run" "$workdir" "Continue acting on the lead's last message; check git status first." || status=$?
+  if [[ "$engine" == "agy" ]]; then
+    resume_agy "$wp" "$run" "$workdir" "Continue acting on the lead's last message; check git status first." || status=$?
+  else
+    resume_codex "$wp" "$run" "$workdir" "Continue acting on the lead's last message; check git status first." || status=$?
+  fi
 fi
 finish_run "$wp" "$run" "$status"
 exit $status
