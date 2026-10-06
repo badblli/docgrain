@@ -7,7 +7,13 @@ from pathlib import Path
 import httpx
 
 from .api import load_context_bundle
-from .discovery import DiscoveryClient, build_discovery_messages, discover, source_pins
+from .discovery import (
+    DiscoveryClient,
+    discover,
+    discovery_batches,
+    prompt_size,
+    source_pins,
+)
 from .discovery_models import DiscoveryDocument
 from .discovery_signals import detect_signals
 from .discovery_store import (
@@ -32,7 +38,9 @@ def add_discovery_commands(commands):
     runner.add_argument("--timeout", type=float, default=60)
     runner.add_argument("--retries", type=int, default=3)
     runner.add_argument("--max-prompt-chars", type=int, default=120000,
-                        help="İstek boyutu sınırı; aşılırsa gönderim yapılmaz")
+                        help="Her istek için boyut sınırı; büyük içerik bölünür")
+    runner.add_argument("--max-rounds", type=int, choices=(1, 2, 3), default=3,
+                        help="Eksik bölümleri yeniden tarama dahil en fazla tur sayısı")
     accepter = commands.add_parser("accept-schema")
     accepter.add_argument("--proposal", required=True)
     accepter.add_argument("--out", required=True)
@@ -85,17 +93,17 @@ def run_discovery(args):
     documents = (load_source_documents(args.sources, args.workspace) if args.sources else
                  load_workspace_documents(args.api, args.workspace))
     existing = latest_schema(args.out, args.workspace)
-    messages = build_discovery_messages(documents, args.workspace, existing)
-    size = sum(len(message["content"]) for message in messages)
+    batches = discovery_batches(documents, args.workspace, existing,
+                                max_prompt_chars=args.max_prompt_chars) if key or args.dry_run else []
     if args.dry_run:
-        print(f"İstek boyutu: {size} karakter, yaklaşık {(size + 3) // 4} belirteç; "
-              f"{len(detect_signals(documents))} tekrar eden yapı")
+        size = max((prompt_size(messages) for messages in batches), default=0)
+        print(f"İlk tur: {len(batches)} istek; en büyük istek: {size} karakter, "
+              f"yaklaşık {(size + 3) // 4} belirteç; {len(detect_signals(documents))} yapı")
         return 0
-    if key and size > args.max_prompt_chars:
-        raise ValueError("discovery prompt exceeds --max-prompt-chars; no model request sent")
     chat = DiscoveryClient(args.base_url, args.model, key, args.timeout, args.retries) if key else None
     try:
-        schema = discover(documents, args.workspace, chat, existing)
+        schema = discover(documents, args.workspace, chat, existing,
+                          max_prompt_chars=args.max_prompt_chars, max_rounds=args.max_rounds)
     finally:
         if chat:
             chat.close()
@@ -104,6 +112,8 @@ def run_discovery(args):
         json.dumps(detect_signals(documents), ensure_ascii=False, indent=2) + "\n", encoding="utf-8",
     )
     print(f"{len(schema.collections)} bilgi listesi önerildi; {len(schema.rejected)} örnek alan elendi")
+    print(f"İçerik kapsamı: %{schema.coverage * 100:.1f}; "
+          f"açıkta kalan bölüm: {len(schema.uncovered)}")
     if not chat:
         print("Yapılar tarandı. Öneri üretmek için model bağlantısını açıkça belirtin.")
     return 0

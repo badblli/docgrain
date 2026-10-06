@@ -23,6 +23,35 @@ def source_blocks(context):
             for index, marker in enumerate(markers)]
 
 
+def section_title(body):
+    """Recognize Markdown and plain/OCR headings without an industry vocabulary."""
+    lines = [line.strip() for line in body.splitlines() if line.strip()]
+    if not lines:
+        return None
+    first = lines[0]
+    heading = re.fullmatch(r"#{1,6}\s+(.+)", first)
+    if heading:
+        return heading.group(1).strip()
+    if (len(first) <= 100 and any(char.isalpha() for char in first)
+            and not re.search(r"[:.!?;|]", first)
+            and not re.match(r"(?:[-*•]|\d+[.)])\s", first)):
+        return first
+    return None
+
+
+def content_blocks(documents):
+    """Every locatable body, including prose and noisy OCR, in stable source order."""
+    result = []
+    for document in sorted(documents, key=lambda item: item.source.document_id):
+        title = None
+        for locator, body in source_blocks(document.context):
+            title = section_title(body) or title
+            if body:
+                result.append({"document_id": document.source.document_id, "locator": locator,
+                               "title": title or locator, "text": body})
+    return result
+
+
 def field_blocks(body):
     """Repeated cards may be contiguous, separated by blanks, or under distinct headings."""
     for segment in re.split(r"\n\s*\n|\n(?=#{1,6}\s)", body):
@@ -51,6 +80,14 @@ def detect_signals(documents):
     for document in sorted(documents, key=lambda item: item.source.document_id):
         document_id = document.source.document_id
         for locator, body in source_blocks(document.context):
+            if not body:
+                continue
+            title = section_title(body)
+            # Singleton sections are useful candidates too; repetition may be semantic,
+            # or split into short OCR blocks rather than visible rows/cards.
+            add("section_text", title or locator, document_id, locator, body)
+            if title:
+                add("heading", title.casefold(), document_id, locator, body)
             lines = body.splitlines()
             rows = [line for line in lines if line.strip().startswith("|")
                     and line.strip().endswith("|")]
@@ -70,6 +107,9 @@ def detect_signals(documents):
                     for _ in columns[1:]:
                         add("table_columns", field_names, document_id, locator, body)
             for line in lines:
+                label = re.fullmatch(r"\s*([^:\n]{1,60}):\s*\S.*", line)
+                if label and not re.match(r"\s*(?:[-*•]|\d+[.)])\s", line):
+                    add("label_value", label.group(1).strip().casefold(), document_id, locator, line)
                 if re.match(r"^\s*(?:[-*•]|\d+[.)])\s+\S", line):
                     # Similar item shape: replace numbers and field values, retain field labels.
                     item = re.sub(r"^\s*(?:[-*•]|\d+[.)])\s+", "", line)
@@ -77,7 +117,9 @@ def detect_signals(documents):
                     shape = ":".join(label.strip().casefold() for label in labels)
                     if len(labels) == 1:
                         shape = "named_items"
-                    add("list", shape or "items", document_id, locator, line)
+                    pattern = shape or "items"
+                    add("list", f"{title.casefold()} | {pattern}" if title else pattern,
+                        document_id, locator, line)
                 for measure in MEASURES.finditer(line):
                     signature = re.sub(r"\d+(?:[.,]\d+)?", "#", measure.group()).casefold()
                     add("measure", signature, document_id, locator, line)
@@ -85,8 +127,10 @@ def detect_signals(documents):
                 add("fields", signature, document_id, locator, block)
             headings = re.findall(r"(?m)^#{1,6}\s+(.+)$", body)
             for heading in headings:
-                add("heading", heading.strip().casefold(), document_id, locator, body)
+                if heading.strip() != title:
+                    add("heading", heading.strip().casefold(), document_id, locator, body)
     return [{"kind": kind, "pattern": pattern, "count": len(samples),
              "document_ids": sorted({sample["document_id"] for sample in samples}),
              "samples": samples[:6]}
-            for (kind, pattern), samples in sorted(groups.items()) if len(samples) >= 2]
+            for (kind, pattern), samples in sorted(groups.items())
+            if len(samples) >= 2 or kind in {"heading", "section_text"}]

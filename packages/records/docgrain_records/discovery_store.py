@@ -5,7 +5,7 @@ import re
 from hashlib import sha256
 from pathlib import Path
 
-from .discovery import source_pins, verify_examples
+from .discovery import source_pins, update_coverage, verify_examples
 from .discovery_models import DiscoveryDocument, WorkspaceSchema
 from .extractor import _blocks
 
@@ -64,12 +64,15 @@ def accept_schema(proposal_path, out):
     proposal = WorkspaceSchema.model_validate_json(path.read_text(encoding="utf-8"))
     if proposal.review_state != "proposed" or proposal.version is not None:
         raise ValueError("accept requires an unversioned proposed schema")
-    blocks = {}
+    blocks, documents = {}, []
     for source in proposal.sources:
         context = (source_directory(path.parent, source) / "context.md").read_bytes()
         if sha256(context).hexdigest() != source.context_sha256:
             raise ValueError("schema source context no longer matches its pin")
         blocks[source.document_id] = _blocks(context.decode("utf-8"))
+        documents.append(DiscoveryDocument(
+            source=source.model_dump(exclude={"context_sha256"}), context=context.decode("utf-8"),
+        ))
     accepted = []
     for collection in proposal.collections:
         if collection.review_state == "rejected":
@@ -95,6 +98,7 @@ def accept_schema(proposal_path, out):
         raise ValueError("schema acceptance requires at least one supported collection")
     previous = latest_schema(out, proposal.workspace_id)
     proposal.collections = accepted
+    update_coverage(proposal, documents)
     proposal.review_state = "accepted"
     proposal.version = previous.version + 1 if previous else 1
     root = Path(out)
