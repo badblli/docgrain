@@ -39,6 +39,16 @@ def live_repository(monkeypatch):
         version for version in records["versions"].values()
         if document_id is None or version.document_id == document_id
     ])
+    def list_workspaces():
+        counts: dict[str, dict[str, object]] = {}
+        for doc in sorted(records["documents"].values(), key=lambda d: d.updated_at, reverse=True):
+            if doc.workspace_id not in counts:
+                counts[doc.workspace_id] = {"id": doc.workspace_id, "documents": 1}
+            else:
+                counts[doc.workspace_id]["documents"] = int(counts[doc.workspace_id]["documents"]) + 1
+        return list(counts.values())
+
+    monkeypatch.setattr(repository, "list_workspaces", list_workspaces)
     monkeypatch.setattr(repository, "list_jobs", lambda: list(records["jobs"].values()))
     monkeypatch.setattr(repository, "jobs_for_document", lambda document_id: [
         job for job in records["jobs"].values() if job.document_id == document_id

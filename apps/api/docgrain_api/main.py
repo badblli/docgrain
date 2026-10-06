@@ -96,6 +96,7 @@ async def identify_mode(request: Request, call_next):
 
 for module in (documents, jobs, versions, chunks, providers, lineage, entities, canonical_chunks, incremental, retrieval, outputs):
     app.include_router(module.router)
+app.include_router(documents.workspaces_router)
 app.include_router(reviews.router)
 app.include_router(records.router)
 app.include_router(records.workspace_router)

@@ -36,11 +36,25 @@ from ..settings import get_settings
 from ..storage import get_text, object_exists, put_upload
 
 router = APIRouter(prefix="/v1/documents", tags=["documents"])
+workspaces_router = APIRouter(prefix="/v1/workspaces", tags=["workspaces"])
 
 
 def _require_live_uploads() -> None:
     if get_settings().use_fixtures:
         raise HTTPException(status.HTTP_409_CONFLICT, "demo mode is read-only; uploads are disabled")
+
+
+class WorkspaceListItem(BaseModel):
+    id: str
+    documents: int
+
+
+@workspaces_router.get("", response_model=list[WorkspaceListItem])
+def list_workspaces() -> list[WorkspaceListItem]:
+    return [
+        WorkspaceListItem(id=str(item["id"]), documents=int(item["documents"]))
+        for item in repository.list_workspaces()
+    ]
 
 
 class RegisterRequest(BaseModel):

@@ -10,7 +10,28 @@ import { Assets as CanonicalAssets, Issues as CanonicalIssues, Overview as Canon
   type Knowledge } from "./components/canonical/inspector";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-const WORKSPACE = process.env.NEXT_PUBLIC_WORKSPACE_ID ?? "ws_local";
+const DEFAULT_WORKSPACE = process.env.NEXT_PUBLIC_WORKSPACE_ID ?? "ws_local";
+
+const WORKSPACE_NAMES: Record<string, string> = {
+  ws_primebeach: "Primebeach",
+  ws_dobedan: "Dobedan",
+  ws_susesi: "Susesi",
+  ws_nirvana: "Nirvana",
+  ws_local: "Yerel",
+  ws_demo: "Örnek",
+};
+
+function formatWorkspaceName(id: string): string {
+  if (WORKSPACE_NAMES[id]) return WORKSPACE_NAMES[id];
+  const cleaned = id.replace(/^ws_/, "").replace(/[-_]+/g, " ").trim();
+  if (!cleaned) return id;
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
+type WorkspaceItem = {
+  id: string;
+  documents: number;
+};
 type Screen = "documents" | "jobs" | "providers" | "contract" | "detail" | "information";
 type DetailTab = "history" | "review" | "ai-output" | "overview" | "structure" | "tables" | "assets" | "issues" | "provenance" | "pages" | "pipeline" | "versions" | "raw";
 type UploadPhase =
@@ -272,6 +293,9 @@ function Sidebar({
   nav,
   docs,
   jobs,
+  workspace,
+  workspaces,
+  onWorkspaceChange,
   developerMode,
   toggleDeveloperMode,
 }: {
@@ -281,7 +305,13 @@ function Sidebar({
   nav: (s: Screen) => void;
   docs: number;
   jobs: number;
+  workspace: string;
+  workspaces: WorkspaceItem[];
+  onWorkspaceChange: (wsId: string) => void;
 }) {
+  const currentWs = workspaces.find((w) => w.id === workspace);
+  const docCount = currentWs ? currentWs.documents : docs;
+
   return (
     <aside className="rail">
       <button className="brand" onClick={() => nav("documents")}>
@@ -296,6 +326,30 @@ function Sidebar({
           <small>belgeleriniz ve bilgileriniz</small>
         </span>
       </button>
+
+      <div className="companySection">
+        <div className="navlbl" style={{ padding: "0 4px 4px" }}>Şirket</div>
+        <div className="companySelectWrap">
+          <select
+            className="companySelect"
+            value={workspace}
+            aria-label="Şirket seçin"
+            onChange={(e) => onWorkspaceChange(e.target.value)}
+          >
+            {workspaces.map((ws) => (
+              <option key={ws.id} value={ws.id}>
+                {formatWorkspaceName(ws.id)} ({ws.documents})
+              </option>
+            ))}
+          </select>
+          <span className="companySelectArrow" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+          </span>
+        </div>
+      </div>
+
       <div className="navlbl">Çalışma alanı</div>
       <button
         className="nav"
@@ -504,8 +558,8 @@ function Documents({
 }
 import { InformationView } from "./components/information/information";
 
-function Information() {
-  return <InformationView apiUrl={API} workspaceId={WORKSPACE} Icon={Icon} Ep={Ep} Head={Head} EmptyState={EmptyState} />;
+function Information({ workspaceId }: { workspaceId: string }) {
+  return <InformationView apiUrl={API} workspaceId={workspaceId} Icon={Icon} Ep={Ep} Head={Head} EmptyState={EmptyState} />;
 }
 function Jobs({
   jobs,
@@ -1041,6 +1095,14 @@ function Detail({
 }
 
 export default function Home() {
+  const [workspace, setWorkspace] = useState<string>(() => {
+    try {
+      return localStorage.getItem("docgrain.workspace_id") || DEFAULT_WORKSPACE;
+    } catch {
+      return DEFAULT_WORKSPACE;
+    }
+  });
+  const [workspaces, setWorkspaces] = useState<WorkspaceItem[]>([]);
   const [screen, setScreen] = useState<Screen>("documents"),
     [tab, setTab] = useState<DetailTab>("review"),
     [mode, setMode] = useState<Mode | null>(null),
@@ -1076,29 +1138,60 @@ export default function Home() {
   const requestId = useRef(0);
   const dirtyRef = useRef(false);
 
-  async function refresh() {
+  async function refresh(targetWs = workspace) {
     const request = ++requestId.current;
     setLoading(true); setError(""); setMode(null);
     setDocs([]); setJobs([]); setProviders([]);
-    setSelected(null); setScreen("documents");
+    setSelected(null); setScreen((prev) => (prev === "detail" ? "documents" : prev));
     try {
       const health = await apiJson<{ mode: Mode }>(`${API}/healthz`);
       if (health.mode !== "live" && health.mode !== "demo") throw new Error("API çalışma modu doğrulanamadı.");
-      const [documents, nextJobs, nextProviders] = await Promise.all([
-        apiJson<DocumentListResponse[]>(`${API}/v1/documents?limit=50`, undefined, health.mode),
+      const [documents, nextJobs, nextProviders, nextWorkspaces] = await Promise.all([
+        apiJson<DocumentListResponse[]>(`${API}/v1/documents?limit=50&workspace_id=${encodeURIComponent(targetWs)}`, undefined, health.mode),
         apiJson<Job[]>(`${API}/v1/jobs`, undefined, health.mode),
         apiJson<Provider[]>(`${API}/v1/providers/health`, undefined, health.mode),
+        apiJson<WorkspaceItem[]>(`${API}/v1/workspaces`, undefined, health.mode).catch(() => [] as WorkspaceItem[]),
       ]);
       if (request !== requestId.current) return;
       setMode(health.mode);
       setDocs(documents.map(documentRow)); setJobs(nextJobs); setProviders(nextProviders);
+
+      // Ensure active workspace and default workspace are represented in the list
+      const wsMap = new Map<string, number>();
+      for (const w of nextWorkspaces) {
+        wsMap.set(w.id, w.documents);
+      }
+      if (!wsMap.has(targetWs)) {
+        wsMap.set(targetWs, documents.length);
+      }
+      if (!wsMap.has(DEFAULT_WORKSPACE)) {
+        wsMap.set(DEFAULT_WORKSPACE, 0);
+      }
+      const combinedWorkspaces: WorkspaceItem[] = Array.from(wsMap.entries()).map(([id, docCount]) => ({
+        id,
+        documents: id === targetWs ? documents.length : docCount,
+      }));
+      setWorkspaces(combinedWorkspaces);
     } catch (cause) {
       if (request === requestId.current) setError(`API verileri alınamadı: ${String(cause)}`);
     } finally {
       if (request === requestId.current) setLoading(false);
     }
   }
-  useEffect(() => { void refresh(); return () => { requestId.current += 1; }; }, []);
+
+  function handleWorkspaceChange(nextWs: string) {
+    if (nextWs === workspace) return;
+    if (!confirmDiscard()) return;
+    setWorkspace(nextWs);
+    try {
+      localStorage.setItem("docgrain.workspace_id", nextWs);
+    } catch {
+      /* Storage may be unavailable. */
+    }
+    void refresh(nextWs);
+  }
+
+  useEffect(() => { void refresh(workspace); return () => { requestId.current += 1; }; }, []);
   useEffect(() => {
     if (!toast) return;
     const id = setTimeout(() => setToast(""), 4000);
@@ -1171,7 +1264,7 @@ export default function Home() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          workspace_id: WORKSPACE,
+          workspace_id: workspace,
           filename: file.name,
           mime_type: file.type || "application/octet-stream",
           byte_size: file.size,
@@ -1254,6 +1347,7 @@ export default function Home() {
             ...current.filter((item) => item.id !== finalRow.id),
           ]);
           setToast(`${file.name}: ${documentStatusLabel(currentJob.status)}`);
+          void refresh(workspace);
           return;
         }
         await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -1281,14 +1375,17 @@ export default function Home() {
         nav={(next) => { if (confirmDiscard()) setScreen(next); }}
         docs={docs.length}
         jobs={jobs.filter((j) => j.status === "running").length}
+        workspace={workspace}
+        workspaces={workspaces}
+        onWorkspaceChange={handleWorkspaceChange}
       />
       <main>
         <div className="modeNotice" role="status">
           <span>{mode === "demo" ? "Örnek belgeleri görüntülüyorsunuz. Düzenleme ve yükleme kapalı."
             : mode === "live" ? "Belgelerinizi kaynaklarıyla birlikte inceleyebilirsiniz." : "Bağlantı kuruluyor…"}</span>
-          <button className="btn sm" onClick={() => { if (confirmDiscard()) void refresh(); }} disabled={loading || ["registering", "uploading", "confirming", "queued", "running"].includes(uploadState.phase)}>Listeyi yenile</button>
+          <button className="btn sm" onClick={() => { if (confirmDiscard()) void refresh(workspace); }} disabled={loading || ["registering", "uploading", "confirming", "queued", "running"].includes(uploadState.phase)}>Listeyi yenile</button>
         </div>
-        {screen === "information" ? <Information /> : loading ? <EmptyState title="Yükleniyor" text="Belgeleriniz alınıyor." />
+        {screen === "information" ? <Information workspaceId={workspace} /> : loading ? <EmptyState title="Yükleniyor" text="Belgeleriniz alınıyor." />
           : error ? <div role="alert"><EmptyState title="Bağlantı kurulamadı" text={developerMode ? error : "Belgeler alınamadı. Bağlantıyı kontrol edip listeyi yenileyin."} /></div>
           : screen === "documents" ? (
           <Documents
