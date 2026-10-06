@@ -78,6 +78,9 @@ services:
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.7-flash}
       USE_FIXTURES: ${USE_FIXTURES:-false}
       CANONICAL_PERSISTENCE_ENABLED: ${CANONICAL_PERSISTENCE_ENABLED:-true}
+      RECORDS_PUBLICATION_ROOT: ${RECORDS_PUBLICATION_ROOT:-/srv/storage/records}
+    volumes:
+      - ./storage/records:/srv/storage/records:ro
     ports:
       - "8000:8000"
     depends_on:
