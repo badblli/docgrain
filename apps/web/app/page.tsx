@@ -1,5 +1,12 @@
 "use client";
 
+import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
+
+
 import { useEffect, useRef, useState } from "react";
 import { Icon, Head, Ep, EmptyState } from "./components/console-ui";
 import { Sidebar } from "./components/sidebar";
@@ -9,13 +16,18 @@ import { SummaryView } from "./components/summary";
 import { QuestionsView } from "./components/questions";
 import { useWorkspaceReview } from "./components/workspace-review";
 import { formatWorkspaceName, type WorkspaceItem, type Screen, type DocumentRow, type UploadState, type UploadPhase, type Mode } from "./components/console-types";
-import "./canonical.css";
 import { DeveloperModeContext, useDeveloperMode } from "./components/developer-mode";
 import { AIOutputView } from "./components/canonical/ai-output";
 import { ReviewWorkspace } from "./components/canonical/review-workspace";
 import { Assets as CanonicalAssets, Issues as CanonicalIssues, Overview as CanonicalOverview,
   ProvenanceView, Raw as CanonicalRaw, Structure as CanonicalStructure, Tables as CanonicalTables,
   type Knowledge } from "./components/canonical/inspector";
+
+
+const screenContent = "pt-6 pb-16 flex flex-col min-w-0 w-full max-w-[var(--content-max)] max-[560px]:pt-6 max-[560px]:pb-10 px-10 gap-8 max-[780px]:px-4 my-0 mx-auto max-[1100px]:px-6 max-[560px]:px-4 max-[560px]:gap-6";
+const technicalCard = "bg-paper border border-solid border-line rounded-card shadow-none overflow-hidden [&_>_header]:border-b [&_>_header]:border-solid [&_>_header]:border-b-line2 [&_>_header]:flex [&_>_header]:items-center [&_>_header]:flex-wrap [&_>_header_h2]:text-sm [&_>_header_h2]:font-semibold [&_>_header_h2]:tracking-[-0.01em] [&_>_header]:py-3 [&_>_header]:px-4 [&_>_header]:gap-2 [&_>_header_h2]:m-0";
+const technicalNote = "bg-sheet border border-solid border-line2 border-l-[2.5px] border-l-faint rounded-[0_var(--radius)_var(--radius)_0] text-xs text-ink2 leading-[1.55] [&_b]:text-ink p-3";
+const technicalChip = "font-normal text-2xs font-mono rounded-sm bg-sheet border border-solid border-line text-ink2 [button&]:[&:hover]:border-accent [&_b]:font-semibold [&_b]:text-ink py-1 px-2";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const DEFAULT_WORKSPACE = process.env.NEXT_PUBLIC_WORKSPACE_ID ?? "ws_local";
@@ -166,21 +178,21 @@ const documentStatusLabel = (status: string) => status === "done" ? "Hazır"
   : ["queued", "pending"].includes(status) ? "Sırada" : "Kontrol edilmeli";
 const pillClass = (s: string) =>
   s === "done"
-    ? "p-ok"
+    ? "bg-ok-soft text-ok"
     : s === "running" || s === "processing"
-      ? "p-run"
+      ? "bg-accent-soft text-accent"
       : s === "partial"
-        ? "p-warn"
+        ? "bg-warn-soft text-warn"
         : s === "failed"
-          ? "p-err"
-          : "p-idle";
+          ? "bg-danger-soft text-danger"
+          : "bg-idle-soft text-idle";
 function Status({ status }: { status: string }) {
   const developerMode = useDeveloperMode();
   return (
-    <span className={`pill ${pillClass(status)}`}>
-      <i className="dot" />
+    <Badge variant="outline" className={pillClass(status)}>
+      <i className="w-[6px] h-[6px] rounded-pill bg-current" />
       {developerMode ? statusLabel(status) : documentStatusLabel(status)}
-    </span>
+    </Badge>
   );
 }
 function Jobs({
@@ -204,82 +216,82 @@ function Jobs({
         sub="Kaydedilen job durumları gösterilir. Stage retry ve worker çökmesi sonrası otomatik recovery henüz uygulanmadı."
         endpoint="GET /v1/jobs"
       />
-      <div className="wrap">
-        <div className="stats">
+      <div className={screenContent}>
+        <div className="grid grid-cols-[repeat(5,_1fr)] bg-line2 rounded-card overflow-hidden border border-solid border-line max-[1180px]:grid-cols-[repeat(3,_1fr)] max-[780px]:grid-cols-[1fr_1fr] max-[560px]:grid-cols-[1fr] gap-1">
           {[
             ["Kuyrukta", count("queued"), "kayıtlı queued işler", ""],
-            ["Çalışan", count("running"), "kayıtlı running işler", "blue"],
+            ["Çalışan", count("running"), "kayıtlı running işler", "text-accent"],
             [
               "Kısmi",
               count("partial"),
               "sayfa düzeyi hata raporu var",
-              "amber",
+              "text-warn",
             ],
-            ["Başarısız", count("failed"), "retry henüz yok", "red"],
+            ["Başarısız", count("failed"), "retry henüz yok", "text-danger"],
             ["Toplam", jobs.length, "listelenen iş", ""],
           ].map((x) => (
-            <div className="stat" key={String(x[0])}>
-              <div className="lb">{x[0]}</div>
-              <div className={`vl ${x[3]}`}>{x[1]}</div>
-              <div className="sub2">{x[2]}</div>
+            <div className="bg-paper py-3 px-4" key={String(x[0])}>
+              <div className="text-2xs tracking-[0.07em] uppercase text-faint font-semibold">{x[0]}</div>
+              <div className={cn(`text-lg font-semibold tracking-[-0.02em] mt-1 ${x[3]}`)}>{x[1]}</div>
+              <div className="text-2xs text-muted mt-1">{x[2]}</div>
             </div>
           ))}
         </div>
-        <section className="card">
+        <section className={technicalCard}>
           <header>
             <h2>İş kuyruğu</h2>
-            <p className="note">
+            <p className="text-2xs text-muted m-0">
               Şerit, 10 aşamanın hangisine kadar gelindiğini gösterir.
             </p>
-            <span className="sp">
+            <span className="ml-auto">
               <Ep>GET /v1/jobs</Ep>
             </span>
           </header>
-          <div className="scrollx">
-            <table className="grid jobs">
-              <thead>
-                <tr>
-                  <th>İş</th>
-                  <th>Belge</th>
-                  <th>Durum</th>
-                  <th>Aşamalar</th>
-                  <th>Şu an</th>
-                  <th>Süre</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
+          <div className="overflow-x-auto">
+            <Table containerClassName="overflow-visible" className="[&_td]:whitespace-normal [table&]:w-full [table&]:border-collapse [table&]:text-xs [table&]:[&_th]:text-left [table&]:[&_th]:text-2xs [table&]:[&_th]:tracking-[0.07em] [table&]:[&_th]:uppercase [table&]:[&_th]:text-faint [table&]:[&_th]:font-semibold [table&]:[&_th]:border-b [table&]:[&_th]:border-solid [table&]:[&_th]:border-b-line [table&]:[&_th]:whitespace-nowrap [table&]:[&_td]:border-b [table&]:[&_td]:border-solid [table&]:[&_td]:border-b-line2 [table&]:[&_td]:align-[middle] [table&]:[&_tbody_tr:last-child_td]:border-b-0 [&_th:nth-child(2)]:w-[24%] [table&]:[&_th]:py-2 [table&]:[&_th]:px-3 [table&]:[&_td]:p-3">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>İş</TableHead>
+                  <TableHead>Belge</TableHead>
+                  <TableHead>Durum</TableHead>
+                  <TableHead>Aşamalar</TableHead>
+                  <TableHead>Şu an</TableHead>
+                  <TableHead>Süre</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {jobs.map((j) => {
                   return (
-                    <tr key={j.id}>
-                      <td className="mono">{j.id}</td>
-                      <td>
+                    <TableRow key={j.id}>
+                      <TableCell className="font-mono text-2xs">{j.id}</TableCell>
+                      <TableCell>
                         {docs.find((d) => d.id === j.document_id)?.title ??
                           j.document_id}
-                      </td>
-                      <td>
+                      </TableCell>
+                      <TableCell>
                         <Status status={j.status} />
-                      </td>
-                      <td>
-                        <div className="miniRail">
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex w-[150px] gap-1">
                           {j.stages.map((stage) => (
                              <i key={stage.stage} title={`${stage.stage}: ${stage.status}`}
-                               className={stage.status === "done" ? "done" : stage.status === "running" ? "run" : stage.status === "failed" ? "err" : ""} />
+                               className={cn("block h-[5px] flex-1 rounded-xs", stage.status === "done" ? "bg-ok" : stage.status === "running" ? "bg-accent" : stage.status === "failed" ? "bg-danger" : "bg-idle-soft")} />
                            ))}
                          </div>
-                      </td>
-                      <td>{current(j)}</td>
-                      <td className="mono">{duration(j.duration_ms)}</td>
-                      <td>
+                      </TableCell>
+                      <TableCell>{current(j)}</TableCell>
+                      <TableCell className="font-mono text-2xs">{duration(j.duration_ms)}</TableCell>
+                      <TableCell>
                         {["failed", "partial"].includes(j.status) && (
-                          <span className="muted">Retry henüz yok</span>
+                          <span className="text-muted">Retry henüz yok</span>
                         )}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   );
                 })}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         </section>
       </div>
@@ -294,51 +306,51 @@ function Providers({ items }: { items: Provider[] }) {
         sub="Yapılandırma envanteri. Bu ekran provider bağlantılarını test etmez."
         endpoint="GET /v1/providers/health"
       />
-      <div className="wrap">
-        <div className="explain">
+      <div className={screenContent}>
+        <div className={technicalNote}>
           <b>Mevcut durum:</b> Gemini ve Docling extraction yolları mevcut.
           Ek provider, embedding ve index adapter’ları henüz uygulanmadı.
           “Kontrol edilmedi” bağlantı veya model erişiminin doğrulanmadığını belirtir.
         </div>
-        <section className="card">
+        <section className={technicalCard}>
           <header>
             <h2>Bağlı sağlayıcılar</h2>
-            <span className="sp">
+            <span className="ml-auto">
               <Ep>GET /v1/providers/health</Ep>
             </span>
           </header>
-          <table className="grid">
-            <thead>
-              <tr>
-                <th>Arayüz</th>
-                <th>Uygulama</th>
-                <th>Durum</th>
-                <th>Açıklama</th>
-                <th>Konum</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table containerClassName="overflow-visible" className="[&_td]:whitespace-normal [table&]:w-full [table&]:border-collapse [table&]:text-xs [table&]:[&_th]:text-left [table&]:[&_th]:text-2xs [table&]:[&_th]:tracking-[0.07em] [table&]:[&_th]:uppercase [table&]:[&_th]:text-faint [table&]:[&_th]:font-semibold [table&]:[&_th]:border-b [table&]:[&_th]:border-solid [table&]:[&_th]:border-b-line [table&]:[&_th]:whitespace-nowrap [table&]:[&_td]:border-b [table&]:[&_td]:border-solid [table&]:[&_td]:border-b-line2 [table&]:[&_td]:align-[middle] [table&]:[&_tbody_tr:last-child_td]:border-b-0 [table&]:[&_th]:py-2 [table&]:[&_th]:px-3 [table&]:[&_td]:p-3">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Arayüz</TableHead>
+                <TableHead>Uygulama</TableHead>
+                <TableHead>Durum</TableHead>
+                <TableHead>Açıklama</TableHead>
+                <TableHead>Konum</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {items.map((p, i) => (
-                <tr key={i}>
-                  <td className="mono strong">
+                <TableRow key={i}>
+                  <TableCell className="font-mono text-2xs font-semibold">
                     {p.interface}
                     {p.interface === "VisionProvider" && i > 2 ? " (alt)" : ""}
-                  </td>
-                  <td>{p.implementation}</td>
-                  <td>
-                    <span className={`pill ${p.healthy ? "p-ok" : "p-warn"}`}>
-                      <i className="dot" />
+                  </TableCell>
+                  <TableCell>{p.implementation}</TableCell>
+                  <TableCell>
+                    <span className={cn(`inline-flex items-center text-2xs font-semibold rounded-pill whitespace-nowrap gap-1 py-1 px-2 ${p.healthy ? "bg-ok-soft text-ok" : "bg-warn-soft text-warn"}`)}>
+                      <i className="w-[6px] h-[6px] rounded-pill bg-current" />
                       {p.healthy === null ? "Kontrol edilmedi" : p.healthy ? "Doğrulandı" : "Etkin değil"}
                     </span>
-                  </td>
-                  <td className="muted">{p.note}</td>
-                  <td>
-                    <code className="chip">{p.location}</code>
-                  </td>
-                </tr>
+                  </TableCell>
+                  <TableCell className="text-muted">{p.note}</TableCell>
+                  <TableCell>
+                    <code className={technicalChip}>{p.location}</code>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </section>
       </div>
     </>
@@ -348,8 +360,8 @@ function Contract() {
   return (
     <>
       <Head section="Referans" title="Mevcut API ve hedef yön" sub="M1 canonical revision kayıtları ve read-only inspection." endpoint="GET /docs" />
-      <div className="wrap">
-        <section className="card pad">
+      <div className={screenContent}>
+        <section className="bg-paper border border-solid border-line rounded-card shadow-none overflow-hidden [&_>_header]:border-b [&_>_header]:border-solid [&_>_header]:border-b-line2 [&_>_header]:flex [&_>_header]:items-center [&_>_header]:flex-wrap [&_>_header_h2]:text-sm [&_>_header_h2]:font-semibold [&_>_header_h2]:tracking-[-0.01em] [&_>_header]:py-3 [&_>_header]:px-4 [&_>_header]:gap-2 [&_>_header_h2]:m-0 p-4">
           <h2>Canonical-first document-to-knowledge engine</h2>
           <p>Hedef: document → structural parse → Vision enrichment → reconciliation → canonical knowledge → projections.</p>
           <p>Canonical structured knowledge kaynak doğrusu olacak; Markdown, chunks, embeddings ve uygulama görünümleri ondan türetilecek.</p>
@@ -395,43 +407,36 @@ function DetailHead({
     ["raw", "Ham veri", ""],
   ];
   const renderTab = (t: [DetailTab, string, string]) => (
-    <button
-      className="tab"
-      role="tab"
-      aria-selected={tab === t[0]}
-      key={t[0]}
-      onClick={() => setTab(t[0])}
-    >
-      {t[1]}
-      {t[2] && <i>{t[2]}</i>}
-    </button>
+    <TabsTrigger value={t[0]} key={t[0]} className="h-auto rounded-none border-0 border-b-2 border-transparent bg-transparent px-3 py-2 text-sm text-muted shadow-none data-[state=active]:border-accent data-[state=active]:bg-transparent data-[state=active]:text-accent data-[state=active]:shadow-none">
+      {t[1]}{t[2] && <span className="ml-1 font-mono text-2xs text-faint">{t[2]}</span>}
+    </TabsTrigger>
   );
   return (
-    <header className="head">
-      <div className="crumb">
+    <header className="bg-transparent border-b-0 border-solid border-b-line pt-10 pb-0 static top-0 z-[20] max-[560px]:[&_h1]:wrap-anywhere w-full max-w-[var(--content-max)] [&_h1]:text-2xl [&_h1]:tracking-[var(--tracking-display)] [&_h1]:font-semibold max-[560px]:pt-6 max-[560px]:pb-0 px-10 max-[780px]:px-4 my-0 mx-auto max-[1100px]:px-6 max-[560px]:px-4">
+      <div className="hidden items-center text-2xs text-muted mb-2 [&_b]:text-line [&_b]:font-normal max-[560px]:wrap-anywhere gap-2">
         <span>Çalışma alanı</span>
         <b>›</b>
         <span>Belgeler</span>
         <b>›</b>
         <span>{doc.title}</span>
       </div>
-      <div className="h1row">
+      <div className="flex items-start flex-wrap gap-3">
         <div>
           <h1>{doc.title}</h1>
-          <p className="sub mono">
+          <p className="text-muted mt-1 mb-0 max-w-[74ch] max-[560px]:wrap-anywhere font-mono text-2xs mx-0">
             {doc.file} · {doc.type === "PDF" ? `${doc.pages} sayfa` :
               ["PNG", "JPG", "JPEG"].includes(doc.type) ? "Kaynak görseli" : doc.type} · sürüm {doc.version}
           </p>
         </div>
-        <div className="headact">
+        <div className="ml-auto flex items-center max-[560px]:mt-2 max-[560px]:mb-0 max-[560px]:w-full max-[560px]:justify-start gap-2 max-[560px]:mx-0">
           <Status status={doc.status} />
           {tab !== "review" && <Ep>GET /v1/documents/{doc.id}/knowledge</Ep>}
         </div>
       </div>
-      <div className="tabs" role="tablist">
+      <div className="mt-3 min-w-0 overflow-x-auto"><TabsList aria-label="Belge bölümleri" className="h-auto w-max justify-start gap-1 rounded-none bg-transparent p-0">
         {primaryTabs.map(renderTab)}
         {developerMode && technicalTabs.map(renderTab)}
-      </div>
+      </TabsList></div>
     </header>
   );
 }
@@ -440,66 +445,66 @@ function Pipeline({ job }: { job: Job | null }) {
   const stages = job.stages;
   const jobTime = job?.started_at ?? job?.queued_at;
   return (
-    <div className="wrap">
-      <section className="card">
+    <div className={screenContent}>
+      <section className={technicalCard}>
         <header>
           <div>
             <h2>İş {job.id}</h2>
-            <p className="note">
+            <p className="text-2xs text-muted m-0">
               {jobTime
                 ? new Date(jobTime).toLocaleString("tr-TR")
                 : "Zaman bilgisi yok"}{" "}
               · {duration(job.duration_ms)}
             </p>
           </div>
-          <span className="sp">
+          <span className="ml-auto">
             <Status status={job.status} />
           </span>
           <Ep>GET /v1/jobs/{job.id}</Ep>
         </header>
-        <div className="rail10">
+        <div className="flex gap-1 p-4">
           {stages.map((s) => (
             <div
               key={s.stage}
-              className={`seg ${s.status === "done" ? "done" : s.status === "running" ? "run" : s.status === "failed" ? "err" : ""}`}
+              className="min-w-0 flex-1"
             >
-              <div className="bar" />
-              <div className="lbl">{stageMeta[s.stage]?.name}</div>
+              <div className={cn("h-1.5 rounded-xs", s.status === "done" ? "bg-ok" : s.status === "running" ? "bg-accent" : s.status === "failed" ? "bg-danger" : "bg-idle-soft")} />
+              <div className="text-2xs text-ink2 mt-1 whitespace-nowrap overflow-hidden text-ellipsis font-medium">{stageMeta[s.stage]?.name}</div>
             </div>
           ))}
         </div>
         {stages.map((s, i) => (
           <div
-            className={`stage c-${s.status === "done" ? "ok" : s.status === "running" ? "run" : s.status === "failed" ? "err" : "idle"}`}
+            className={cn("grid grid-cols-[26px_minmax(0,1fr)] gap-x-3 px-4", s.status === "done" ? "text-ok" : s.status === "running" ? "text-accent" : s.status === "failed" ? "text-danger" : "text-idle")}
             key={s.stage}
           >
-            <div className="gut">
-              <i className="node" />
-              <i className="wire" />
+            <div className="flex flex-col items-center">
+              <i className="w-[11px] h-[11px] rounded-pill border-[2px] border-solid border-paper [box-shadow:0_0_0_1.5px_currentColor] mt-4 flex-none" />
+              <i className="flex-1 w-[1.5px] bg-line mt-1 mb-0 [div:last-child_&]:hidden mx-0" />
             </div>
-            <div className="body">
-              <div className="top">
-                <span className="nm">
+            <div className="border-b border-solid border-b-line2 min-w-0 [div:last-child_&]:border-b-0 py-3 px-0">
+              <div className="flex items-center flex-wrap gap-2">
+                <span className="font-semibold">
                   {i + 1}. {stageMeta[s.stage]?.name}
                 </span>
-                <span className={`pill ${pillClass(s.status)}`}>
+                <Badge variant="outline" className={pillClass(s.status)}>
                   {statusLabel(s.status)}
-                </span>
-                <code className="chip">
+                </Badge>
+                <code className={technicalChip}>
                   {s.provider ?? stageMeta[s.stage]?.via}
                 </code>
-                <span className="dur">
+                <span className="ml-auto font-normal text-2xs font-mono text-faint">
                   {s.duration_ms ? duration(s.duration_ms) : "—"}
                 </span>
               </div>
-              <p className="out">{s.summary ?? (s.status === "skipped" ? "Çalıştırılmadı." : "Aşama ayrıntısı kaydedilmedi.")}</p>
+              <p className="text-muted text-xs mt-1 mb-0 mx-0">{s.summary ?? (s.status === "skipped" ? "Çalıştırılmadı." : "Aşama ayrıntısı kaydedilmedi.")}</p>
               {s.error && <p role="alert">{s.error}</p>}
               {s.attributes && (
-                <div className="det">
+                <div className="mt-2 flex flex-wrap gap-1">
                   {Object.entries(s.attributes)
                     .slice(0, 5)
                     .map(([k, v]) => (
-                      <code className="chip" key={k}>
+                      <code className={technicalChip} key={k}>
                         {k} <b>{String(v)}</b>
                       </code>
                     ))}
@@ -509,7 +514,7 @@ function Pipeline({ job }: { job: Job | null }) {
           </div>
         ))}
       </section>
-      <div className="explain">
+      <div className={technicalNote}>
         <b>Aşama kaydı:</b> Mevcut worker aşama özetlerini işlem sonunda kaydeder.
         Ayrıntılı canlı aşama ilerlemesi, stage retry ve crash recovery henüz yok.
         Yeni işler canonical revision, ortak AI çıktısı, chunks ve checksum manifesti yayımlar.
@@ -529,13 +534,11 @@ function PageSheet({
   src?: string;
 }) {
   if (src) {
-    return (
-      <div className={`paperMock real ${small ? "small" : ""}`}>
-        <img src={src} alt={`Sayfa ${page} önizlemesi`} />
-      </div>
-    );
+    return <div className={cn("relative overflow-hidden rounded-xs border border-line bg-paper", small && "min-h-[105px]")}>
+      <img className="block h-auto w-full" src={src} alt={`Sayfa ${page} önizlemesi`} />
+    </div>;
   }
-  return <div className={`paperMock ${small ? "small" : ""}`}>Sayfa görseli mevcut değil.</div>;
+  return <div className={cn("grid aspect-[1654/2339] w-full place-items-center rounded-xs border border-line bg-paper p-3 text-center text-xs text-muted", small && "min-h-[105px]")}>Sayfa görseli mevcut değil.</div>;
 }
 
 function PagesView({
@@ -556,61 +559,61 @@ function PagesView({
     );
   }
   return (
-    <div className="wrap">
-      <section className="card viewer">
-        <div className="thumbs">
+    <div className={screenContent}>
+      <section className="bg-paper border border-solid border-line rounded-card shadow-none overflow-hidden [&_>_header]:border-b [&_>_header]:border-solid [&_>_header]:border-b-line2 [&_>_header]:flex [&_>_header]:items-center [&_>_header]:flex-wrap [&_>_header_h2]:text-sm [&_>_header_h2]:font-semibold [&_>_header_h2]:tracking-[-0.01em] grid grid-cols-[104px_minmax(280px,_1fr)_minmax(320px,_1.1fr)] min-h-160 max-[1180px]:grid-cols-[88px_minmax(0,_1fr)] max-[560px]:grid-cols-[64px_minmax(0,_1fr)] [&_>_header]:py-3 [&_>_header]:px-4 [&_>_header]:gap-2 [&_>_header_h2]:m-0">
+        <div className="border-r border-solid border-r-line flex flex-col max-h-[78vh] overflow-auto bg-sheet py-3 px-2 gap-2 max-[560px]:py-2 max-[560px]:px-1">
           {pages.map((page) => (
-            <button
-              className="thumb"
+            <Button variant="ghost"
+              className="h-auto whitespace-normal bg-transparent border-0 relative rounded-xs p-0"
               aria-current={n === page.page_number}
               key={page.id}
               onClick={() => setN(page.page_number)}
             >
-              <span className="sh">
+              <span className="border border-solid border-accent rounded-xs overflow-hidden bg-paper block [box-shadow:0_0_0_2px_var(--accent-soft)]">
                 <PageSheet page={page.page_number} src={page.render_uri} small />
               </span>
-              <span className="n">{page.page_number}</span>
-            </button>
+              <span className="font-semibold text-2xs font-mono text-accent mt-1 block">{page.page_number}</span>
+            </Button>
           ))}
         </div>
-        <div className="stage-pane">
-          <div className="flags">
-            <span className="pill p-idle">
-              <i className="dot" />
+        <div className="border-r border-solid border-r-line bg-sheet flex flex-col min-w-0 gap-3 p-4 max-[560px]:p-2">
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="inline-flex items-center text-2xs font-semibold rounded-pill whitespace-nowrap bg-idle-soft text-idle gap-1 py-1 px-2">
+              <i className="w-[6px] h-[6px] rounded-pill bg-current" />
               sayfa {n} / {pages.length}
             </span>
-            <code className="chip">
+            <code className={technicalChip}>
               güven <b>{p?.confidence == null ? "ölçülmedi" : p.confidence.toFixed(2)}</b>
             </code>
-            <code className="chip">{p?.parser ?? "bilinmiyor"}</code>
+            <code className={technicalChip}>{p?.parser ?? "bilinmiyor"}</code>
           </div>
           <PageSheet page={n} src={p?.render_uri} />
-          <code className="mono muted">{p?.render_uri}</code>
+          <code className="font-mono text-2xs text-muted">{p?.render_uri}</code>
         </div>
-        <div className="extract">
-          <div className="minitabs">
-            <button className="minitab" aria-selected>
+        <div className="flex flex-col min-w-0 max-[1180px]:col-[1/-1] max-[1180px]:border-t max-[1180px]:border-solid max-[1180px]:border-t-line gap-3 p-4 max-[560px]:p-3">
+          <div className="flex border-b border-solid border-b-line2 gap-1">
+            <Button variant="ghost" className="h-auto whitespace-normal bg-transparent border-0 text-xs text-muted border-b-[2px] border-solid border-b-transparent [&[aria-selected='true']]:text-accent [&[aria-selected='true']]:border-b-accent [&[aria-selected='true']]:font-semibold py-1 px-2" aria-selected>
               Legacy extraction Markdown
-            </button>
+            </Button>
           </div>
-          <div className="flags">
+          <div className="flex flex-wrap items-center gap-1">
             {(p?.quality_flags ?? []).map((f) => (
-              <span className="pill p-warn" key={f}>
-                <i className="dot" />
+              <span className="inline-flex items-center text-2xs font-semibold rounded-pill whitespace-nowrap bg-warn-soft text-warn gap-1 py-1 px-2" key={f}>
+                <i className="w-[6px] h-[6px] rounded-pill bg-current" />
                 {f.replace("-", " ")}
               </span>
             ))}
           </div>
-          <div className="md">
+          <div className="font-normal text-base leading-[1.62] font-serif text-ink max-w-[66ch] overflow-auto max-h-[56vh] [&_h2]:font-semibold [&_h2]:text-md [&_h2]:font-sans [&_h2]:mt-0 [&_h2]:mb-2 [&_p]:mt-0 [&_p]:mb-3 [&_table]:border-collapse [&_table]:font-normal [&_table]:text-xs [&_table]:font-sans [&_table]:mt-1 [&_table]:mb-3 [&_table]:w-full [&_th]:border [&_th]:border-solid [&_th]:border-line [&_th]:text-left [&_td]:border [&_td]:border-solid [&_td]:border-line [&_td]:text-left [&_th]:bg-sheet [&_th]:font-semibold [&_th]:text-2xs [&_h2]:mx-0 [&_p]:mx-0 [&_table]:mx-0 [&_th]:py-1 [&_th]:px-2 [&_td]:py-1 [&_td]:px-2">
             {markdown ? (
-              <pre className="realMarkdown">{markdown}</pre>
+              <pre className="whitespace-pre-wrap font-doc text-base leading-doc wrap-anywhere">{markdown}</pre>
             ) : (
               <p>Bu sürüm için extraction Markdown mevcut değil. Demo modunda dosya üretilmez.</p>
             )}
           </div>
         </div>
       </section>
-      <div className="explain">
+      <div className={technicalNote}>
         <b>Extraction önizlemesi:</b> Solda seçilen sayfa, sağda dokümanın tamamının
         Markdown çıktısı bulunur. Bu çıktı henüz canonical knowledge değildir.
         Sayfa hataları job kaydında tutulur; confidence ölçülmez. Canonical yapı ve evidence için Structure/Provenance sekmelerini kullanın.
@@ -620,17 +623,17 @@ function PagesView({
 }
 function VersionBox({ v, current }: { v: Version; current?: boolean }) {
   return (
-    <div className="vbox">
+    <div className="border border-solid border-line rounded-card bg-paper min-h-52 [&_h4]:mt-0 [&_h4]:mb-1 [&_h4]:text-sm [&_h4]:mx-0 p-3">
       <h4>
         {v.id}{" "}
         {current && (
-          <span className="pill p-ok">
-            <i className="dot" />
+          <span className="inline-flex items-center text-2xs font-semibold rounded-pill whitespace-nowrap ml-1 bg-ok-soft text-ok gap-1 py-1 px-2">
+            <i className="w-[6px] h-[6px] rounded-pill bg-current" />
             güncel
           </span>
         )}
       </h4>
-      <div className="when">
+      <div className="font-normal text-2xs font-mono text-faint mb-3">
         {new Date(v.created_at).toLocaleDateString("tr-TR", {
           day: "2-digit",
           month: "short",
@@ -639,7 +642,7 @@ function VersionBox({ v, current }: { v: Version; current?: boolean }) {
         · {v.parser}
         {v.vision_provider ? ` · ${v.vision_provider}` : " · görsel model yok"}
       </div>
-      <dl className="kv">
+      <dl className="grid grid-cols-[auto_1fr] gap-y-1 gap-x-4 text-xs [&_dt]:text-muted [&_dd]:font-normal [&_dd]:text-2xs [&_dd]:font-mono [&_dd]:text-ink2 [&_dd]:[word-break:break-all] [&_dd]:m-0">
         <dt>sayfa</dt>
         <dd>{v.page_count}</dd>
         <dt>durum</dt>
@@ -651,9 +654,9 @@ function VersionBox({ v, current }: { v: Version; current?: boolean }) {
 function VersionsView({ versions }: { versions: Version[] }) {
   if (!versions.length) return <EmptyState title="Sürüm bilgisi yok" text="Bu doküman için sürüm kaydı alınamadı." />;
   const sorted = [...versions].sort((a, b) => a.revision - b.revision);
-  return <div className="wrap">
+  return <div className={screenContent}>
     {sorted.map((v, i) => <VersionBox key={v.id} v={v} current={i === sorted.length - 1} />)}
-    <div className="explain">Bunlar yüklenen kaynak dosyanın sürümleridir; içerik inceleme geçmişi değildir. Belge içeriğindeki inceleme kayıtları için “Belgeyi incele” sekmesindeki Revision geçmişi bölümüne bakın. Canonical revision kimliği Özet sekmesinde gösterilir. Live diff endpoint’i yalnızca legacy sayaç farkı verir.
+    <div className={technicalNote}>Bunlar yüklenen kaynak dosyanın sürümleridir; içerik inceleme geçmişi değildir. Belge içeriğindeki inceleme kayıtları için “Belgeyi incele” sekmesindeki Revision geçmişi bölümüne bakın. Canonical revision kimliği Özet sekmesinde gösterilir. Live diff endpoint’i yalnızca legacy sayaç farkı verir.
       İçerik diff’i, Structured Knowledge Patch ve aynı dokümana yeni sürüm yükleme henüz uygulanmadı.</div>
   </div>;
 }
@@ -689,11 +692,12 @@ function Detail({
   // Once opened, the review workspace stays mounted (hidden) so unsaved drafts survive tab switches.
   const [reviewOpened, setReviewOpened] = useState(tab === "review" || tab === "history");
   useEffect(() => { if (tab === "review" || tab === "history") setReviewOpened(true); }, [tab]);
-  const canonicalUnavailable = <div className="ci-wrap"><div className="ci-empty"><strong>Belge içeriği henüz hazır değil</strong>
+  const canonicalUnavailable = <div className="pt-6 pb-12 flex flex-col min-w-0 [&_>_details]:border [&_>_details]:border-solid [&_>_details]:border-line [&_>_details]:rounded-sm [&_>_details]:bg-paper [&_>_details]:min-w-0 [&_>_details_summary]:cursor-pointer [&_>_details_summary]:font-normal [&_>_details_summary]:text-xs [&_>_details_summary]:font-mono max-[760px]:pt-4 max-[760px]:pb-8 px-8 gap-4 max-[760px]:px-4 [&_>_details_summary]:p-3"><div className="border border-dashed border-line rounded-lg bg-paper text-ink2 [&_strong]:font-semibold [&_strong]:text-md [&_strong]:font-sans [&_p]:mt-1 [&_p]:mb-0 [&_p]:text-muted [&_p]:text-xs py-10 px-6 [&_p]:mx-0"><strong>Belge içeriği henüz hazır değil</strong>
     <p>{developerMode ? knowledgeState : "Belge içeriği alınamadı. Bir süre sonra tekrar deneyin."}</p></div></div>;
   return (
-    <>
+    <Tabs value={tab} onValueChange={value => setTab(value as DetailTab)} className="min-w-0 flex-col gap-0">
       <DetailHead doc={doc} tab={tab} setTab={setTab} knowledge={knowledge} />
+      <TabsContent value={tab} forceMount className="min-w-0">
       {(tab === "review" || tab === "history" || reviewOpened) && (
         <div hidden={tab !== "review" && tab !== "history"}>
           <ReviewWorkspace view={tab === "history" ? "history" : "read"} onRead={() => setTab("review")} documentId={doc.id} onSaved={onSaved} mode={mode} onDirtyChange={onDirtyChange} />
@@ -712,7 +716,8 @@ function Detail({
         <PagesView pages={pages} markdown={markdown} />
       )}
       {tab === "versions" && <VersionsView versions={versions} />}
-    </>
+      </TabsContent>
+    </Tabs>
   );
 }
 
@@ -1003,7 +1008,7 @@ export default function Home() {
   }
   return (
     <DeveloperModeContext.Provider value={developerMode}>
-    <div className="app">
+    <div className="min-h-dvh text-base md:grid md:grid-cols-[244px_minmax(0,1fr)] motion-reduce:[&_*]:animate-none motion-reduce:[&_*]:transition-none">
       <Sidebar
         developerMode={developerMode}
         toggleDeveloperMode={toggleDeveloperMode}
@@ -1021,11 +1026,11 @@ export default function Home() {
         workspaces={workspaces}
         onWorkspaceChange={handleWorkspaceChange}
       />
-      <main>
-        {(developerMode || mode === "demo" || screen === "documents" || screen === "detail") && <div className="modeNotice" role="status">
+      <main className="flex min-w-0 flex-col">
+        {(developerMode || mode === "demo" || screen === "documents" || screen === "detail") && <div className="bg-transparent border-b border-solid border-b-line flex items-center justify-between text-xs max-[780px]:flex-wrap text-muted py-3 px-10 gap-4 max-[780px]:py-3 max-[780px]:px-4 max-[1100px]:px-6 max-[560px]:py-3 max-[560px]:px-4" role="status">
           <span>{mode === "demo" ? "Örnek belgeleri görüntülüyorsunuz. Düzenleme ve yükleme kapalı."
             : mode === "live" ? "Belgelerinizi kaynaklarıyla birlikte inceleyebilirsiniz." : "Bağlantı kuruluyor…"}</span>
-          <button className="btn sm" onClick={() => { if (confirmDiscard()) void refresh(workspace); }} disabled={loading || review.busy || ["registering", "uploading", "confirming", "queued", "running"].includes(uploadState.phase)}>Listeyi yenile</button>
+          <Button variant="ghost" className="h-auto whitespace-normal border border-solid border-line bg-paper rounded-lg font-medium text-ink2 inline-flex items-center [&:hover]:border-line-strong [&:hover]:bg-sheet [&:hover]:text-ink [&:disabled]:cursor-not-allowed [&:disabled]:opacity-[.55] [&:disabled]:bg-idle-soft [&:disabled]:border-line [&:disabled]:text-muted [&:disabled:hover]:cursor-not-allowed [&:disabled:hover]:opacity-[0.58] [&:disabled:hover]:bg-idle-soft [&:disabled:hover]:border-line [&:disabled:hover]:text-muted motion-safe:transition-colors motion-safe:duration-150 justify-center text-xs min-h-[var(--control-height-sm)] gap-1 py-1 px-2" onClick={() => { if (confirmDiscard()) void refresh(workspace); }} disabled={loading || review.busy || ["registering", "uploading", "confirming", "queued", "running"].includes(uploadState.phase)}>Listeyi yenile</Button>
         </div>}
         {screen === "summary" ? <SummaryView companyName={formatWorkspaceName(workspace)} review={review} readOnly={mode === "demo"}
           onCollections={key => { setInitialCollection(key); setScreen("collections"); }}
@@ -1072,7 +1077,7 @@ export default function Home() {
         ) : null}
       </main>
       {toast && (
-        <div className="toast">
+        <div className="fixed right-[22px] bottom-[22px] bg-accent text-on-accent border border-solid border-accent-line rounded-lg shadow-2 text-xs z-[99] motion-safe:animate-in motion-safe:fade-in motion-safe:duration-300 [&_i]:inline-block [&_i]:w-[7px] [&_i]:h-[7px] [&_i]:rounded-pill [&_i]:bg-ok [&_i]:mr-2 py-2 px-3">
           <i />
           {developerMode || !toast.includes("yüklenemedi") && !toast.includes("yenilenemedi") ? toast : "İşlem tamamlanamadı. Bağlantıyı kontrol edip tekrar deneyin."}
         </div>

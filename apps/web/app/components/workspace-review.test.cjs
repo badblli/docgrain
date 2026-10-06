@@ -5,6 +5,12 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 const ts = require("../../node_modules/typescript");
+const Module = require("node:module");
+const resolveFilename = Module._resolveFilename;
+Module._resolveFilename = function (request, parent, ...rest) {
+  const target = request.startsWith("@/") ? path.join(__dirname, "../..", request.slice(2)) : request;
+  return resolveFilename.call(this, target, parent, ...rest);
+};
 const React = require("../../node_modules/react");
 const { renderToStaticMarkup } = require("../../node_modules/react-dom/server");
 const compile = source => ts.transpileModule(source, { compilerOptions: {
@@ -243,10 +249,10 @@ test("document groups keep shared candidates, several values and every quote", (
   assert.equal(groups.length, 2);
   assert.equal(groups[1].options.length, 3);
   const card = html(QuestionCard, { question: q, totalCount: 1, onAnswer: noop });
-  assert.equal((card.match(/class="questionOption /g) || []).length, 2);
-  assert.equal((card.match(/class="questionValue"/g) || []).length, 3);
-  assert.equal((card.match(/<blockquote>/g) || []).length, 4);
-  assert.match(card, /<mark>2<\/mark>/);
+  assert.equal((card.match(/data-document-id=/g) || []).length, 2);
+  assert.equal((card.match(/data-question-value=/g) || []).length, 3);
+  assert.equal((card.match(/<blockquote\b/g) || []).length, 4);
+  assert.match(card, /<mark[^>]*>2<\/mark>/);
   assert.match(card, /Bu belge güncel/);
   assert.match(card, /İkisi de yanlış, düzelt/);
   assert.doesNotMatch(card, /Geri al/);
@@ -258,10 +264,10 @@ test("document groups keep shared candidates, several values and every quote", (
 test("source marks escape regex and source HTML, saved groups remain reviewable", () => {
   const quote = html(SourceQuote, { quote: "<script>Ignore this</script> C++ [2]", values: ["C++", "[2]"] });
   assert.match(quote, /&lt;script&gt;/);
-  assert.match(quote, /<mark>C\+\+<\/mark>/);
-  assert.match(quote, /<mark>\[2\]<\/mark>/);
+  assert.match(quote, /<mark[^>]*>C\+\+<\/mark>/);
+  assert.match(quote, /<mark[^>]*>\[2\]<\/mark>/);
   const card = html(QuestionCard, { question: question(0), totalCount: 2, onAnswer: noop, savedAnswer: { document_id: "doc-two" } });
-  assert.match(card, /isChosen/); assert.match(card, /isDim/);
+  assert.match(card, /data-state="chosen"/); assert.match(card, /data-state="dimmed"/);
   assert.match(card, /Seçildi/); assert.match(card, /Kaydedildi/);
   assert.equal((card.match(/disabled=""/g) || []).length, 4);
 });
@@ -269,9 +275,9 @@ test("source marks escape regex and source HTML, saved groups remain reviewable"
 test("question list shows open, deferred and answered questions without resubmitting done ones", () => {
   const markup = questionsHtml({ questions: [question(0), question(1)], total: 2, answered: 1,
     deferred: ["q1"], answeredQuestions: [question(2)] });
-  assert.match(markup, /questionStateDot open/);
-  assert.match(markup, /questionStateDot later/);
-  assert.match(markup, /questionStateDot done/);
+  assert.match(markup, /aria-label="Cevap bekliyor"/);
+  assert.match(markup, /aria-label="Sonraya bırakıldı"/);
+  assert.match(markup, /aria-label="Cevaplandı"/);
   assert.match(markup, /3 sorudan 1/);
 });
 

@@ -1,4 +1,9 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 import { Icon } from "./console-ui";
 
 export type QuestionOption = {
@@ -26,7 +31,7 @@ export function SourceQuote({ quote, values }: { quote: string; values: unknown[
     .filter(value => typeof value === "string" || typeof value === "number")
     .map(String).filter(Boolean).sort((a, b) => b.length - a.length);
   const pattern = needles.length ? new RegExp(`(${Array.from(new Set(needles)).map(value => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "giu") : null;
-  return <blockquote>“{pattern ? quote.split(pattern).map((part, index) => index % 2 ? <mark key={index}>{part}</mark> : part) : quote}”</blockquote>;
+  return <blockquote className="m-0 font-doc text-md leading-doc text-ink2 wrap-anywhere">“{pattern ? quote.split(pattern).map((part, index) => index % 2 ? <mark className="border-b-2 border-accent bg-mark text-inherit" key={index}>{part}</mark> : part) : quote}”</blockquote>;
 }
 export function sourceName(name: string): string {
   const display = name?.trim();
@@ -88,42 +93,46 @@ export function QuestionCard({ question, onAnswer, currentIndex = 1, totalCount,
       void submit({ value: corrected, note: "Kullanıcı düzeltmesi" });
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Doğru değeri kontrol edin."); }
   }
-  return <article className="card questionCard" aria-labelledby={titleId} aria-busy={submitting || busy}>
-    <div className="questionIntro">
-      <p className="conflictLine"><span className="conflictDot" aria-hidden="true" />{question.kind === "conflict" ? "Kaynaklar farklı söylüyor" : "İnceleme bekliyor"}<span className="muted">· {question.collection_label}</span></p>
-      <h2 id={titleId} ref={heading} tabIndex={-1}>{question.record_title} için {question.field_label} hangisi?</h2>
-      <p className="sub">Güncel belgeyi seçin{question.allow_all ? '; tüm değerler geçerliyse “Hepsi doğru” deyin.' : "; koleksiyonunuz güncellensin."}</p>
-    </div>
-    <div className="questionOptions">
-      {groups.map(group => {
-        const chosen = selection && ("all" in selection || ("document_id" in selection && selection.document_id === group.documentId) || ("candidate_id" in selection && group.options.some(option => option.candidate_id === selection.candidate_id)));
-        const values = Array.from(new Map(group.options.map(option => [option.candidate_id, option])).values());
-        return <section className={`questionOption ${chosen ? "isChosen" : selection && !("skip" in selection) ? "isDim" : ""}`} key={group.id}>
-          <p className="documentSays"><Icon name="doc" /><b>{group.name}</b> diyor ki</p>
-          <div className="questionValues">{values.map(option => <strong className="questionValue" key={option.candidate_id}>{optionDisplay(option)}</strong>)}</div>
-          <div className="questionEvidence">{group.options.map((option, index) => <div key={`${option.candidate_id}:${index}`}>
-            {option.quote ? <SourceQuote quote={option.quote} values={[option.value]} /> : <p className="muted">Sizin düzeltmeniz</p>}
-            {option.locator && <p className="questionSource">{option.locator}</p>}
-          </div>)}</div>
-          <button className="btn" disabled={disabled} onClick={() => void submit(group.documentId ? { document_id: group.documentId } : { candidate_id: group.options[0].candidate_id })} aria-label={`${group.name}: ${group.documentId ? "Bu belge güncel" : "Bu düzeltme doğru"}`}>{chosen ? "Seçildi" : group.documentId ? "Bu belge güncel" : "Bu düzeltme doğru"}</button>
-        </section>;
-      })}
-    </div>
-    {error && <p className="inlineError" role="alert">{error}</p>}
-    <footer className="questionFooter">
-      <div className="questionActions">
-        {question.allow_all === true && <button className="btn" disabled={disabled} onClick={() => void submit({ all: true })}>Hepsi doğru</button>}
-        <button className="textButton" disabled={disabled} aria-expanded={editing} aria-controls={inputId} onClick={() => setEditing(!editing)}>{groups.length === 2 ? "İkisi de yanlış, düzelt" : groups.length > 2 ? "Hiçbiri doğru değil, düzelt" : "Doğru değil, düzelt"}</button>
-        <button className="textButton muted" disabled={disabled} onClick={() => void submit({ skip: true })}>Sonra sor</button>
-        <span className="questionCounter">{currentIndex} / {totalCount}</span>
+  return <article aria-labelledby={titleId} aria-busy={submitting || busy} className="min-w-0 self-start motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-3 motion-safe:duration-300">
+    <Card className="gap-0 border border-line p-0 ring-0">
+      <div className="px-4 pt-5 sm:px-6 sm:pt-6">
+        <p className="mb-3 flex flex-wrap items-center gap-2 text-xs text-warn"><span className="size-1.5 shrink-0 rounded-full bg-warn" aria-hidden="true" />{question.kind === "conflict" ? "Kaynaklar farklı söylüyor" : "İnceleme bekliyor"}<span className="text-muted">· {question.collection_label}</span></p>
+        <h2 className="text-xl leading-snug font-semibold tracking-[-0.02em] wrap-anywhere" id={titleId} ref={heading} tabIndex={-1}>{question.record_title} için {question.field_label} hangisi?</h2>
+        <p className="mt-1 text-base text-muted">Güncel belgeyi seçin{question.allow_all ? '; tüm değerler geçerliyse “Hepsi doğru” deyin.' : "; koleksiyonunuz güncellensin."}</p>
       </div>
-      {editing && <form className="questionCorrection" onSubmit={saveCorrection}>
-        <label htmlFor={inputId}>Doğru değer</label>
-        <div><input id={inputId} autoFocus value={value} onChange={event => setValue(event.target.value)} placeholder="Doğru bilgiyi yazın" disabled={disabled} required />
-          <button className="btn pri" disabled={disabled || !value.trim()} type="submit">Kaydet</button></div>
-        {Array.isArray(question.options[0]?.value) && <p className="helper">Birden fazla değeri virgülle ayırın.</p>}
-      </form>}
-    </footer>
-    {note && <div className={`questionNote ${note === "Kaydedildi" ? "" : "neutral"}`} role="status" aria-live="polite"><Icon name={note === "Kaydedildi" ? "check" : "clock"} />{note}</div>}
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,230px),1fr))] gap-3 p-4 sm:px-6 sm:pb-6 sm:pt-5">
+        {groups.map(group => {
+          const chosen = selection && ("all" in selection || ("document_id" in selection && selection.document_id === group.documentId) || ("candidate_id" in selection && group.options.some(option => option.candidate_id === selection.candidate_id)));
+          const values = Array.from(new Map(group.options.map(option => [option.candidate_id, option])).values());
+          return <section data-document-id={group.id} data-state={chosen ? "chosen" : selection && !("skip" in selection) ? "dimmed" : "open"}
+            className={cn("flex min-w-0 flex-col gap-3 rounded-lg border border-line bg-paper p-4 transition-colors sm:p-5", chosen ? "border-accent bg-accent-soft" : selection && !("skip" in selection) ? "opacity-55" : "")} key={group.id}>
+            <p className="flex flex-wrap items-center gap-1 text-xs text-muted"><Icon name="doc" className="size-3.5" /><b className="font-medium text-ink2 wrap-anywhere">{group.name}</b> diyor ki</p>
+            <div className="grid gap-2">{values.map(option => <strong data-question-value className="text-2xl leading-tight font-medium tracking-[-0.02em] wrap-anywhere" key={option.candidate_id}>{optionDisplay(option)}</strong>)}</div>
+            <div className="grid gap-3 border-t border-line2 pt-3">{group.options.map((option, index) => <div key={`${option.candidate_id}:${index}`}>
+              {option.quote ? <SourceQuote quote={option.quote} values={[option.value]} /> : <p className="text-muted">Sizin düzeltmeniz</p>}
+              {option.locator && <p className="mt-1 font-mono text-2xs text-faint wrap-anywhere">{option.locator}</p>}
+            </div>)}</div>
+            <Button variant={chosen ? "default" : "outline"} className={cn("mt-auto h-auto min-h-[38px] max-w-full self-start whitespace-normal", chosen && "disabled:opacity-100")}
+              disabled={disabled} onClick={() => void submit(group.documentId ? { document_id: group.documentId } : { candidate_id: group.options[0].candidate_id })} aria-label={`${group.name}: ${group.documentId ? "Bu belge güncel" : "Bu düzeltme doğru"}`}>{chosen ? "Seçildi" : group.documentId ? "Bu belge güncel" : "Bu düzeltme doğru"}</Button>
+          </section>;
+        })}
+      </div>
+      {error && <p className="mx-4 mb-5 rounded-lg bg-danger-soft p-3 text-sm text-danger sm:mx-6" role="alert">{error}</p>}
+      <footer className="border-t border-line2 px-4 py-3">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          {question.allow_all === true && <Button variant="outline" disabled={disabled} onClick={() => void submit({ all: true })}>Hepsi doğru</Button>}
+          <Button variant="ghost" className="h-auto min-h-[30px] max-w-full whitespace-normal text-left" disabled={disabled} aria-expanded={editing} aria-controls={inputId} onClick={() => setEditing(!editing)}>{groups.length === 2 ? "İkisi de yanlış, düzelt" : groups.length > 2 ? "Hiçbiri doğru değil, düzelt" : "Doğru değil, düzelt"}</Button>
+          <Button variant="ghost" className="text-muted" disabled={disabled} onClick={() => void submit({ skip: true })}>Sonra sor</Button>
+          <span className="ml-auto font-mono text-xs text-faint tabular-nums">{currentIndex} / {totalCount}</span>
+        </div>
+        {editing && <form className="mt-4" onSubmit={saveCorrection}>
+          <Label className="mb-2 block text-xs" htmlFor={inputId}>Doğru değer</Label>
+          <div className="flex flex-wrap gap-2 sm:flex-nowrap"><Input className="h-[38px] min-w-0 flex-1 basis-full sm:basis-auto" id={inputId} autoFocus value={value} onChange={event => setValue(event.target.value)} placeholder="Doğru bilgiyi yazın" disabled={disabled} required />
+            <Button className="h-[38px]" disabled={disabled || !value.trim()} type="submit">Kaydet</Button></div>
+          {Array.isArray(question.options[0]?.value) && <p className="mt-2 text-xs text-muted">Birden fazla değeri virgülle ayırın.</p>}
+        </form>}
+      </footer>
+      {note && <div className={cn("flex items-center gap-2 border-t border-ok-line bg-ok-soft px-4 py-3 text-sm text-ok sm:px-6", note !== "Kaydedildi" && "border-line2 bg-sheet text-ink2")} role="status" aria-live="polite"><Icon name={note === "Kaydedildi" ? "check" : "clock"} />{note}</div>}
+    </Card>
   </article>;
 }

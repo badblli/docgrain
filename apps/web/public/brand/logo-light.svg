@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 201 48" width="201" height="48" role="img" aria-label="Docgrain">
+  <!-- Mark: 32 x 32, bottom on the baseline (y 36). -->
+  <g fill="#245d65" transform="translate(0 4)">
+    <rect x="0" y="0" width="8" height="8" rx="1.5"/>
+    <rect x="12" y="0" width="8" height="8" rx="1.5"/>
+    <path d="M24 0L32 8H25.5A1.5 1.5 0 0 1 24 6.5Z"/>
+    <rect x="0" y="12" width="8" height="8" rx="1.5"/>
+    <rect x="12" y="12" width="8" height="8" rx="1.5"/>
+    <rect x="24" y="12" width="8" height="8" rx="1.5"/>
+    <rect x="0" y="24" width="8" height="8" rx="1.5"/>
+    <rect x="12" y="24" width="8" height="8" rx="1.5"/>
+    <rect x="24" y="24" width="8" height="8" rx="1.5"/>
+  </g>
+  <!-- Wordmark: monoline geometric "docgrain", x-height 20, baseline 36, stroke 3.4; the i carries a square grain. -->
+  <g transform="translate(44 0)">
+    <g fill="none" stroke="#223333" stroke-width="3.4">
+      <circle cx="10" cy="26" r="8.3"/>
+      <path d="M18.3 8V36"/>
+      <circle cx="33.5" cy="26" r="8.3"/>
+      <path d="M62.87 20.13A8.3 8.3 0 1 0 62.87 31.87"/>
+      <circle cx="77.6" cy="26" r="8.3"/>
+      <path d="M85.9 16V36A8.3 8.3 0 0 1 71.73 41.87"/>
+      <path d="M92.8 36V16M92.8 26A8.3 8.3 0 0 1 101.1 17.7H103.5"/>
+      <circle cx="116" cy="26" r="8.3"/>
+      <path d="M124.3 16V36"/>
+      <path d="M131.2 16V36"/>
+      <path d="M138.1 36V16M138.1 26A8.3 8.3 0 0 1 154.7 26V36"/>
+    </g>
+    <rect fill="#245d65" x="129.2" y="8" width="4" height="4" rx="0.6"/>
+  </g>
+</svg>

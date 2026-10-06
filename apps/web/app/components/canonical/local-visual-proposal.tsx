@@ -1,7 +1,15 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
+
 import { useCallback, useEffect, useRef, useState } from "react";
-import "./local-visual-proposal.css";
+
+
+const proposalButton = "h-auto whitespace-normal inline-flex items-center justify-center border border-solid border-line rounded-sm bg-paper text-ink text-xs font-semibold no-underline cursor-pointer motion-safe:transition-colors motion-safe:duration-150 [&:hover:not(:disabled)]:border-accent [&:hover:not(:disabled)]:bg-accent-soft [&:disabled]:opacity-[.45] [&:disabled]:cursor-default gap-1 py-2 px-3";
+const proposalField = "flex flex-col min-w-0 [&_>_span]:font-bold [&_>_span]:text-2xs [&_>_span]:leading-[1.4] [&_>_span]:font-mono [&_>_span]:tracking-[.08em] [&_>_span]:uppercase [&_>_span]:text-faint gap-1";
+const proposalList = "pl-4 text-xs leading-[1.55] wrap-anywhere [&_code]:font-normal [&_code]:text-xs [&_code]:leading-[1.5] [&_code]:font-mono [&_code]:whitespace-pre-wrap [&_code]:wrap-anywhere m-0";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -163,68 +171,68 @@ export function LocalVisualProposal({ revisionId, snapshotSha256, nodeId, mode, 
   const ready = config.status === "ready" && config.data.enabled && config.data.ready;
   const hasDescription = !!proposal && proposal.description !== null && proposal.description.trim() !== "";
 
-  return <section className="lvp" aria-label="Yerel model açıklama önerisi" aria-busy={running} onClick={(e) => e.stopPropagation()}>
-    <div className="lvp-head">
-      <span className="rw-kicker">Yerel model önerisi</span>
-      {config.status === "ready" && config.data.enabled && <span className="rw-chip">{config.data.model || "model belirtilmemiş"}</span>}
+  return <section className="mt-3 flex flex-col min-w-0 border border-line border-l-[4px] border-solid border-l-accent rounded-sm bg-paper gap-2 p-3 max-[640px]:p-2" aria-label="Yerel model açıklama önerisi" aria-busy={running} onClick={(e) => e.stopPropagation()}>
+    <div className="flex flex-wrap gap-y-1 gap-x-2 items-center">
+      <span className="font-bold text-2xs leading-[1.4] font-mono tracking-[.12em] uppercase text-accent">Yerel model önerisi</span>
+      {config.status === "ready" && config.data.enabled && <span className="max-w-full wrap-anywhere inline-flex items-center rounded-pill font-semibold text-2xs leading-[1.5] font-sans bg-line2 text-ink2 py-1 px-2">{config.data.model || "model belirtilmemiş"}</span>}
     </div>
-    <p className="rw-note">Öneri yalnızca bu bilgisayardaki yerel modelle üretilir; bulut modeline gönderilmez. Model çıktısı hatalı olabilir, kaynakla karşılaştırmadan kullanmayın. Öneri üretmek revision oluşturmaz ve belgeyi değiştirmez.</p>
+    <p className="text-faint text-xs leading-[1.55] m-0">Öneri yalnızca bu bilgisayardaki yerel modelle üretilir; bulut modeline gönderilmez. Model çıktısı hatalı olabilir, kaynakla karşılaştırmadan kullanmayın. Öneri üretmek revision oluşturmaz ve belgeyi değiştirmez.</p>
 
-    {config.status === "loading" && <p className="rw-note" role="status">Yerel model durumu denetleniyor…</p>}
-    {config.status === "error" && <div className="lvp-problem" role="alert"><p className="rw-error">Yerel model durumu alınamadı: {config.message}</p>
-      <button type="button" className="rw-btn" onClick={() => setConfigTick((t) => t + 1)}>Durumu yeniden denetle</button></div>}
-    {config.status === "ready" && !config.data.enabled && <div className="lvp-problem" role="status">
-      <p className="rw-note rw-note-warn">Yerel görsel açıklama bu ortamda kapalı. Elle açıklama yazmaya devam edebilirsiniz.</p>
-      <button type="button" className="rw-btn" onClick={() => setConfigTick((t) => t + 1)}>Durumu yeniden denetle</button></div>}
-    {config.status === "ready" && config.data.enabled && !config.data.ready && <div className="lvp-problem" role="status">
-      <p className="rw-note rw-note-warn">Yerel model henüz hazır değil{config.data.model ? ` (${config.data.model})` : ""}. Hazır olduğunda yeniden denetleyin.</p>
-      <button type="button" className="rw-btn" onClick={() => setConfigTick((t) => t + 1)}>Durumu yeniden denetle</button></div>}
+    {config.status === "loading" && <p className="text-faint text-xs leading-[1.55] m-0" role="status">Yerel model durumu denetleniyor…</p>}
+    {config.status === "error" && <div className="flex flex-col items-start gap-1" role="alert"><p className="mt-1 mb-0 text-danger text-xs mx-0">Yerel model durumu alınamadı: {config.message}</p>
+      <Button variant="ghost" type="button" className={proposalButton} onClick={() => setConfigTick((t) => t + 1)}>Durumu yeniden denetle</Button></div>}
+    {config.status === "ready" && !config.data.enabled && <div className="flex flex-col items-start gap-1" role="status">
+      <p className="text-xs leading-[1.55] text-warn m-0">Yerel görsel açıklama bu ortamda kapalı. Elle açıklama yazmaya devam edebilirsiniz.</p>
+      <Button variant="ghost" type="button" className={proposalButton} onClick={() => setConfigTick((t) => t + 1)}>Durumu yeniden denetle</Button></div>}
+    {config.status === "ready" && config.data.enabled && !config.data.ready && <div className="flex flex-col items-start gap-1" role="status">
+      <p className="text-xs leading-[1.55] text-warn m-0">Yerel model henüz hazır değil{config.data.model ? ` (${config.data.model})` : ""}. Hazır olduğunda yeniden denetleyin.</p>
+      <Button variant="ghost" type="button" className={proposalButton} onClick={() => setConfigTick((t) => t + 1)}>Durumu yeniden denetle</Button></div>}
 
-    <div className="rw-row">
-      <button type="button" className="rw-btn" disabled={!ready || running || locked} onClick={() => void generate()}>
-        {running ? "Yerel model çalışıyor…" : "Yerel modelle açıklama öner"}</button>
-      {running && <button type="button" className="rw-btn rw-btn-warn" onClick={cancel}>İptal et</button>}
+    <div className="flex flex-wrap items-center gap-2">
+      <Button variant="ghost" type="button" className="h-auto whitespace-normal max-[640px]:[flex:1_1_100%] inline-flex items-center justify-center border border-solid border-line rounded-sm bg-paper text-ink text-xs font-semibold no-underline cursor-pointer motion-safe:transition-colors motion-safe:duration-150 [&:hover:not(:disabled)]:border-accent [&:hover:not(:disabled)]:bg-accent-soft [&:disabled]:opacity-[.45] [&:disabled]:cursor-default gap-1 py-2 px-3" disabled={!ready || running || locked} onClick={() => void generate()}>
+        {running ? "Yerel model çalışıyor…" : "Yerel modelle açıklama öner"}</Button>
+      {running && <Button variant="ghost" type="button" className="h-auto whitespace-normal max-[640px]:[flex:1_1_100%] inline-flex items-center justify-center border border-solid rounded-sm bg-paper text-xs font-semibold no-underline cursor-pointer motion-safe:transition-colors motion-safe:duration-150 [&:hover:not(:disabled)]:border-accent [&:hover:not(:disabled)]:bg-accent-soft [&:disabled]:opacity-[.45] [&:disabled]:cursor-default border-warn text-warn gap-1 py-2 px-3" onClick={cancel}>İptal et</Button>}
     </div>
-    {running && <p className="rw-note" role="status">Açıklama üretiliyor; bu birkaç dakika sürebilir. Taslaklarınıza dokunulmaz.</p>}
-    {run.status === "error" && <div className="lvp-problem" role="alert">
-      <p className="rw-error">{run.message}</p>
-      <p className="rw-note">Taslaklarınız korundu; düğmeye yeniden basarak tekrar deneyebilirsiniz.</p></div>}
+    {running && <p className="text-faint text-xs leading-[1.55] m-0" role="status">Açıklama üretiliyor; bu birkaç dakika sürebilir. Taslaklarınıza dokunulmaz.</p>}
+    {run.status === "error" && <div className="flex flex-col items-start gap-1" role="alert">
+      <p className="mt-1 mb-0 text-danger text-xs mx-0">{run.message}</p>
+      <p className="text-faint text-xs leading-[1.55] m-0">Taslaklarınız korundu; düğmeye yeniden basarak tekrar deneyebilirsiniz.</p></div>}
 
-    {proposal && <div className={`lvp-result${running ? " is-stale" : ""}`}>
-      <div className="lvp-chips">
-        <span className="rw-chip rw-chip-draft">Yerel model önerisi · doğrulanmadı</span>
-        <span className="rw-chip">Sınıf: {classificationText(proposal.classification)}</span>
-        <span className="rw-chip">Model: {proposal.model}</span>
-        <span className="rw-chip">Profil: {proposal.profile_id}</span>
-        <span className="rw-chip">{(proposal.elapsed_ms / 1000).toLocaleString("tr-TR", { maximumFractionDigits: 1 })} sn</span>
+    {proposal && <div className={cn(`flex flex-col min-w-0 pt-2 border-t border-solid border-t-line2 gap-2${running ? " opacity-[.55]" : ""}`)}>
+      <div className="flex flex-wrap gap-1">
+        <span className="max-w-full wrap-anywhere inline-flex items-center rounded-pill font-semibold text-2xs leading-[1.5] font-sans bg-warn-soft text-warn py-1 px-2">Yerel model önerisi · doğrulanmadı</span>
+        <span className="max-w-full wrap-anywhere inline-flex items-center rounded-pill font-semibold text-2xs leading-[1.5] font-sans bg-line2 text-ink2 py-1 px-2">Sınıf: {classificationText(proposal.classification)}</span>
+        <span className="max-w-full wrap-anywhere inline-flex items-center rounded-pill font-semibold text-2xs leading-[1.5] font-sans bg-line2 text-ink2 py-1 px-2">Model: {proposal.model}</span>
+        <span className="max-w-full wrap-anywhere inline-flex items-center rounded-pill font-semibold text-2xs leading-[1.5] font-sans bg-line2 text-ink2 py-1 px-2">Profil: {proposal.profile_id}</span>
+        <span className="max-w-full wrap-anywhere inline-flex items-center rounded-pill font-semibold text-2xs leading-[1.5] font-sans bg-line2 text-ink2 py-1 px-2">{(proposal.elapsed_ms / 1000).toLocaleString("tr-TR", { maximumFractionDigits: 1 })} sn</span>
       </div>
-      <div className="lvp-field">
+      <div className={proposalField}>
         <span>Önerilen açıklama</span>
-        {hasDescription ? <blockquote className="lvp-text">{proposal.description}</blockquote>
-          : <p className="rw-note rw-note-warn">Model bu görsel için açıklama üretmedi; taslağa alınamaz.</p>}
+        {hasDescription ? <blockquote className="border-l-[3px] border-solid border-l-warn bg-warn-soft text-sm leading-[1.6] whitespace-pre-wrap wrap-anywhere py-2 px-3 m-0">{proposal.description}</blockquote>
+          : <p className="text-xs leading-[1.55] text-warn m-0">Model bu görsel için açıklama üretmedi; taslağa alınamaz.</p>}
       </div>
-      <div className="lvp-field">
+      <div className={proposalField}>
         <span>Metin çıkarımı</span>
-        {proposal.visible_text.length ? <ul className="lvp-list">{proposal.visible_text.map((line, i) => <li key={i}><code>{line}</code></li>)}</ul>
-          : <p className="rw-note">Bu model metin çıkarmaz; yazıları ayrı OCR çıktısı ve kaynak üzerinden inceleyin.</p>}
+        {proposal.visible_text.length ? <ul className={proposalList}>{proposal.visible_text.map((line, i) => <li key={i}><code>{line}</code></li>)}</ul>
+          : <p className="text-faint text-xs leading-[1.55] m-0">Bu model metin çıkarmaz; yazıları ayrı OCR çıktısı ve kaynak üzerinden inceleyin.</p>}
       </div>
-      <div className="lvp-field">
+      <div className={proposalField}>
         <span>Belirsizlikler</span>
-        {proposal.uncertainties.length ? <ul className="lvp-list">{proposal.uncertainties.map((item, i) => <li key={i}>{item}</li>)}</ul>
-          : <p className="rw-note">Model belirsizlik bildirmedi; bu, önerinin doğru olduğunu göstermez.</p>}
+        {proposal.uncertainties.length ? <ul className={proposalList}>{proposal.uncertainties.map((item, i) => <li key={i}>{item}</li>)}</ul>
+          : <p className="text-faint text-xs leading-[1.55] m-0">Model belirsizlik bildirmedi; bu, önerinin doğru olduğunu göstermez.</p>}
       </div>
-      {proposal.warnings.length > 0 && <div className="lvp-field">
+      {proposal.warnings.length > 0 && <div className={proposalField}>
         <span>Uyarılar</span>
-        <ul className="lvp-list">{proposal.warnings.map((item, i) => <li key={i} className="rw-note-warn">{item}</li>)}</ul>
+        <ul className={proposalList}>{proposal.warnings.map((item, i) => <li key={i} className="text-warn">{item}</li>)}</ul>
       </div>}
-      <p className="rw-meta">Öneri kimliği: {proposal.id}</p>
-      <div className="rw-row">
-        <button type="button" className="rw-btn rw-btn-primary" disabled={!canAdopt || locked || !hasDescription || adopted || running} onClick={adopt}>
-          {adopted ? "Taslağa alındı" : "Açıklama taslağına al"}</button>
-        <button type="button" className="rw-btn" onClick={download}>Öneriyi JSON olarak indir</button>
+      <p className="wrap-anywhere text-faint text-2xs my-1 mx-0">Öneri kimliği: {proposal.id}</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="ghost" type="button" className="h-auto whitespace-normal max-[640px]:[flex:1_1_100%] inline-flex items-center justify-center border border-solid rounded-sm text-xs font-semibold no-underline cursor-pointer motion-safe:transition-colors motion-safe:duration-150 [&:hover:not(:disabled)]:border-accent [&:disabled]:opacity-[.45] [&:disabled]:cursor-default bg-accent border-accent text-on-accent [&:hover:not(:disabled)]:bg-accent gap-1 py-2 px-3" disabled={!canAdopt || locked || !hasDescription || adopted || running} onClick={adopt}>
+          {adopted ? "Taslağa alındı" : "Açıklama taslağına al"}</Button>
+        <Button variant="ghost" type="button" className="h-auto whitespace-normal max-[640px]:[flex:1_1_100%] inline-flex items-center justify-center border border-solid border-line rounded-sm bg-paper text-ink text-xs font-semibold no-underline cursor-pointer motion-safe:transition-colors motion-safe:duration-150 [&:hover:not(:disabled)]:border-accent [&:hover:not(:disabled)]:bg-accent-soft [&:disabled]:opacity-[.45] [&:disabled]:cursor-default gap-1 py-2 px-3" onClick={download}>Öneriyi JSON olarak indir</Button>
       </div>
-      {!canAdopt && <p className="rw-note rw-note-warn">Bu görünümde açıklama taslağı düzenlenemiyor (eski revision veya salt okunur alan); öneri yalnızca incelenebilir.</p>}
-      {adopted && <p className="rw-note" role="status">Öneri açıklama taslağına alındı. Henüz kaydedilmedi; kaynakla karşılaştırıp gerekirse düzenleyin.</p>}
+      {!canAdopt && <p className="text-xs leading-[1.55] text-warn m-0">Bu görünümde açıklama taslağı düzenlenemiyor (eski revision veya salt okunur alan); öneri yalnızca incelenebilir.</p>}
+      {adopted && <p className="text-faint text-xs leading-[1.55] m-0" role="status">Öneri açıklama taslağına alındı. Henüz kaydedilmedi; kaynakla karşılaştırıp gerekirse düzenleyin.</p>}
     </div>}
   </section>;
 }
