@@ -17,17 +17,18 @@ from .match import (
     summarize_matches,
 )
 from .merge import JsonMergeStore, _source_key
-from .merge_models import AliasDecision, MergeDocument, SourceRecord
-from .models import RECORD_MODELS
+from .merge_models import AliasDecision
+from .runtime import HOSPITALITY, RuntimeRecords
 
 
-def load_merge_documents(directory, results, workspace_id=None):
+def load_merge_documents(directory, results, workspace_id=None, *, runtime=None):
     """Require actual pinned source context, never synthesize it from quotations."""
     paths = {}
     for path in Path(directory).rglob("records.json"):
         raw = json.loads(path.read_text(encoding="utf-8"))
         paths[raw["document_id"]] = path.parent
     documents = []
+    runtime = runtime or runtime_for_results(results)
     for result in results:
         root = paths[result.document_id]
         if not (root / "source.json").exists() or not (root / "context.md").exists():
@@ -38,20 +39,27 @@ def load_merge_documents(directory, results, workspace_id=None):
                 raise ValueError("merge source pin does not match extraction document and language")
             if workspace_id is not None and metadata.workspace_id != workspace_id:
                 raise ValueError("merge source pin belongs to another workspace")
-            documents.append(MergeDocument(
-                workspace_id=metadata.workspace_id, document_id=result.document_id,
-                source_version_id=metadata.source_version_id,
-                knowledge_revision_id=metadata.knowledge_revision_id,
-                content_sha256=metadata.content_sha256,
-                context=(root / "context.md").read_text(encoding="utf-8"),
-                records=[SourceRecord(source_identity=source_identity(record), record=record)
+            documents.append(runtime.merge_document({
+                "workspace_id": metadata.workspace_id, "document_id": result.document_id,
+                "source_version_id": metadata.source_version_id,
+                "knowledge_revision_id": metadata.knowledge_revision_id,
+                "content_sha256": metadata.content_sha256,
+                "context": (root / "context.md").read_text(encoding="utf-8"),
+                "records": [{"source_identity": source_identity(record), "record": record.model_dump(mode="json")}
                          for record in result.records],
-            ))
+            }))
         except ValidationError as exc:
             raise ValueError("merge source has invalid pins or duplicate type/name identities") from exc
     if len({document.workspace_id for document in documents}) != 1:
         raise ValueError("merge documents belong to different workspaces")
     return documents
+
+
+def runtime_for_results(results):
+    schemas = [getattr(result, "workspace_schema", None) for result in results]
+    if not schemas or any(schema != schemas[0] for schema in schemas):
+        raise ValueError("merge requires one accepted workspace schema version")
+    return RuntimeRecords(schemas[0]) if schemas[0] else HOSPITALITY
 
 
 def apply_matches(documents, matches):
@@ -97,7 +105,8 @@ def merge_matches(directory, results, matches, out, workspace_id=None, revision_
         raise ValueError("unknown automatic acceptance rule")
     if auto_accept == "strong":
         matches = accept_strong_matches(results, matches)
-    documents = load_merge_documents(directory, results, workspace_id)
+    runtime = runtime_for_results(results)
+    documents = load_merge_documents(directory, results, workspace_id, runtime=runtime)
     documents, groups, entries = apply_matches(documents, matches)
     out = Path(out)
     store = JsonMergeStore(out / "merge_state.json", documents[0].workspace_id)
@@ -124,7 +133,7 @@ def merge_matches(directory, results, matches, out, workspace_id=None, revision_
     # Preserve the same explicit ID consolidation when repeating a saved request.
     if revision_id in state.revisions:
         decisions = state.revisions[revision_id].alias_decisions
-    revision = store.merge(revision_id, documents, alias_decisions=decisions)
+    revision = store.merge(revision_id, documents, alias_decisions=decisions, runtime=runtime)
     write_json(out / "merge_revision.json", revision.model_dump(mode="json"))
     write_json(out / "match_proposals.json", matches.model_dump(mode="json"))
     summary = summarize_matches(results, matches)
@@ -139,7 +148,7 @@ def merge_matches(directory, results, matches, out, workspace_id=None, revision_
                     for d in documents for item in d.records if item.aliases],
         "id_decisions": [d.model_dump(mode="json") for d in decisions],
     })
-    for kind in RECORD_MODELS:
+    for kind in runtime.models:
         write_json(out / f"{kind}.json", [r.model_dump(mode="json") for r in revision.records if r.type == kind])
     return revision
 

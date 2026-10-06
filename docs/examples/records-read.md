@@ -40,7 +40,45 @@ The lead's two-mode rule applies to the same pinned merge revision:
   source-key map with full Evidence/source-version/knowledge-revision pins.
   Source strings are JSON-quoted data; no source text is promoted to instructions.
 
-## Local preparation and reads
+## Workspace-discovered collections (WP52)
+
+Pass the accepted `schema.v<N>.json` to extraction with `--schema`. Extraction
+compiles its reviewed field types into strict models; it scans each section and
+runs a completeness pass for every discovered collection. Collection definitions
+and source examples remain untrusted data. No model runs without explicit
+`--base-url`, `--model` and `--api-key-env` configuration.
+
+```powershell
+$python = 'C:/Users/root/Documents/projects/docgrain/.venv/Scripts/python'
+$env:PYTHONPATH = 'apps/api;packages/domain;packages/records;packages/evaluation'
+& $python -m docgrain_records extract --schema <schema.v1.json> --document <document-id> --api http://127.0.0.1:8000 --dry-run
+& $python -m docgrain_records extract --schema <schema.v1.json> --document <document-id> --api http://127.0.0.1:8000 --base-url <compatible-endpoint> --model <model> --api-key-env MODEL_API_KEY --out <records/document-id>
+& $python -m docgrain_records match --records <records> --schema <schema.v1.json> --out <matches>
+& $python -m docgrain_records merge --records <records> --schema <schema.v1.json> --matches <matches/match_proposals.json> --out <merged>
+```
+
+Matching emits review proposals. Explicit reviewed matches or the existing
+`--auto-accept strong` rule are required to join records; neither accepts field
+values. Matching and merging also read the schema snapshot from `records.json`
+when `--schema` is omitted. Mixed workspace/schema versions fail closed.
+If a collection has `name`, it identifies records. Otherwise its first accepted
+field is the identity, and requires evidence. This fallback supports collections
+such as classes with `title`; keep a distinguishing field first during review.
+Record metadata names (`id`, `type`, `i18n`, `review_state`, `conflicts`, `_meta`)
+cannot be collection fields. Numeric schema fields participate in matching even
+when their names differ from hospitality examples.
+
+Publish `<merged/merge_revision.json>` with the preparation helper below.
+Each discovered key gets `<key>.json` and `<key>.context.md` in both modes.
+Only that workspace's collections appear in the manifest and read API. Dynamic
+rows identify workspace, merge revision and accepted schema version under `_meta`.
+The merge revision preserves the full accepted schema snapshot, so old reads
+remain tied to that version after a new discovery. Verified quotations, immutable
+source-version/revision pins, explicit conflicts, language fallback and ETags
+follow the publication rules above. Without `--schema`, extraction uses the
+hospitality compatibility fixture through the same model-generation path.
+
+## Hospitality example preparation and reads
 
 From the worktree, in PowerShell (repo venv):
 

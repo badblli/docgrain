@@ -139,6 +139,8 @@ class MergeRevision(StrictModel):
     match_issues: list[MatchIssue] = Field(default_factory=list)
     decisions: list[ReviewDecision] = Field(default_factory=list)
     alias_decisions: list[AliasDecision] = Field(default_factory=list)
+    # Exact accepted schema snapshot makes old publications independent of later discovery.
+    workspace_schema: dict | None = None
 
 
 class FieldChange(StrictModel):
