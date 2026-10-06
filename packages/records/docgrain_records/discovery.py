@@ -250,6 +250,9 @@ def merge_collection(target, incoming):
     for example in incoming.examples:
         if example not in target.examples:
             target.examples.append(example)
+    for alias in incoming.aliases:
+        if alias not in target.aliases:
+            target.aliases.append(alias)
 
 
 def verify_discovery(raw, documents, workspace_id, existing=None):
@@ -298,8 +301,64 @@ def verify_discovery(raw, documents, workspace_id, existing=None):
     return schema
 
 
+FIELD_SYNONYMS = {
+    "opening_hours": "service_hours",
+    "max_occupancy": "capacity",
+}
+
+
+def load_vocabulary():
+    from pathlib import Path
+    base_dir = Path(__file__).parents[1]
+    synonyms = {}
+    try:
+        syns = json.loads((base_dir / "collection_synonyms.json").read_text("utf-8"))
+        for canonical, aliases in syns.items():
+            synonyms[canonical] = canonical
+            for alias in aliases:
+                synonyms[alias] = canonical
+    except FileNotFoundError:
+        pass
+
+    try:
+        tax = json.loads((base_dir / "taxonomy.json").read_text("utf-8"))
+        for k in tax.get("collections", {}):
+            plural = k[:-1] + "ies" if k.endswith("y") else k + "s"
+            if plural not in synonyms:
+                synonyms[plural] = plural
+    except FileNotFoundError:
+        pass
+    return synonyms
+
+
+def align_proposal(schema):
+    vocab = load_vocabulary()
+    collections = {}
+    for collection in schema.collections:
+        canonical_key = vocab.get(collection.key, collection.key)
+        if canonical_key != collection.key and collection.key not in collection.aliases:
+            collection.aliases.append(collection.key)
+        collection.key = canonical_key
+
+        for field in collection.fields:
+            canonical_field = FIELD_SYNONYMS.get(field.key, field.key)
+            if canonical_field != field.key:
+                field.key = canonical_field
+        for example in collection.examples:
+            for val in example.values:
+                val.key = FIELD_SYNONYMS.get(val.key, val.key)
+        
+        if collection.key in collections:
+            merge_collection(collections[collection.key], collection)
+        else:
+            collections[collection.key] = collection
+            
+    schema.collections = [collections[key] for key in sorted(collections)]
+    return schema
+
+
 def discover(documents, workspace_id, chat=None, existing=None, *, max_prompt_chars=120000,
-             max_rounds=3):
+             max_rounds=3, align=True):
     """No network unless a caller explicitly supplies a configured compatible client."""
     sources = source_pins(documents, workspace_id)
     if existing and existing.workspace_id != workspace_id:
@@ -338,4 +397,6 @@ def discover(documents, workspace_id, chat=None, existing=None, *, max_prompt_ch
         # Tiny residual fragments remain reported; only substantial gaps trigger a pass.
         if missing < 100 or schema.coverage >= 0.95:
             break
+    if align:
+        schema = align_proposal(schema)
     return schema

@@ -41,6 +41,7 @@ def add_discovery_commands(commands):
                         help="Her istek için boyut sınırı; büyük içerik bölünür")
     runner.add_argument("--max-rounds", type=int, choices=(1, 2, 3), default=3,
                         help="Eksik bölümleri yeniden tarama dahil en fazla tur sayısı")
+    runner.add_argument("--no-align", action="store_true", help="Ortak sözlüğe hizalamayı atla")
     accepter = commands.add_parser("accept-schema")
     accepter.add_argument("--proposal", required=True)
     accepter.add_argument("--out", required=True)
@@ -103,7 +104,8 @@ def run_discovery(args):
     chat = DiscoveryClient(args.base_url, args.model, key, args.timeout, args.retries) if key else None
     try:
         schema = discover(documents, args.workspace, chat, existing,
-                          max_prompt_chars=args.max_prompt_chars, max_rounds=args.max_rounds)
+                          max_prompt_chars=args.max_prompt_chars, max_rounds=args.max_rounds,
+                          align=not args.no_align)
     finally:
         if chat:
             chat.close()

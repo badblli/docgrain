@@ -1,0 +1,6 @@
+{
+  "pools": ["swimming_pools", "pool_areas"],
+  "rooms": ["room_types", "accommodation"],
+  "restaurants": ["dining_venues", "outlets_dining"],
+  "activities": ["events", "shows", "theme_nights", "entertainment"]
+}

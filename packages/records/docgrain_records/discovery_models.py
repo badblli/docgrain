@@ -58,6 +58,7 @@ class CollectionProposal(StrictModel):
     description: Text
     fields: list[Definition] = Field(min_length=1)
     examples: list[Example] = Field(min_length=1)
+    aliases: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def contract(self):
