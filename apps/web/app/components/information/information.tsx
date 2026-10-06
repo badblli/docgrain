@@ -18,6 +18,7 @@ import type { CollectionSummary, LoadState } from "../workspace-review";
 type Evidence = { document_id: string; document_name?: string; locator: string; quote: string };
 type FieldMeta = {
   lang?: string; review_state?: string; evidence?: Evidence[];
+  schedule?: { label_tr: string };
   i18n?: Record<string, Evidence[]>; i18n_review_state?: Record<string, string>;
 };
 type RecordRow = {
@@ -105,7 +106,7 @@ export function InformationView({ apiUrl, workspaceId, initialCollection, summar
   }, [base, mode, refreshKey]);
 
   const labelFor = (key: string) => summaries.find(item => item.key === key)?.label || getCollectionLabel(key);
-  const questionFor = (field: string, lang?: string) => questions.find(item => item.collection === selectedCollection && item.record_id === selectedRecord?.id && item.field === field && (!lang || item.lang === lang));
+  const questionFor = (field: string, lang?: string) => questions.find(item => item.collection === selectedCollection && (item.record_id === selectedRecord?.id || item.record_ids?.includes(selectedRecord?.id ?? "")) && item.field === field && (!lang || item.lang === lang));
   const questionButton = (question?: Question) => question && <Button variant="ghost" className="inline-flex align-[middle] border-0 bg-transparent rounded-sm [&:hover]:bg-warn-soft p-1" onClick={() => onQuestion(question)} aria-label={`${question.field_label}: açık soruyu cevapla`} title="Bu bilgi için bir soru var"><span className="inline-block w-[6px] h-[6px] rounded-pill bg-warn flex-none" aria-hidden="true" /></Button>;
   const retry = () => setRefreshKey(value => value + 1);
   const result = results[selectedCollection];
@@ -125,7 +126,7 @@ export function InformationView({ apiUrl, workspaceId, initialCollection, summar
         <div className="flex flex-wrap items-center gap-4"><Label className="flex items-center gap-2 text-xs font-normal text-muted"><input className="size-4 accent-accent" type="checkbox" role="switch" checked={showLanguages} onChange={event => setShowLanguages(event.target.checked)} />Diğer dilleri göster</Label>{questionState === "loading" && <span className="text-xs text-muted" role="status">Açık sorular yükleniyor…</span>}</div>
         <Card className="gap-0 border border-line p-0 ring-0"><dl className="m-0">{visibleFields(selectedRecord).map(field => {
           const meta = selectedRecord._meta?.fields?.[field];
-          return <div className="grid grid-cols-1 gap-3 border-b border-line2 p-5 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] sm:gap-6 sm:p-6" key={field}><dt className="min-w-0 text-sm font-semibold wrap-anywhere">{getFieldLabel(field)}{questionButton(questionFor(field))}{developerMode && <div><Ep>{field}</Ep></div>}</dt><dd className="m-0 min-w-0 text-base wrap-anywhere">{valueText(selectedRecord[field])}<ReviewBadge state={meta?.review_state} /><EvidenceView value={selectedRecord[field]} evidence={meta?.evidence} developerMode={developerMode} documentNames={documentNames} />
+          return <div className="grid grid-cols-1 gap-3 border-b border-line2 p-5 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] sm:gap-6 sm:p-6" key={field}><dt className="min-w-0 text-sm font-semibold wrap-anywhere">{getFieldLabel(field)}{questionButton(questionFor(field))}{developerMode && <div><Ep>{field}</Ep></div>}</dt><dd className="m-0 min-w-0 text-base wrap-anywhere">{valueText(selectedRecord[field])}{meta?.schedule && <p className="mt-1 text-sm text-muted">{meta.schedule.label_tr}</p>}<ReviewBadge state={meta?.review_state} /><EvidenceView value={selectedRecord[field]} evidence={meta?.evidence} developerMode={developerMode} documentNames={documentNames} />
             {showLanguages && Object.entries(selectedRecord.i18n ?? {}).filter(([, fields]) => fields[field] !== undefined).map(([lang, fields]) => <div className="mt-4 rounded-lg bg-sheet p-3 text-sm" key={lang}><span className="mr-2 text-2xs text-muted">{lang}</span>{valueText(fields[field])}<ReviewBadge state={meta?.i18n_review_state?.[lang]} />{questionButton(questionFor(field, lang))}<EvidenceView value={fields[field]} evidence={meta?.i18n?.[lang]} developerMode={developerMode} documentNames={documentNames} /></div>)}
           </dd></div>;
         })}</dl>{developerMode && <details className="m-6"><summary className="cursor-pointer">Geliştirici: Ham JSON</summary><pre className="whitespace-pre-wrap font-mono text-2xs wrap-anywhere">{JSON.stringify(selectedRecord, null, 2)}</pre></details>}</Card>

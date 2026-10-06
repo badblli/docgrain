@@ -299,3 +299,21 @@ test("document answer body and saved list use the same pinned revision contract"
   assert.equal(review.answeredQuestions[0].id, "q0");
   assert.equal(review.questionAnswers.q0.document_id, "doc-two");
 });
+
+test("schedule swaps show both records, precise period and two short source programs", () => {
+  const q = { ...question(0), kind: "schedule_swap", record_title: "A ve B", records: ["A", "B"],
+    record_ids: ["A", "B"], period_label_tr: "Temmuz'dan itibaren",
+    question_tr: "Temmuz'dan itibaren A ve B'nin cumartesileri iki belgede yer değiştirmiş; hangi belge doğru?" };
+  q.options = q.options.map((option, index) => ({ ...option, value: [["2025-07-05", "2025-07-19"], ["2025-07-12"]],
+    summary_tr: `A: 2 haftada bir Cumartesi, ${index ? "12" : "5"} Tem; B: 2 haftada bir Cumartesi`,
+    quote: null, evidence: [{ quote: "<script>Kaynak verisi</script> 2025-07-05", locator: "§165" }] }));
+  const card = html(QuestionCard, { question: q, totalCount: 1, onAnswer: noop, savedAnswer: { document_id: "doc-two" } });
+  assert.match(card, /yer değiştirmiş; hangi belge doğru/);
+  assert.match(card, /Kaynaklar farklı söylüyor/);
+  assert.match(card, /A: 2 haftada bir Cumartesi/);
+  assert.equal((card.match(/data-document-id=/g) || []).length, 2);
+  assert.match(card, /Kaynakta göster/);
+  assert.match(card, /&lt;script&gt;Kaynak verisi&lt;\/script&gt;/);
+  assert.match(card, /data-state="chosen"/);
+  assert.doesNotMatch(card, /için Kapasite hangisi|Hepsi doğru|yanlış, düzelt|Sizin düzeltmeniz/);
+});

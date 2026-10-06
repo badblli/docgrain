@@ -13,6 +13,8 @@ from .merge_models import AnswerHistory, FactCandidate, MergeRevision, UserEditE
 from .models import StrictModel, Text
 from .multivalue import list_field, multiple_values
 from .runtime import revision_runtime
+from .schedule import document_dates, same_recurrence
+from .schedule_review import combine_swaps, schedule_question
 
 
 class CandidateAnswer(StrictModel):
@@ -90,6 +92,9 @@ def questions(revision: MergeRevision) -> list[dict]:
             for lang, candidates in sorted(languages.items()):
                 if any(c.review_state == "accepted" for c in candidates):
                     continue
+                schedules = document_dates(field, candidates)
+                if schedules and len(schedules) > 1 and same_recurrence(schedules):
+                    continue
                 if len(candidates) > 1 and multiple_values(
                         runtime, record, field, merged, lang, candidates):
                     continue
@@ -116,15 +121,19 @@ def questions(revision: MergeRevision) -> list[dict]:
                             documents[evidence.document_id],
                             "locator": None if user_edit else _locator(evidence.locator),
                         })
-                result.append({
+                question = {
                     "id": "q_" + sha256(encode(identity)).hexdigest(), "kind": kind,
                     "collection": collection, "collection_label": _label(definition, collection),
                     "record_id": record.id, "record_title": titles.get(record.id, record.id),
                     "field": field, "field_label": _label(fields.get(field, {}), field),
                     "lang": lang, "options": options,
                     "allow_all": len(candidates) > 1 and not list_field(runtime, record.type, field),
-                })
-    return sorted(result, key=lambda q: (q["kind"] != "conflict", q["collection"],
+                }
+                if schedules and len(schedules) > 1:
+                    question = schedule_question(question, schedules, candidates, documents)
+                result.append(question)
+    result = combine_swaps(result, revision.workspace_id, revision.lineage_id or revision.id)
+    return sorted(result, key=lambda q: (q["kind"] == "needs_review", q["collection"],
                                         q["record_id"], q["field"], q["lang"]))
 
 
@@ -145,7 +154,8 @@ def summary(revision: MergeRevision, updated_at: str) -> dict:
                     accepted += records[row["id"]].fields[field].accepted(lang) is not None
                     unsupported += not any(
                         e.get("quote") or e.get("kind") == "user_edit" for e in evidence)
-        pending_records = {q["record_id"] for q in pending if q["collection"] == key}
+        pending_records = {record_id for q in pending if q["collection"] == key
+                           for record_id in q.get("record_ids", [q["record_id"]])}
         approved_records = sum(
             bool(row["_meta"]["fields"]) and all(
                 records[row["id"]].fields[field].accepted(lang) is not None
@@ -156,7 +166,7 @@ def summary(revision: MergeRevision, updated_at: str) -> dict:
                             "records": len(rows),
                             "accepted_records": approved_records,
                             "pending_records": len(pending_records),
-                            "conflicts": sum(q["collection"] == key and q["kind"] == "conflict"
+                            "conflicts": sum(q["collection"] == key and q["kind"] != "needs_review"
                                              for q in pending),
                             "needs_review": sum(q["collection"] == key and
                                                 q["kind"] == "needs_review" for q in pending)})
@@ -180,6 +190,9 @@ def answer_revision(base: MergeRevision, question_id: str,
     revision.parent_id = base.id
     revision.lineage_id = base.lineage_id or base.id
     revision.updated_at = datetime.now(UTC).isoformat()
+    if question["kind"] in {"schedule_swap", "schedule_conflict"}:
+        _answer_schedule(revision, question, answer)
+        return MergeRevision.model_validate_json(revision.model_dump_json(round_trip=True))
     record = next(r for r in revision.records if r.id == question["record_id"])
     field = record.fields[question["field"]]
     all_candidates = []
@@ -219,3 +232,27 @@ def answer_revision(base: MergeRevision, question_id: str,
     ))
     # Revalidate every candidate's evidence, including unchanged fields.
     return MergeRevision.model_validate_json(revision.model_dump_json(round_trip=True))
+
+
+def _answer_schedule(revision, question, answer):
+    if not isinstance(answer, DocumentAnswer) or not any(
+            option["document_id"] == answer.document_id for option in question["options"]):
+        raise ValueError("choose a document program for this schedule question")
+    for record_id in question["record_ids"]:
+        record = next(r for r in revision.records if r.id == record_id)
+        field = record.fields[question["field"]]
+        selected = sorted((c for c in field.candidates if c.lang == question["lang"]
+                           and c.review_state != "rejected" and any(
+                               getattr(e, "document_id", None) == answer.document_id
+                               for e in c.evidence)), key=lambda c: c.id)
+        if not selected:
+            raise ValueError("document outside schedule question")
+        if question["lang"] not in field.multi_value_languages:
+            field.multi_value_languages.append(question["lang"])
+        for candidate in field.candidates:
+            if candidate.lang == question["lang"]:
+                candidate.review_state = "accepted" if candidate in selected else "rejected"
+        revision.history.append(AnswerHistory(
+            question_id=question["id"], record_id=record_id, field=question["field"],
+            lang=question["lang"], candidate_id=selected[0].id,
+            candidate_ids=[c.id for c in selected], at=revision.updated_at, note=""))

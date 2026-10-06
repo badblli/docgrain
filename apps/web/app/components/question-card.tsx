@@ -9,11 +9,13 @@ import { Icon } from "./console-ui";
 export type QuestionOption = {
   candidate_id: string; value: unknown; display: string; quote: string | null;
   document_id: string | null; document_name: string; locator: string | null;
+  summary_tr?: string; evidence?: { quote: string; locator: string }[];
 };
 export type Question = {
   id: string; kind: string; collection: string; collection_label: string;
   record_id: string; record_title: string; field: string; field_label: string;
   lang: string | null; allow_all?: boolean; options: QuestionOption[];
+  records?: string[]; record_ids?: string[]; period_label_tr?: string; question_tr?: string;
 };
 export type QuestionAnswer = { candidate_id: string } | { document_id: string } | { value: unknown; note: string } | { skip: true } | { all: true };
 export function groupByDocument(options: QuestionOption[]) {
@@ -40,6 +42,7 @@ export function sourceName(name: string): string {
     ? "Kaynak belge" : display;
 }
 function optionDisplay(option: QuestionOption): string {
+  if (option.summary_tr) return option.summary_tr;
   if (typeof option.value === "boolean") return option.value ? "Evet" : "Hayır";
   if (Array.isArray(option.value)) return option.value.map(value => typeof value === "object" ? JSON.stringify(value) : String(value)).join(", ");
   return option.display || (typeof option.value === "object" ? JSON.stringify(option.value) : String(option.value ?? "—"));
@@ -78,6 +81,7 @@ export function QuestionCard({ question, onAnswer, currentIndex = 1, totalCount,
   const note = notice || (saved && "skip" in saved ? "Bu soruyu sonraya bıraktınız." : saved ? "Kaydedildi" : "");
   const groups = groupByDocument(question.options);
   const disabled = submitting || busy || readOnly || saved !== null;
+  const schedule = question.kind === "schedule_swap" || question.kind === "schedule_conflict";
   async function submit(answer: QuestionAnswer) {
     if (disabled) return;
     setSubmitting(true); setError(""); setAttempt(answer);
@@ -96,8 +100,9 @@ export function QuestionCard({ question, onAnswer, currentIndex = 1, totalCount,
   return <article aria-labelledby={titleId} aria-busy={submitting || busy} className="min-w-0 self-start motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-3 motion-safe:duration-300">
     <Card className="gap-0 border border-line p-0 ring-0">
       <div className="px-4 pt-5 sm:px-6 sm:pt-6">
-        <p className="mb-3 flex flex-wrap items-center gap-2 text-xs text-warn"><span className="size-1.5 shrink-0 rounded-full bg-warn" aria-hidden="true" />{question.kind === "conflict" ? "Kaynaklar farklı söylüyor" : "İnceleme bekliyor"}<span className="text-muted">· {question.collection_label}</span></p>
-        <h2 className="text-xl leading-snug font-semibold tracking-[-0.02em] wrap-anywhere" id={titleId} ref={heading} tabIndex={-1}>{question.record_title} için {question.field_label} hangisi?</h2>
+        <p className="mb-3 flex flex-wrap items-center gap-2 text-xs text-warn"><span className="size-1.5 shrink-0 rounded-full bg-warn" aria-hidden="true" />{question.kind === "conflict" || schedule ? "Kaynaklar farklı söylüyor" : "İnceleme bekliyor"}<span className="text-muted">· {question.collection_label}</span></p>
+        <h2 className="text-xl leading-snug font-semibold tracking-[-0.02em] wrap-anywhere" id={titleId} ref={heading} tabIndex={-1}>{question.question_tr || `${question.record_title} için ${question.field_label} hangisi?`}</h2>
+        {schedule && <p className="mt-1 text-sm text-muted">{question.records?.join(" ve ")} · {question.period_label_tr}</p>}
         <p className="mt-1 text-base text-muted">Güncel belgeyi seçin{question.allow_all ? '; tüm değerler geçerliyse “Hepsi doğru” deyin.' : "; koleksiyonunuz güncellensin."}</p>
       </div>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,230px),1fr))] gap-3 p-4 sm:px-6 sm:pb-6 sm:pt-5">
@@ -109,7 +114,7 @@ export function QuestionCard({ question, onAnswer, currentIndex = 1, totalCount,
             <p className="flex flex-wrap items-center gap-1 text-xs text-muted"><Icon name="doc" className="size-3.5" /><b className="font-medium text-ink2 wrap-anywhere">{group.name}</b> diyor ki</p>
             <div className="grid gap-2">{values.map(option => <strong data-question-value className="text-2xl leading-tight font-medium tracking-[-0.02em] wrap-anywhere" key={option.candidate_id}>{optionDisplay(option)}</strong>)}</div>
             <div className="grid gap-3 border-t border-line2 pt-3">{group.options.map((option, index) => <div key={`${option.candidate_id}:${index}`}>
-              {option.quote ? <SourceQuote quote={option.quote} values={[option.value]} /> : <p className="text-muted">Sizin düzeltmeniz</p>}
+              {option.evidence ? <details className="text-sm"><summary className="cursor-pointer text-accent">Kaynakta göster</summary>{option.evidence.map((item, citation) => <div className="mt-2" key={citation}><SourceQuote quote={item.quote} values={[option.value]} /><p className="font-mono text-2xs text-faint">{item.locator}</p></div>)}</details> : option.quote ? <SourceQuote quote={option.quote} values={[option.value]} /> : <p className="text-muted">Sizin düzeltmeniz</p>}
               {option.locator && <p className="mt-1 font-mono text-2xs text-faint wrap-anywhere">{option.locator}</p>}
             </div>)}</div>
             <Button variant={chosen ? "default" : "outline"} className={cn("mt-auto h-auto min-h-[38px] max-w-full self-start whitespace-normal", chosen && "disabled:opacity-100")}
@@ -121,7 +126,7 @@ export function QuestionCard({ question, onAnswer, currentIndex = 1, totalCount,
       <footer className="border-t border-line2 px-4 py-3">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           {question.allow_all === true && <Button variant="outline" disabled={disabled} onClick={() => void submit({ all: true })}>Hepsi doğru</Button>}
-          <Button variant="ghost" className="h-auto min-h-[30px] max-w-full whitespace-normal text-left" disabled={disabled} aria-expanded={editing} aria-controls={inputId} onClick={() => setEditing(!editing)}>{groups.length === 2 ? "İkisi de yanlış, düzelt" : groups.length > 2 ? "Hiçbiri doğru değil, düzelt" : "Doğru değil, düzelt"}</Button>
+          {!schedule && <Button variant="ghost" className="h-auto min-h-[30px] max-w-full whitespace-normal text-left" disabled={disabled} aria-expanded={editing} aria-controls={inputId} onClick={() => setEditing(!editing)}>{groups.length === 2 ? "İkisi de yanlış, düzelt" : groups.length > 2 ? "Hiçbiri doğru değil, düzelt" : "Doğru değil, düzelt"}</Button>}
           <Button variant="ghost" className="text-muted" disabled={disabled} onClick={() => void submit({ skip: true })}>Sonra sor</Button>
           <span className="ml-auto font-mono text-xs text-faint tabular-nums">{currentIndex} / {totalCount}</span>
         </div>
