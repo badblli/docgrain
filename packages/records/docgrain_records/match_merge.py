@@ -44,6 +44,7 @@ def load_merge_documents(directory, results, workspace_id=None, *, runtime=None)
                 "source_version_id": metadata.source_version_id,
                 "knowledge_revision_id": metadata.knowledge_revision_id,
                 "content_sha256": metadata.content_sha256,
+                "document_name": metadata.filename,
                 "context": (root / "context.md").read_text(encoding="utf-8"),
                 "records": [{"source_identity": source_identity(record), "record": record.model_dump(mode="json")}
                          for record in result.records],

@@ -369,7 +369,9 @@ def test_cli_writes_verified_json(tmp_path, monkeypatch, capsys):
                 "content": json.dumps({"records": [] if focused else [proposed]}),
             }}], "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}})
         if request.url.path.endswith("/knowledge"):
-            return httpx.Response(200, json=knowledge())
+            body = knowledge()
+            body["snapshot"]["source_version"]["filename"] = "Oda bilgileri.pdf"
+            return httpx.Response(200, json=body)
         return httpx.Response(200, text=CONTEXT)
 
     install_fake_http(monkeypatch, handler)
@@ -386,6 +388,7 @@ def test_cli_writes_verified_json(tmp_path, monkeypatch, capsys):
         "document_id": "doc_example", "workspace_id": "workspace-example",
         "knowledge_revision_id": "rev_example", "source_version_id": "source-example-v1",
         "content_sha256": "a" * 64, "lang": "en",
+        "filename": "Oda bilgileri.pdf",
         "usage": {
             "prompt_tokens": 50, "completion_tokens": 25, "total_tokens": 75,
             "missing_usage_calls": 0,

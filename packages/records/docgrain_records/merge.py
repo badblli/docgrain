@@ -265,7 +265,8 @@ def _merge(state, revision_id, documents, decisions, alias_decisions, runtime):
         workspace_id=state.workspace_id, id=revision_id,
         documents=[SourcePin(document_id=d.document_id, source_version_id=d.source_version_id,
                              knowledge_revision_id=d.knowledge_revision_id,
-                             content_sha256=d.content_sha256) for d in documents],
+                             content_sha256=d.content_sha256,
+                             document_name=d.document_name) for d in documents],
         records=records, match_issues=issues,
         decisions=sorted(decisions, key=lambda d: (d.record_id, d.field, d.candidate_id)),
         alias_decisions=alias_decisions,
@@ -329,6 +330,8 @@ class JsonMergeStore:
         request = [[_payload(d) for d in documents], [_payload(d) for d in decisions]]
         # Empty matcher vetoes preserve wp42 request digests for saved revisions.
         for document in request[0]:
+            if document["document_name"] is None:
+                document.pop("document_name")
             if document["content_sha256"] is None:
                 document.pop("content_sha256")
             for item in document["records"]:

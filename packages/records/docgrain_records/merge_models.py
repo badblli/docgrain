@@ -25,6 +25,7 @@ class MergeDocument(StrictModel):
     knowledge_revision_id: Text
     content_sha256: str | None = Field(default=None, pattern=r"^[0-9a-fA-F]{64}$")
     context: Text
+    document_name: Text | None = None
     records: list[SourceRecord]
 
     @model_validator(mode="after")
@@ -65,6 +66,8 @@ class FactCandidate(StrictModel):
 class MergedField(StrictModel):
     primary_lang: Language
     candidates: list[FactCandidate] = Field(min_length=1)
+    # Record-local, language-specific override after an explicit "all" answer.
+    multi_value_languages: list[Language] = Field(default_factory=list)
 
     @computed_field
     @property
@@ -83,6 +86,10 @@ class MergedField(StrictModel):
         choices = [c for c in self.candidates if c.lang == self.primary_lang
                    and c.review_state != "rejected"]
         accepted = [c for c in choices if c.review_state == "accepted"]
+        if choices and self.primary_lang in self.multi_value_languages:
+            from .multivalue import combine
+
+            return combine(accepted or choices)
         if accepted:
             return accepted[0]
         return choices[0] if len(choices) == 1 else None
@@ -103,8 +110,14 @@ class MergedField(StrictModel):
 
     def accepted(self, lang: str | None = None) -> FactCandidate | None:
         """Exporter gate: only an explicit acceptance returns a value."""
-        return next((c for c in self.candidates if c.lang == (lang or self.primary_lang)
-                     and c.review_state == "accepted"), None)
+        language = lang or self.primary_lang
+        candidates = [c for c in self.candidates if c.lang == language
+                      and c.review_state == "accepted"]
+        if candidates and language in self.multi_value_languages:
+            from .multivalue import combine
+
+            return combine(candidates)
+        return candidates[0] if candidates else None
 
 
 class MergedRecord(StrictModel):
@@ -144,6 +157,8 @@ class AnswerHistory(StrictModel):
     field: Text
     lang: Language
     candidate_id: Text
+    candidate_ids: list[Text] = Field(default_factory=list)
+    all: bool = False
     actor: Literal["local"] = "local"
     at: Text
     note: str

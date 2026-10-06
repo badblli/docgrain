@@ -20,6 +20,7 @@ class SourceMetadata(StrictModel):
     source_version_id: Text
     content_sha256: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
     lang: Language
+    filename: Text | None = None
     usage: ExtractionUsage | None = None
 
 
@@ -83,6 +84,7 @@ def load_context_bundle(client: httpx.Client, document_id: str, lang: str | None
                 document_id=document_id, workspace_id=snapshot.get("workspace_id"),
                 knowledge_revision_id=revision, source_version_id=source.get("id"),
                 content_sha256=source.get("content_sha256"), lang=language,
+                filename=source.get("filename"),
             )
         except ValidationError as exc:
             raise ValueError("normalized source pin is missing or invalid") from exc
