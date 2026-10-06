@@ -17,7 +17,7 @@ run_codex() {
   shift 3
   local rc
   set +e
-  (cd "$workdir" && "$codex_bin" exec "$@") 2>>"$run/stderr.log" \
+  (cd "$workdir" && "$codex_bin" exec "$@" </dev/null) 2>>"$run/stderr.log" \
     | board ingest "$wp" >>"$run/events.jsonl"
   rc=${PIPESTATUS[0]}
   set -e
@@ -34,7 +34,7 @@ run_agy() {
   read -r model effort tier < "$run/model"
   
   set +e
-  (cd "$workdir" && "$agy_bin" -p "$prompt" --output-format stream-json --sandbox --mode accept-edits --print-timeout "${AGY_TIMEOUT:-55m}" --model "$model" --effort "$effort") 2>>"$run/stderr.log" \
+  (cd "$workdir" && "$agy_bin" -p "$prompt" --output-format stream-json --sandbox --mode accept-edits --print-timeout "${AGY_TIMEOUT:-55m}" --model "$model" --effort "$effort" </dev/null) 2>>"$run/stderr.log" \
     | board ingest "$wp" >>"$run/events.jsonl"
   rc=${PIPESTATUS[0]}
   set -e
@@ -79,7 +79,7 @@ resume_agy() {
   read -r model effort tier < "$run/model"
   
   set +e
-  (cd "$workdir" && "$agy_bin" -p "$message" --conversation "$thread" --output-format stream-json --sandbox --mode accept-edits --print-timeout "${AGY_TIMEOUT:-55m}" --model "$model" --effort "$effort") 2>>"$run/stderr.log" \
+  (cd "$workdir" && "$agy_bin" -p "$message" --conversation "$thread" --output-format stream-json --sandbox --mode accept-edits --print-timeout "${AGY_TIMEOUT:-55m}" --model "$model" --effort "$effort" </dev/null) 2>>"$run/stderr.log" \
     | board ingest "$wp" >>"$run/events.jsonl"
   rc=${PIPESTATUS[0]}
   set -e
