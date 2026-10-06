@@ -13,6 +13,7 @@ from pydantic import Field, ValidationError, model_validator
 from .extractor import normalize_quote
 from .model import ChatClient, ModelResponseError
 from .models import ExtractionResult, StrictModel, Text
+from .runtime import HOSPITALITY, RuntimeRecords
 
 _CYRILLIC = dict(zip(
     "абвгдеёжзийклмнопрстуфхцчшщъыьэюя",
@@ -111,7 +112,7 @@ class PairClient(ChatClient):
         return "record_pair", PairAnswer.model_json_schema()
 
 
-def load_records(directory: str | Path) -> list[ExtractionResult]:
+def load_records(directory: str | Path, *, runtime=None) -> list[ExtractionResult]:
     root = Path(directory)
     paths = sorted(root.rglob("records.json"))
     if not paths:
@@ -119,7 +120,14 @@ def load_records(directory: str | Path) -> list[ExtractionResult]:
     results, documents = [], set()
     for path in paths:
         try:
-            result = ExtractionResult.model_validate_json(path.read_text(encoding="utf-8"))
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict):
+                raise ValueError("records.json must be an extraction object")  # noqa: TRY004 - CLI boundary
+            active = runtime or (RuntimeRecords(raw["workspace_schema"])
+                                 if raw.get("workspace_schema") else HOSPITALITY)
+            result = active.result.model_validate(raw)
+            if raw.get("workspace_schema") != active.schema:
+                raise ValueError("extraction uses a different workspace schema")
         except ValidationError as exc:
             raise ValueError("records.json does not match the extraction schema") from exc
         if result.document_id in documents:
@@ -131,6 +139,9 @@ def load_records(directory: str | Path) -> list[ExtractionResult]:
                for e in _evidence(record)):
             raise ValueError("record evidence belongs to another document")
         results.append(result)
+    schemas = [getattr(result, "workspace_schema", None) for result in results]
+    if any(schema != schemas[0] for schema in schemas):
+        raise ValueError("records must use one accepted workspace schema version")
     return sorted(results, key=lambda result: result.document_id)
 
 
@@ -166,9 +177,16 @@ def _numbers(fact, field):
     return tuple(float(number.replace(",", ".")) for number in numbers) or None
 
 
+def _numeric_fields(record):
+    # Schema-specific numeric values also participate in blocking and scoring.
+    return _NUMERIC | {field for field in record.field_names()
+                       if (fact := getattr(record, field)) is not None
+                       and type(fact.value) in {int, float}}
+
+
 def _score(left, right, parallel):
     signals = []
-    for field in sorted(_NUMERIC):
+    for field in sorted(_numeric_fields(left) | _numeric_fields(right)):
         a, b = _numbers(getattr(left, field, None), field), _numbers(getattr(right, field, None), field)
         if a is None or b is None:
             continue
@@ -217,7 +235,7 @@ def _blocking_keys(record):
         yield "name", transliterate(normalize_quote(name.value))
     for token in _tokens(record):
         yield "token", token
-    for field in sorted(_NUMERIC):
+    for field in sorted(_numeric_fields(record)):
         numbers = _numbers(getattr(record, field, None), field)
         if numbers is not None:
             yield field, numbers

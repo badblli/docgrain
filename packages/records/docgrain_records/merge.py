@@ -27,7 +27,8 @@ from .merge_models import (
     SourcePin,
     VersionedEvidence,
 )
-from .models import RECORD_MODELS, Text
+from .models import Text
+from .runtime import HOSPITALITY
 
 
 def _json(value) -> str:
@@ -56,10 +57,10 @@ def _keys(document, item):
     return source, aliases, normalized
 
 
-def _facts(document, item):
+def _facts(document, item, runtime):
     blocks = _blocks(document.context)
     source = normalize_quote(document.context)
-    _, fields_model = RECORD_MODELS[item.record.type]
+    _, fields_model = runtime.models[item.record.type]
     for field in fields_model.model_fields:
         alternatives = [getattr(item.record, field)]
         alternatives.extend(getattr(fields, field) for fields in item.record.i18n.values())
@@ -67,6 +68,8 @@ def _facts(document, item):
         for fact in alternatives:
             if fact is None:
                 continue
+            if runtime.schema:
+                runtime.validate_value(item.record.type, field, fact.value)
             evidence = []
             for citation in fact.evidence:
                 quote = normalize_quote(citation.quote)
@@ -196,10 +199,10 @@ def _match(workspace_id, entries, identity_map):
     return resolved, sorted(issues, key=lambda issue: issue.key)
 
 
-def _merge(state, revision_id, documents, decisions, alias_decisions):
+def _merge(state, revision_id, documents, decisions, alias_decisions, runtime):
     entries = [(document, item) for document in documents for item in document.records]
     # Verify before identity allocation, even if a model was bypassed or mutated.
-    facts = [list(_facts(document, item)) for document, item in entries]
+    facts = [list(_facts(document, item, runtime)) for document, item in entries]
     # Only reviewed alias decisions may consolidate established IDs. Historical
     # revisions remain immutable; update just the mapping used by this revision.
     known_types = {record.id: record.type for revision in state.revisions.values()
@@ -266,6 +269,7 @@ def _merge(state, revision_id, documents, decisions, alias_decisions):
         records=records, match_issues=issues,
         decisions=sorted(decisions, key=lambda d: (d.record_id, d.field, d.candidate_id)),
         alias_decisions=alias_decisions,
+        workspace_schema=runtime.schema,
     )
 
 
@@ -298,11 +302,14 @@ class JsonMergeStore:
 
     def merge(self, revision_id: str, documents: list[MergeDocument],
               decisions: list[ReviewDecision] | None = None,
-              alias_decisions: list[AliasDecision] | None = None) -> MergeRevision:
+              alias_decisions: list[AliasDecision] | None = None, *, runtime=None) -> MergeRevision:
         from pydantic import TypeAdapter
 
         TypeAdapter(Text).validate_python(revision_id)
-        documents = [MergeDocument.model_validate(_payload(d)) for d in documents]
+        runtime = runtime or HOSPITALITY
+        if runtime.schema and runtime.schema["workspace_id"] != self.workspace_id:
+            raise ValueError("collection schema belongs to another workspace")
+        documents = [runtime.merge_document(_payload(d)) for d in documents]
         decisions = [ReviewDecision.model_validate(_payload(d)) for d in (decisions or [])]
         alias_decisions = sorted([AliasDecision.model_validate(_payload(d))
                                   for d in (alias_decisions or [])],
@@ -329,6 +336,8 @@ class JsonMergeStore:
                     item.pop("match_exclusions")
         if alias_decisions:
             request.append([_payload(d) for d in alias_decisions])
+        if runtime.schema:
+            request.append(runtime.schema)
         digest = sha256(_json(request).encode("utf-8")).hexdigest()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         lock = self.path.with_name(self.path.name + ".lock")
@@ -345,7 +354,7 @@ class JsonMergeStore:
                 if state.request_digests.get(revision_id) != digest:
                     raise ValueError("existing merge revision is immutable")
                 return previous
-            revision = _merge(state, revision_id, documents, decisions, alias_decisions)
+            revision = _merge(state, revision_id, documents, decisions, alias_decisions, runtime)
             state.revisions[revision_id] = revision
             state.request_digests[revision_id] = digest
             with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=self.path.parent,

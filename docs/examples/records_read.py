@@ -56,10 +56,15 @@ def main():
     if args.revision_file:
         counts = {}
         for mode in ("preview", "approved"):
-            rows = json.loads(store.read(revision.workspace_id, revision.id, "rooms", mode=mode))
-            counts[mode] = {"rooms": len(rows),
-                            "rooms_with_name": sum("name" in row for row in rows),
-                            "rooms_with_capacity": sum("capacity" in row for row in rows)}
+            if revision.workspace_schema:
+                counts[mode] = {collection: len(json.loads(store.read(
+                    revision.workspace_id, revision.id, collection, mode=mode)))
+                    for collection in store.manifest(revision.workspace_id, revision.id)["collections"]}
+            else:
+                rows = json.loads(store.read(revision.workspace_id, revision.id, "rooms", mode=mode))
+                counts[mode] = {"rooms": len(rows),
+                                "rooms_with_name": sum("name" in row for row in rows),
+                                "rooms_with_capacity": sum("capacity" in row for row in rows)}
         print(json.dumps(counts, indent=2))
         return
     def prepare():

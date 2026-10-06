@@ -23,9 +23,11 @@ from .match import (
 from .match_merge import merge_matches, write_json
 from .model import ChatClient
 from .models import ExtractionUsage
+from .runtime import HOSPITALITY, load_runtime
 
 
 def run(args):
+    runtime = load_runtime(args.schema) if args.schema else HOSPITALITY
     if not 1 <= args.concurrency <= 4:
         raise ValueError("concurrency must be between 1 and 4")
     if not 1000 <= args.section_chars <= 10000:
@@ -40,10 +42,13 @@ def run(args):
     with httpx.Client(base_url=args.api.rstrip("/"), timeout=30) as api:
         context, lang, source = load_context_bundle(api, args.document, args.lang,
                                                      require_pins=not args.dry_run)
+    if runtime.schema and (source is None or source.workspace_id != runtime.schema["workspace_id"]):
+        raise ValueError("collection schema belongs to another workspace")
     if args.dry_run:
-        plan = extraction_plan(context, args.section_chars, not args.no_focused_passes)
+        plan = extraction_plan(context, args.section_chars, not args.no_focused_passes, runtime=runtime)
         size = sum(len(message["content"]) for section, collection in plan
-                   for message in build_messages(section.context, args.document, lang, collection))
+                   for message in build_messages(section.context, args.document, lang, collection,
+                                                 runtime=runtime))
         print(f"İstek boyutu: {size} karakter, yaklaşık {(size + 3) // 4} belirteç; "
               f"{len(plan)} istek (yeniden denemeler hariç)")
         return 0
@@ -52,7 +57,7 @@ def run(args):
     try:
         result = extract(context, args.document, lang, chat, section_chars=args.section_chars,
                          concurrency=args.concurrency, focused_passes=not args.no_focused_passes,
-                         usage=usage)
+                         usage=usage, runtime=runtime)
     finally:
         chat.close()
     out = Path(args.out)
@@ -81,6 +86,7 @@ def main(argv=None):
     add_discovery_commands(commands)
     runner = commands.add_parser("extract")
     runner.add_argument("--document", required=True)
+    runner.add_argument("--schema", help="Onaylanmış çalışma alanı şeması: schema.v<N>.json")
     runner.add_argument("--api", required=True)
     runner.add_argument("--lang", help="Kaynak dili (en, tr, de, ru); bilinmiyorsa belgede belirlenir")
     runner.add_argument("--base-url")
@@ -95,9 +101,10 @@ def main(argv=None):
     runner.add_argument("--concurrency", type=int, default=3,
                         help="Aynı anda gönderilen istek sayısı (1–4)")
     runner.add_argument("--no-focused-passes", action="store_true",
-                        help="Ek kural, ücret, etkinlik ve tesis taramalarını kapat")
+                        help="Bilgi listeleri için ek tamlık taramalarını kapat")
     matcher = commands.add_parser("match")
     matcher.add_argument("--records", required=True)
+    matcher.add_argument("--schema", help="Onaylanmış çalışma alanı şeması")
     matcher.add_argument("--out", required=True)
     matcher.add_argument("--auto-accept", choices=["strong"],
                          help="Güçlü, çelişkisiz eşleşmeleri görünür kurallarla onayla")
@@ -108,6 +115,7 @@ def main(argv=None):
     matcher.add_argument("--retries", type=int, default=3)
     merger = commands.add_parser("merge")
     merger.add_argument("--records", required=True)
+    merger.add_argument("--schema", help="Onaylanmış çalışma alanı şeması")
     merger.add_argument("--matches", required=True)
     merger.add_argument("--out", required=True)
     merger.add_argument("--workspace", help="Kaynak dosyalarındaki çalışma alanını doğrula")
@@ -133,7 +141,7 @@ def main(argv=None):
                     raise ValueError("specified API key environment variable is empty")
                 chat = PairClient(args.base_url, args.model, key, args.timeout, args.retries)
             try:
-                results = load_records(args.records)
+                results = load_records(args.records, runtime=load_runtime(args.schema) if args.schema else None)
                 matches = propose_matches(results, chat)
                 if args.auto_accept == "strong":
                     matches = accept_strong_matches(results, matches)
@@ -151,7 +159,8 @@ def main(argv=None):
                 matches = MatchResult.model_validate_json(Path(args.matches).read_text(encoding="utf-8"))
             except ValueError as exc:
                 raise ValueError("matches file does not match the proposal schema") from exc
-            revision = merge_matches(args.records, load_records(args.records), matches,
+            results = load_records(args.records, runtime=load_runtime(args.schema) if args.schema else None)
+            revision = merge_matches(args.records, results, matches,
                                      args.out, args.workspace, args.revision, args.auto_accept)
             print(f"{len(revision.records)} kayıt; alan değerleri inceleme bekliyor")
     except httpx.HTTPStatusError as exc:

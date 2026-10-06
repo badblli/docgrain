@@ -4,7 +4,7 @@ import json
 from collections import defaultdict
 
 from .merge_models import MergeRevision
-from .models import RECORD_MODELS
+from .runtime import revision_runtime
 
 COLLECTIONS = {
     "property": "properties", "room_type": "rooms", "outlet": "outlets",
@@ -39,21 +39,24 @@ def project_records(revision: MergeRevision, lang: str | None = None,
     """Project reviewed facts without treating source proposals as approvals."""
     if mode not in MODES:
         raise ValueError("unknown publication mode")
-    result = {name: [] for name in COLLECTIONS.values()}
+    runtime = revision_runtime(revision)
+    result = {name: [] for name in runtime.collections.values()}
     if len({r.id for r in revision.records}) != len(revision.records):
         raise ValueError("duplicate record id")
     for record in sorted(revision.records, key=lambda r: r.id):
-        if record.type not in COLLECTIONS:
-            raise ValueError("unknown hospitality record type")
+        if record.type not in runtime.collections:
+            raise ValueError("unknown record collection")
         row = {"id": record.id, "i18n": {}, "_meta": {
             "review_state": "accepted", "conflicts": [], "sources": [], "fields": {},
         }}
         meta = row["_meta"]
         for field, merged in sorted(record.fields.items()):
-            if field not in RECORD_MODELS[record.type][1].model_fields:
+            if field not in runtime.models[record.type][1].model_fields:
                 raise ValueError("unknown or reserved record field")
             languages = defaultdict(list)
             for candidate in merged.candidates:
+                if runtime.schema:
+                    runtime.validate_value(record.type, field, candidate.value)
                 if candidate.review_state != "rejected":
                     languages[candidate.lang].append(candidate)
             visible = {}
@@ -105,7 +108,11 @@ def project_records(revision: MergeRevision, lang: str | None = None,
             meta["review_state"] = "proposed"
         meta["sources"] = [json.loads(key) for key in sorted({
             encode(e).decode("utf-8") for e in meta["sources"]})]
-        result[COLLECTIONS[record.type]].append(row)
+        if runtime.schema:
+            meta["workspace_id"] = revision.workspace_id
+            meta["revision_id"] = revision.id
+            meta["schema_version"] = runtime.schema["version"]
+        result[runtime.collections[record.type]].append(row)
     return result
 
 
