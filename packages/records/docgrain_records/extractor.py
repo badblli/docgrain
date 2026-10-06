@@ -7,6 +7,8 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
 import httpx
+from docgrain_eval.scoring import normalized_value
+from docgrain_eval.taxonomy import taxonomy_prompt
 from pydantic import TypeAdapter, ValidationError
 
 from .model import ChatClient, ModelResponseError
@@ -64,7 +66,7 @@ def build_messages(context: str, document_id: str, lang: str,
             "inventing a name, fact or translation. Return an empty records list if absent.\n"
         )
     return [
-        {"role": "system", "content": SYSTEM + focus + json.dumps(
+        {"role": "system", "content": SYSTEM + focus + taxonomy_prompt(collection) + json.dumps(
             proposal_schema(collection), ensure_ascii=False)},
         {"role": "user", "content": json.dumps({
             "document_id": document_id, "lang": lang, "untrusted_source_context": context,
@@ -98,7 +100,8 @@ def _coalesce_document_records(records, document_lang):
                 for fact in alternatives:
                     if fact is None:
                         continue
-                    signature = (fact.lang, json.dumps(fact.value, sort_keys=True, ensure_ascii=False))
+                    signature = (fact.lang, json.dumps(normalized_value(fact.value, field),
+                                                       sort_keys=True, ensure_ascii=False))
                     if signature not in candidates:
                         candidates[signature] = fact.model_copy(deep=True)
                     else:
