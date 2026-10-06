@@ -36,6 +36,22 @@ else
   fi
 fi
 
+# Agents cannot install packages (sandbox, no network): link the main checkout's node_modules
+# into the worktree so type checks and builds work. Junctions need no admin rights on Windows.
+link_node_modules() {
+  local src rel
+  while IFS= read -r src; do
+    rel="${src#"$root"/}"
+    [[ -e "$workdir/$rel" || ! -d "$workdir/$(dirname "$rel")" ]] && continue
+    if command -v cygpath >/dev/null 2>&1; then
+      cmd //c mklink //J "$(cygpath -w "$workdir/$rel")" "$(cygpath -w "$src")" >/dev/null
+    else
+      ln -s "$src" "$workdir/$rel"
+    fi
+  done < <(find "$root" -maxdepth 3 -type d -name node_modules -not -path "*/node_modules/*" 2>/dev/null)
+}
+[[ "${WP_IN_PLACE:-0}" == "1" ]] || link_node_modules
+
 run="${WP_RESUME_RUN:-$root/.lead/runs/$wp/$(date +%Y%m%d-%H%M%S)}"
 mkdir -p "$run"
 [[ -n "${WP_RESUME_RUN:-}" ]] || cp "$spec" "$run/spec.md"
