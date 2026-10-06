@@ -19,8 +19,18 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .golden import load_jsonl
+from .scoring import (
+    FREE_TEXT_FIELDS,
+    KEY_FACT_THRESHOLD,
+    key_fact_overlap,
+    list_items,
+    normalized_value,
+    number,
+    time_range,
+    unit,
+)
 from .scoring import normalize as answer_normalize
-from .scoring import normalize_answer, number, time_range, unit
+from .taxonomy import load_taxonomy
 
 Collection = Literal[
     "property", "room_type", "outlet", "activity", "facility", "policy", "contact", "service_price"
@@ -178,14 +188,11 @@ def equal(actual: Any, expected: Any) -> bool:
 
 def _list_items(value: list) -> list[str]:
     """Treat explicit alternatives in one source list item as separate terms."""
-    items = []
-    for item in value:
-        if not isinstance(item, str):
-            items.append(normalize_answer(item))
-            continue
-        items.extend(part.strip() for part in re.split(r"\b(?:veya|ve|or|and)\b", normalize_answer(item))
-                     if part.strip())
-    return items
+    values = value if isinstance(value, list) else [value]
+    # Preserve WP45's list coverage for source conjunctions. Conflict comparison
+    # deliberately splits alternatives only: AND does not become OR in the model.
+    return list_items([re.sub(r"\b(?:ve|and)\b", ";", answer_normalize(item))
+                       if isinstance(item, str) else item for item in values])
 
 
 def value_match(actual: Any, expected: Any, field: str) -> tuple[bool, tuple[int, int] | None]:
@@ -193,7 +200,7 @@ def value_match(actual: Any, expected: Any, field: str) -> tuple[bool, tuple[int
     if isinstance(expected, bool) or isinstance(actual, bool):
         return type(actual) is type(expected) and actual == expected, None
     if isinstance(expected, list):
-        if not isinstance(actual, list):
+        if not isinstance(actual, (list, str)):
             return False, (0, len(_list_items(expected)))
         target, predicted = _list_items(expected), _list_items(actual)
         matched = sum(item in predicted for item in target)
@@ -201,14 +208,16 @@ def value_match(actual: Any, expected: Any, field: str) -> tuple[bool, tuple[int
     if isinstance(expected, (int, float)):
         return number(actual) == number(expected), None
     if isinstance(expected, str) and isinstance(actual, str):
+        if field in FREE_TEXT_FIELDS:
+            return key_fact_overlap(actual, expected) >= KEY_FACT_THRESHOLD, None
         expected_range, actual_range = time_range(expected), time_range(actual)
         if expected_range and actual_range and len(re.findall(r"\d{1,2}[:.]\d{2}", expected)) == 2:
             return expected_range == actual_range, None
         if field in {"fee", "currency", "unit"} and unit(expected) and unit(actual):
             if field == "fee":
-                return unit(expected) == unit(actual) and number(expected) == number(actual), None
+                return normalized_value(actual, field) == normalized_value(expected, field), None
             return unit(expected) == unit(actual), None
-        return normalize_answer(actual) == normalize_answer(expected), None
+        return normalized_value(actual, field) == normalized_value(expected, field), None
     return equal(actual, expected), None
 
 
@@ -246,7 +255,7 @@ def _name_score(predicted: list[str], expected: list[str]) -> float:
 
 
 def align_records(fields: list[GoldenField], records: list[dict]) -> tuple[dict[str, str], list[dict]]:
-    """Align by document, collection and normalized primary/i18n name.
+    """Align by document and name, preferring type before neighbouring types.
 
     Returns saved-id to golden-id mapping and every tied top candidate. Equal
     scores are resolved by stable ids so a score is reproducible, not hidden.
@@ -263,6 +272,7 @@ def align_records(fields: list[GoldenField], records: list[dict]) -> tuple[dict[
                                [answer_normalize(v.value) for v in [name.primary, *name.i18n.values()] if v])
     assigned = {}
     used = set()
+    neighbours = load_taxonomy()["collections"]
     for record in records:
         record_id = record["id"]
         if record_id in grouped:
@@ -278,26 +288,28 @@ def align_records(fields: list[GoldenField], records: list[dict]) -> tuple[dict[
         document_id = record.get("document_id") or saved_id.split(":", 1)[0]
         names = _record_names(record)
         for golden_id, (collection, gold_names) in expected.items():
-            if (golden_id in used or record.get("type") != collection
-                    or golden_id.split(":", 1)[0] != document_id):
+            same_type = record.get("type") == collection
+            if (golden_id in used or golden_id.split(":", 1)[0] != document_id
+                    or (not same_type and record.get("type") not in neighbours[collection]["neighbours"])):
                 continue
             score = _name_score(names, gold_names)
-            if score:
-                candidates.append((score, saved_id, golden_id))
-                by_gold.setdefault(golden_id, []).append((score, saved_id))
-                by_saved.setdefault(saved_id, []).append((score, golden_id))
+            if score and (same_type or score >= .75):
+                candidates.append((same_type, score, saved_id, golden_id))
+                by_gold.setdefault(golden_id, []).append(((same_type, score), saved_id))
+                by_saved.setdefault(saved_id, []).append(((same_type, score), golden_id))
     ambiguities = []
     for gold_id, options in by_gold.items():
-        top = max(score for score, _ in options)
-        tied = sorted(saved for score, saved in options if score == top)
+        top = max(priority for priority, _ in options)
+        tied = sorted(saved for priority, saved in options if priority == top)
         if len(tied) > 1:
-            ambiguities.append({"golden_id": gold_id, "saved_ids": tied, "score": top})
+            ambiguities.append({"golden_id": gold_id, "saved_ids": tied, "score": top[1]})
     for saved_id, options in by_saved.items():
-        top = max(score for score, _ in options)
-        tied = sorted(gold for score, gold in options if score == top)
+        top = max(priority for priority, _ in options)
+        tied = sorted(gold for priority, gold in options if priority == top)
         if len(tied) > 1:
-            ambiguities.append({"saved_id": saved_id, "golden_ids": tied, "score": top})
-    for score, saved_id, golden_id in sorted(candidates, key=lambda row: (-row[0], row[1], row[2])):
+            ambiguities.append({"saved_id": saved_id, "golden_ids": tied, "score": top[1]})
+    for _, score, saved_id, golden_id in sorted(
+            candidates, key=lambda row: (-row[0], -row[1], row[2], row[3])):
         if saved_id not in assigned and golden_id not in used:
             assigned[saved_id] = golden_id
             used.add(golden_id)
@@ -575,6 +587,8 @@ def score_records(manifest: Manifest, fields: list[GoldenField], records: list[d
         rows.append({"id": field.id, "record_id": field.record_id,
                      "saved_id": saved_ids.get(field.record_id), "field": field.field,
                      "collection": field.collection, "correct": not reasons,
+                     "type_mismatch": bool(record and record.get("type") != field.collection),
+                     "content_correct": not (set(reasons) - {"wrong_collection"}),
                      "reasons": sorted(set(reasons)), "wrong_value_examples": examples,
                      "list_items_matched": list_matched, "list_items_expected": list_expected,
                      "list_coverage": list_matched / list_expected if list_expected else None})
@@ -592,6 +606,9 @@ def score_records(manifest: Manifest, fields: list[GoldenField], records: list[d
         failures = Counter(reason for row in selected for reason in row["reasons"])
         correct = sum(row["correct"] for row in selected)
         return {"expected_fields": len(selected), "correct_fields": correct,
+                "content_correct_fields": sum(row["content_correct"] for row in selected),
+                "type_mismatch_fields": sum(row["type_mismatch"] for row in selected),
+                "type_mismatch_records": len({row["record_id"] for row in selected if row["type_mismatch"]}),
                 "correctness": correct / len(selected) if selected else None,
                 "omitted_fields": sum(any(r.startswith("omitted_") for r in row["reasons"])
                                       for row in selected), "failures": dict(sorted(failures.items())),
@@ -631,6 +648,10 @@ def score_records(manifest: Manifest, fields: list[GoldenField], records: list[d
             "alignment": [{"saved_id": saved_id, "golden_id": golden_id}
                           for saved_id, golden_id in sorted(alignment.items())],
             "ambiguous_name_matches": ambiguities,
+            "type_mismatches": [{"saved_id": saved_ids[rid], "golden_id": rid,
+                                 "expected_collection": next(f.collection for f in fields if f.record_id == rid),
+                                 "actual_collection": by_id[rid]["type"]}
+                                for rid in sorted({r["record_id"] for r in rows if r["type_mismatch"]})],
             "extra_slots": [{"record_id": rid, "lang": lang, "field": field}
                             for rid, lang, field in sorted(out_of_key, key=str)],
             "extra_conflicts": [{"record_id": rid, "field": field} for rid, field in out_of_key_conflicts]}

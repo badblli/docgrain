@@ -120,6 +120,163 @@ def time_range(value: object) -> str | None:
     return f"{h1:02d}:{m1:02d}-{h2:02d}:{m2:02d}"
 
 
+LIST_FIELDS = {"bed_types", "features"}
+LIST_SEPARATOR = re.compile(r"\b(?:veya|or|oder|или)\b|;|(?<!\d),|,(?!\d)")
+VALUE_NUMBER = re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*(?!\w)")
+UNIT_ALIASES = {
+    "m²": r"(?<![a-z])(?:m2|sqm|square metres?|square meters?|metrekare|metre kare)\b",
+    "eur": r"€|\b(?:eur|euro|euros|avro)\b",
+    "usd": r"\$|\b(?:usd|dollars?|dolar)\b",
+    "try": r"₺|\b(?:try|tl|lira)\b",
+    "person": r"\b(?:persons?|people|kisi|kisilik)\b",
+    "m": r"\b(?:metres?|meters?|metre)\b",
+}
+
+
+def _value_text(value: str) -> str:
+    text = normalize(value)
+    for canonical, pattern in UNIT_ALIASES.items():
+        text = re.sub(pattern, lambda _, canonical=canonical: canonical, text)
+    text = re.sub(r"\b(eur|usd|try)\s*([+-]?\d+(?:[.,]\d+)*)\b", r"\2 \1", text)
+    quantities = {}
+
+    def quantity(match):
+        marker = "\x00quantity" + "a" * (len(quantities) + 1) + "\x00"
+        quantities[marker] = format(number(match[1]).normalize(), "f") + match[2]
+        return marker
+
+    # Decimal quantities must not become clocks (18.50 m2 is not 18:50).
+    text = re.sub(r"(?<!\w)([+-]?\d+(?:[.,]\d+)*)\s*(m²|m|eur|usd|try|person)(?!\w)",
+                  quantity, text)
+    text = normalize_answer(text)
+    # Keep all surrounding qualifiers; never compare just the first number.
+    text = VALUE_NUMBER.sub(lambda m: format(number(m.group()).normalize(), "f"), text)
+    for marker, canonical in quantities.items():
+        text = text.replace(marker, canonical)
+    return text
+
+
+def list_items(value: object) -> list[str]:
+    """Explicit alternatives are unordered; decimal commas are not separators."""
+    values = value if isinstance(value, list) else [value]
+    return sorted({part.strip() for item in values
+                   for part in LIST_SEPARATOR.split(_value_text(str(item))) if part.strip()})
+
+
+def normalized_value(value: object, field: str = "") -> object:
+    """Comparison key only: retain source spelling, value type and exact evidence.
+
+    Lists/string alternatives are equivalent only for list fields (or actual
+    lists). Prose punctuation, currencies, negation and qualifiers are preserved.
+    """
+    if isinstance(value, bool) or value is None:
+        return ["literal", value]
+    if field in LIST_FIELDS or isinstance(value, list):
+        return ["list", list_items(value)]
+    if isinstance(value, (int, float)):
+        return ["number", format(Decimal(str(value)).normalize(), "f")]
+    if field in {"amount", "size_m2", "capacity"} and isinstance(value, str) and re.fullmatch(
+            r"[+-]?\d+(?:[.,]\d+)*", value.strip()):
+        return ["number", format(number(value).normalize(), "f")]
+    if isinstance(value, dict):
+        return ["object", {key: normalized_value(item) for key, item in sorted(value.items())}]
+    text = _value_text(str(value))
+    if re.fullmatch(r"[+-]?\d+(?:\.\d+)?", text):
+        return ["number", text]
+    # Adjacent spacing and unit spelling are equivalent, but units never vanish.
+    text = re.sub(r"(?<=\d)\s+(?=(?:m²|m|eur|usd|try|person)\b)", "", text)
+    text = re.sub(r"\b(eur|usd|try)\s*([+-]?\d+(?:\.\d+)?)\b", r"\2\1", text)
+    return ["text", text]
+
+
+FREE_TEXT_FIELDS = {"text", "description", "conditions", "applies_to"}
+KEY_FACT_THRESHOLD = .7
+# A deliberately small, reviewable vocabulary. Unknown nouns stay literal.
+FACT_NOUNS = {
+    "pet": r"\b(?:pets?|animals?|evcil hayvan(?:lar|lari)?|hayvan(?:lar|lari)?|haustiere?|tiere?|животные)\b",
+    "smoking": r"\b(?:smoking|smoke|sigara(?: icmek| icme)?|rauchen|курение)\b",
+    "room": r"\b(?:rooms?|oda(?:lar|larda)?|zimmer|номер)\b",
+    "indoor": r"\b(?:indoors?|ic mekan(?:lar|larda)?|kapali alan(?:lar|larda)?)\b",
+    "outdoor": r"\b(?:outdoors?|acik alan(?:lar|larda)?)\b",
+    "assistance": r"\b(?:assistance|service(?=\s+dogs?)|rehber|yardimci|assistenz)\b",
+    "dog": r"\b(?:dogs?|kopek(?:ler|leri)?|hunde?)\b",
+    "child": r"\b(?:children|child|kids?|cocuk(?:lar|lari)?|kinder)\b",
+    "reservation": r"\b(?:reservations?|booking|rezervasyon|reservierung)\b",
+    "parking": r"\b(?:parking|otopark|parkplatz)\b",
+    "wifi": r"\b(?:wi-fi|wi fi|wifi|wlan)\b",
+    "checkout": r"\b(?:check-out|check out|checkout|cikis)\b",
+    "late": r"\b(?:late|gec|spat)\b",
+    "free": r"\b(?:free|ucretsiz|kostenlos)\b",
+    "paid": r"\b(?:paid|chargeable|ucretli|kostenpflichtig)\b",
+}
+NEGATION = re.compile(
+    r"\b(?:no|not|never|without|prohibited|forbidden|nicht|kein\w*|verboten|нет|не|"
+    r"yasak\w*|yok\w*|haric|edilmez|edilmem\w*|verilmez|verilmem\w*|alinmaz|"
+    r"[a-z]+(?:ilmez|ilmemektedir|ilemez|ulmaz|unmaz|anmaz|enmez|maz|mez))\b")
+EXCEPTION = re.compile(r"\b(?:except|exception\w*|unless|excluding|haric|istisna\w*|ausser)\b")
+FACT_STOPWORDS = {
+    "a", "an", "the", "is", "are", "be", "to", "of", "for", "in", "on", "at", "and", "or",
+    "with", "as", "it", "its", "this", "that", "all", "only", "may", "can", "must",
+    "will", "per", "until", "up", "by", "from", "available", "availability",
+    "accepted", "accept", "allowed", "allow", "admitted", "permitted", "permit",
+    "prohibited", "forbidden", "strictly", "policy", "policies", "except",
+    "exceptions", "exception", "without", "no", "not", "never", "unless", "excluding",
+    "cannot", "ve", "veya", "ile", "bir", "bu", "icin", "kadar", "olarak", "olan",
+    "tum", "sadece", "kabul", "edilir", "edilmektedir", "izin", "verilir", "yasak",
+    "mevcuttur", "mevcut", "vardir", "bulunur", "sunulur", "politikasi", "politikalar",
+    "icilmesi", "icmek", "icme", "tesiste", "tesis", "kabulune", "evcil", "haric",
+    "istisna", "nicht", "kein", "keine", "erlaubt", "akzeptiert", "werden",
+    "wird", "ist", "sind", "die", "der", "das", "und", "oder", "im", "ausser",
+}
+
+
+def key_facts(value: str) -> tuple[set[str], set[str]]:
+    """Noun overlap plus exact critical facts; no substring acceptance of prose."""
+    text = _value_text(value)
+    critical = {"time:" + m.group() for m in TIME.finditer(text)}
+    without_times = TIME.sub(" ", text)
+    critical.update("number:" + m.group() for m in VALUE_NUMBER.finditer(without_times))
+    for name in UNIT_ALIASES:
+        if re.search(rf"(?<![a-z]){re.escape(name)}(?!\w)", text):
+            critical.add("unit:" + name)
+    critical.update("quantity:" + m.group() for m in re.finditer(
+        r"[+-]?\d+(?:\.\d+)?(?:m²|m|eur|usd|try|person)(?!\w)", text))
+    if NEGATION.search(text):
+        critical.add("negation")
+    if EXCEPTION.search(text):
+        critical.add("exception")
+    # Keep range direction and comparison operators meaningful.
+    critical.update("range:" + m.group() for m in re.finditer(
+        r"\d+(?::\d+)?-\d+(?::\d+)?|[<>]=?\s*\d+", text))
+    for noun, pattern in FACT_NOUNS.items():
+        text = re.sub(pattern, lambda _, noun=noun: noun, text)
+    # Negation must stay attached to its topic, including multi-rule prose.
+    subjects = {"pet", "smoking", "reservation", "parking", "wifi", "checkout", "child", "dog"}
+    for clause in re.split(r"[;.!?]|\b(?:but|however|ancak|ama)\b", text):
+        topic = subjects & set(re.findall(r"\w+", EXCEPTION.split(clause)[0]))
+        if NEGATION.search(clause):
+            critical.update("negative:" + noun for noun in topic)
+        # Associate numbers/prices with each topic to catch swapped price pairs.
+        if topic:
+            for literal in re.findall(r"\d+(?::\d+)?(?:eur|usd|try|m²|person)?", clause):
+                critical.update("topic:" + noun + ":" + literal for noun in topic)
+    words = {word for word in re.findall(r"[^\W\d_]+", text)
+             if (word not in FACT_STOPWORDS and word not in UNIT_ALIASES and len(word) > 1
+                 and not NEGATION.fullmatch(word))}
+    return words, critical
+
+
+def key_fact_overlap(actual: str, expected: str) -> float:
+    """Symmetric noun overlap; differing critical facts always score zero."""
+    predicted, predicted_critical = key_facts(actual)
+    target, target_critical = key_facts(expected)
+    if predicted_critical != target_critical:
+        return 0.0
+    if not predicted or not target:
+        return float(_value_text(actual) == _value_text(expected))
+    return len(predicted & target) / max(len(predicted), len(target))
+
+
 def _number_correct(expected: NumberExpected, parsed: dict) -> bool:
     candidate = parsed.get("value")
     candidate_unit = parsed.get("unit")

@@ -29,6 +29,7 @@ from .routers import (
     local_visuals,
     outputs,
     providers,
+    records,
     retrieval,
     reviews,
     versions,
@@ -81,7 +82,9 @@ app.add_middleware(
     allow_origins=["http://localhost:3000"],
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Docgrain-Mode", "X-Docgrain-Serialization-Ms", "X-Docgrain-Service-Ms"],
+    expose_headers=["X-Docgrain-Mode", "X-Docgrain-Serialization-Ms", "X-Docgrain-Service-Ms",
+                    "ETag", "X-Docgrain-Workspace", "X-Docgrain-Revision",
+                    "X-Docgrain-Schema-Version", "X-Docgrain-Publication-Mode"],
 )
 
 
@@ -94,6 +97,8 @@ async def identify_mode(request: Request, call_next):
 for module in (documents, jobs, versions, chunks, providers, lineage, entities, canonical_chunks, incremental, retrieval, outputs):
     app.include_router(module.router)
 app.include_router(reviews.router)
+app.include_router(records.router)
+app.include_router(records.workspace_router)
 app.include_router(chat.router)
 app.include_router(local_visuals.router)
 app.include_router(knowledge.document_router)

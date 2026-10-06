@@ -3,7 +3,7 @@ name = "docgrain-records"
 version = "0.0.1"
 description = "Workspace collection discovery and evidence-verified records from normalized documents"
 requires-python = ">=3.12"
-dependencies = ["docgrain-domain", "httpx>=0.27", "pydantic>=2.7"]
+dependencies = ["docgrain-domain", "docgrain-eval", "httpx>=0.27", "pydantic>=2.7"]
 
 [project.scripts]
 docgrain-records = "docgrain_records.cli:main"

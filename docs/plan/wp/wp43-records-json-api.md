@@ -50,3 +50,14 @@ Consumers can read stable records, their translations and source links without m
 
 Read `docs/plan/ROADMAP.md`, `docs/plan/wp/wp21-compact-context.md`, wp41 and wp42.
 This is a D5 slice; two-model D1 evaluation remains a separate gate, not implied by API tests.
+
+## Lead notes (2026-10-05)
+- Base: `origin/codex/wp47-end-to-end-merge`. Real merged output to project from:
+  `C:/Users/root/Documents/projects/docgrain-wt/wp47-end-to-end-merge/data/merged/<collection>.json`
+  (internal format: fields → candidates/primary/i18n/conflicts/evidence/review_state).
+- Clean projection for web/mobile: one file per collection, e.g. `rooms.json`
+  `[{"id","name","capacity","beds",…,"i18n":{"tr":{…},"de":{…}},"_meta":{"review_state","conflicts":[…],"sources":[{document_id,locator}]}}]`
+  — plain values first, provenance only under `_meta`. Pick `?lang=` with EN-first fallback.
+  Fields with an unresolved conflict show the EN-first candidate and list the others in `_meta`.
+- AI context from records: compact markdown per collection with conflicts written explicitly
+  ("Kaynaklar çelişiyor: A (belge X) / B (belge Y)").

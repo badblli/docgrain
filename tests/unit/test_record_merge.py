@@ -103,8 +103,9 @@ def test_exact_normalized_names_match_without_fuzzy_matching(store):
     result = store.merge("r1", [first, other, similar])
     assert len(result.records) == 2
     assert not result.match_issues
-    joined = next(r for r in result.records if len(r.fields["name"].candidates) == 2)
-    assert joined.fields["name"].primary is None  # Exact identity is not fact acceptance.
+    joined = next(r for r in result.records if len(r.fields["name"].primary.evidence) == 2)
+    assert len(joined.fields["name"].candidates) == 1
+    assert joined.fields["name"].primary.review_state == "proposed"
 
 
 def test_ambiguous_same_name_in_one_document_stays_separate(store):
