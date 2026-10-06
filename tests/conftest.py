@@ -1,5 +1,7 @@
 """Explicit demo/live unit-test setup; no external services are contacted."""
 
+from contextlib import nullcontext
+
 import pytest
 from docgrain_api import repository
 from docgrain_api.settings import get_settings
@@ -17,6 +19,7 @@ def live_repository(monkeypatch):
     """Exercise live routes against isolated metadata, without PostgreSQL."""
     monkeypatch.setattr(get_settings(), "use_fixtures", False)
     records = {"documents": {}, "versions": {}, "jobs": {}}
+    monkeypatch.setattr(repository, "registration_lock", lambda *args: nullcontext())
 
     def add(document, version, job):
         records["documents"][document.id] = document

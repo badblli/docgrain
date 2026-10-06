@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlparse
 from docgrain_domain.canonical.ai_output import MIME, OutputFile, OutputPublication, output_bundle
 from docgrain_domain.canonical.identity import canonical_json_bytes
 from docgrain_domain.canonical.review import build_review_revision
+from docgrain_domain.storage_paths import source_version_id
 from minio.error import S3Error
 from psycopg.errors import UniqueViolation
 
@@ -42,12 +43,10 @@ def verified_bytes(client, bucket, uri, checksum, size):
 def verified_source(client, bucket, snapshot):
     source = snapshot.source_version
     parsed = urlparse(source.storage_uri)
-    parts = parsed.path.lstrip("/").split("/")
     versions = parse_qs(parsed.query).get("versionId", [])
     if (
         parsed.scheme != "s3" or parsed.netloc != bucket
-        or len(parts) != 4 or parts[0] != "uploads"
-        or parts[1] != snapshot.document_id or parts[3] != "original"
+        or source_version_id(source.storage_uri, snapshot.workspace_id, snapshot.document_id) is None
         or len(versions) != 1 or versions[0] != source.storage_version
     ):
         raise StorageIntegrityError("source object outside document/version scope")

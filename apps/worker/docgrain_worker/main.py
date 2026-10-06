@@ -247,20 +247,20 @@ def gemini_extraction(
 def process(job_id: str) -> None:
     with closing(psycopg.connect(db_url())) as conn, conn.cursor() as cur:
         cur.execute("""SELECT j.document_version_id, j.document_id, j.stages,
-                             d.filename, d.mime_type, d.workspace_id, v.byte_size, v.content_sha256
+                             d.filename, d.mime_type, d.workspace_id, v.byte_size, v.content_sha256, v.source_uri
                       FROM jobs j JOIN documents d ON d.id=j.document_id
                       JOIN document_versions v ON v.id=j.document_version_id
                       WHERE j.id=%s AND j.status='running'""", (job_id,))
         row = cur.fetchone()
     if row is None:
         return
-    version_id, document_id, stages, filename, mime_type, workspace_id, expected_size, expected_sha = row
+    version_id, document_id, stages, filename, mime_type, workspace_id, expected_size, expected_sha, source_uri = row
     bucket = os.environ["S3_BUCKET"]
     active_stage = "extract"
     try:
         with TemporaryDirectory() as temp:
             client = storage()
-            object_key = f"uploads/{document_id}/{version_id}/original"
+            object_key = urlparse(source_uri).path.lstrip("/")
             response = client.get_object(bucket, object_key)
             source_format = declared_format(filename, mime_type)
             source = Path(temp) / f"source.{source_format.value}"
@@ -318,7 +318,7 @@ def process(job_id: str) -> None:
                         source_version = stored_source
                     # The first verified receipt owns canonical asset storage on source replay.
                     source_key = urlparse(source_version.storage_uri).path.strip("/").split("/")
-                    canonical_prefix = f"artifacts/{document_id}/{source_key[2]}"
+                    canonical_prefix = f"artifacts/{document_id}/{source_key[-2]}"
                     for item in structural.items:
                         if item.asset_bytes:
                             digest = sha256(item.asset_bytes).hexdigest()
