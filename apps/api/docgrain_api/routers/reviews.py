@@ -1,7 +1,7 @@
 """End-user source reading, bounded typed edits and immutable review revisions."""
 
 from datetime import datetime
-from urllib.parse import quote, urlparse
+from urllib.parse import quote
 
 from docgrain_domain.canonical import CanonicalKnowledgeSnapshot
 from docgrain_domain.canonical.lifecycle import digest
@@ -14,6 +14,7 @@ from docgrain_domain.canonical.review import (
     preview_review,
     review_fields,
 )
+from docgrain_domain.storage_paths import source_version_id
 from fastapi import APIRouter, HTTPException, Response
 from minio.error import S3Error
 
@@ -84,9 +85,7 @@ def get_workspace(document_id: str, revision_id: str | None = None):
     store, snapshot, heads = _base(document_id, revision_id)
     base_url = get_settings().api_public_url.rstrip("/")
     source = snapshot.source_version
-    parsed = urlparse(source.storage_uri)
-    parts = parsed.path.lstrip("/").split("/")
-    version_id = parts[2] if len(parts) == 4 and parts[:2] == ["uploads", document_id] and parts[3] == "original" else None
+    version_id = source_version_id(source.storage_uri, snapshot.workspace_id, document_id)
     version = metadata.get_version(document_id, version_id) if version_id else None
     pages = []
     if version is None or version.content_sha256 != source.content_sha256:

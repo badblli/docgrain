@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from io import BytesIO
 from typing import Annotated
+from urllib.parse import urlparse
 
 from docgrain_domain import (
     STAGE_ORDER,
@@ -24,6 +25,7 @@ from docgrain_domain.source_format import (
     declared_format,
     verify_format,
 )
+from docgrain_domain.storage_paths import upload_key
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
@@ -48,14 +50,14 @@ class RegisterRequest(BaseModel):
     records metadata; only confirmation enqueues work.
     """
 
-    workspace_id: str
+    workspace_id: str = Field(min_length=1, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
     filename: str
     mime_type: str
     byte_size: int = Field(gt=0)
     source_uri: str | None = Field(
         default=None, description="Reserved; external source ingestion is not implemented."
     )
-    content_sha256: str | None = Field(default=None, min_length=64, max_length=64)
+    content_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 class RegisterResponse(BaseModel):
@@ -65,7 +67,7 @@ class RegisterResponse(BaseModel):
     upload_url: str | None = None
     deduplicated: bool = Field(
         default=False,
-        description="Reserved; always false because deduplication is not implemented.",
+        description="An existing version with the same workspace and content SHA-256 was reused.",
     )
 
 
@@ -76,7 +78,7 @@ class DocumentListItem(BaseModel):
 
 
 @router.get("", response_model=list[DocumentListItem])
-def list_documents(limit: int = 50, offset: int = 0) -> list[DocumentListItem]:
+def list_documents(limit: int = 50, offset: int = 0, workspace_id: str | None = None) -> list[DocumentListItem]:
     versions = repository.versions_by_id()
     items = [
         DocumentListItem(
@@ -87,6 +89,7 @@ def list_documents(limit: int = 50, offset: int = 0) -> list[DocumentListItem]:
             ),
         )
         for document in repository.list_documents()
+        if workspace_id is None or document.workspace_id == workspace_id
     ]
     return items[offset : offset + limit]
 
@@ -131,12 +134,31 @@ def get_artifact(document_id: str, version_id: str, artifact_name: str) -> Plain
 def register_document(payload: RegisterRequest) -> RegisterResponse:
     """Register a supported document/version; confirmation enqueues the job."""
     _require_live_uploads()
+    with repository.registration_lock(payload.workspace_id, payload.content_sha256):
+        return _register_document(payload)
+
+
+def _register_document(payload: RegisterRequest) -> RegisterResponse:
     if payload.source_uri is not None:
         raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "external source ingestion is not implemented")
     try:
         declared_format(payload.filename, payload.mime_type)
     except FormatMismatch as exc:
         raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, str(exc)) from exc
+    if payload.content_sha256:
+        for existing in repository.list_versions():
+            if (existing.workspace_id == payload.workspace_id
+                    and existing.content_sha256 == payload.content_sha256):
+                document = repository.get_document(existing.document_id)
+                job = repository.job_for_version(existing.id)
+                if document is not None and job is not None:
+                    object_name = urlparse(existing.source_uri).path.lstrip("/")
+                    return RegisterResponse(
+                        document=document, version=existing, job_id=job.id, deduplicated=True,
+                        upload_url=(None if object_exists(object_name) else
+                                    f"{get_settings().api_public_url}/v1/documents/{document.id}"
+                                    f"/versions/{existing.id}/content"),
+                    )
     now = datetime.now(UTC)
     document_id = new_id("document")
     version_id = new_id("version")
@@ -157,7 +179,7 @@ def register_document(payload: RegisterRequest) -> RegisterResponse:
         workspace_id=payload.workspace_id,
         revision=1,
         content_sha256=payload.content_sha256 or ("0" * 64),
-        source_uri=f"s3://{get_settings().s3_bucket}/uploads/{document_id}/{version_id}/original",
+        source_uri=f"s3://{get_settings().s3_bucket}/{upload_key(payload.workspace_id, document_id, version_id)}",
         byte_size=payload.byte_size,
         status=VersionStatus.PROCESSING,
         created_at=now,
@@ -219,7 +241,7 @@ def upload_content(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
     if version.content_sha256 != "0" * 64 and sha256(data).hexdigest() != version.content_sha256:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "upload checksum differs from registration")
-    object_name = f"uploads/{document_id}/{version_id}/original"
+    object_name = urlparse(version.source_uri).path.lstrip("/")
     put_upload(object_name, BytesIO(data), file.content_type or "application/octet-stream", len(data))
     return {"status": "stored", "object_name": object_name}
 
@@ -231,7 +253,7 @@ def confirm_upload(document_id: str, version_id: str) -> dict[str, str]:
     version = repository.get_version(document_id, version_id)
     if version is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "document version not found")
-    object_name = f"uploads/{document_id}/{version_id}/original"
+    object_name = urlparse(version.source_uri).path.lstrip("/")
     if not object_exists(object_name):
         raise HTTPException(status.HTTP_409_CONFLICT, "upload has not reached object storage")
     job = repository.job_for_version(version_id)

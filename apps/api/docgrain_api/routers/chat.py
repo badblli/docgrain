@@ -20,6 +20,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from docgrain_domain.canonical.identity import canonical_json_bytes
 from docgrain_domain.canonical.models import Evidence
+from docgrain_domain.storage_paths import source_version_id
 from fastapi import APIRouter, HTTPException, status
 from minio.error import S3Error
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError, field_validator
@@ -329,11 +330,10 @@ def _dumps(value) -> str:
 def _artifact_in_scope(snapshot, artifact, bucket: str) -> None:
     parsed = urlparse(artifact.storage_uri)
     source = urlparse(snapshot.source_version.storage_uri)
-    parts = source.path.lstrip("/").split("/")
-    if (source.scheme != "s3" or source.netloc != bucket or len(parts) != 4 or parts[0] != "uploads"
-            or parts[1] != snapshot.document_id or parts[3] != "original"):
+    version_id = source_version_id(snapshot.source_version.storage_uri, snapshot.workspace_id, snapshot.document_id)
+    if (source.scheme != "s3" or source.netloc != bucket or version_id is None):
         raise StorageIntegrityError("source object outside document/version scope")
-    prefix = f"artifacts/{snapshot.document_id}/{parts[2]}/structural/assets/"
+    prefix = f"artifacts/{snapshot.document_id}/{version_id}/structural/assets/"
     if parsed.scheme != "s3" or parsed.netloc != bucket or not unquote(parsed.path.lstrip("/")).startswith(prefix) \
             or not parse_qs(parsed.query).get("versionId"):
         raise StorageIntegrityError("artifact outside document/version scope")

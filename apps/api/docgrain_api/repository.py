@@ -28,6 +28,18 @@ def _fixture_mode() -> bool:
     return get_settings().use_fixtures
 
 
+@contextmanager
+def registration_lock(workspace_id: str, content_sha256: str | None) -> Iterator[None]:
+    """Serialize registrations for one workspace/hash across API processes."""
+    if content_sha256 is None:
+        yield
+        return
+    with _connection() as connection, connection.cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                       (f"{workspace_id}:{content_sha256}",))
+        yield
+
+
 _documents: list[Document] = [*fixtures.DOCUMENTS]
 _versions: list[DocumentVersion] = [*fixtures.VERSIONS]
 _jobs: list[Job] = [*fixtures.JOBS]

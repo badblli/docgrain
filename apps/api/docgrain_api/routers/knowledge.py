@@ -13,6 +13,7 @@ from docgrain_domain.canonical.visuals import (
     preview_visual_review,
     visual_inventory,
 )
+from docgrain_domain.storage_paths import source_version_id
 from fastapi import APIRouter, HTTPException, Response, status
 from minio.error import S3Error
 from pydantic import BaseModel
@@ -105,12 +106,10 @@ def get_revision_artifact(revision_id: str, artifact_id: str) -> Response:
     settings = get_settings()
     version_ids = parse_qs(parsed.query).get("versionId", [])
     object_name = unquote(parsed.path.lstrip("/"))
-    source_parts = source_uri.path.lstrip("/").split("/")
-    if (source_uri.scheme != "s3" or source_uri.netloc != settings.s3_bucket or len(source_parts) != 4
-            or source_parts[0] != "uploads" or source_parts[1] != snapshot.document_id
-            or source_parts[3] != "original"):
+    version_id = source_version_id(snapshot.source_version.storage_uri, snapshot.workspace_id, snapshot.document_id)
+    if (source_uri.scheme != "s3" or source_uri.netloc != settings.s3_bucket or version_id is None):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "canonical artifact not found")
-    expected_prefix = f"artifacts/{snapshot.document_id}/{source_parts[2]}/structural/assets/"
+    expected_prefix = f"artifacts/{snapshot.document_id}/{version_id}/structural/assets/"
     if parsed.scheme != "s3" or parsed.netloc != settings.s3_bucket or not object_name.startswith(expected_prefix) or not version_ids:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "canonical artifact not found")
     try:
