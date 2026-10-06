@@ -1,0 +1,23 @@
+{
+  "collections": [
+    {
+      "key": "rooms",
+      "label_i18n": [{"lang": "en", "value": "Rooms"}, {"lang": "tr", "value": "Odalar"}],
+      "description": "Room categories listed in the source table.",
+      "fields": [
+        {"key": "name", "type": "string", "unit": null,
+         "label_i18n": [{"lang": "en", "value": "Name"}, {"lang": "tr", "value": "Ad"}]},
+        {"key": "size", "type": "number", "unit": "m²",
+         "label_i18n": [{"lang": "en", "value": "Size"}, {"lang": "tr", "value": "Alan"}]}
+      ],
+      "examples": [
+        {"values": [
+          {"key": "name", "value": "Garden room", "lang": "en",
+           "evidence": [{"document_id": "hotel-example", "locator": "§1", "quote": "Garden room"}]},
+          {"key": "size", "value": 32, "lang": "en",
+           "evidence": [{"document_id": "hotel-example", "locator": "§1", "quote": "32 m²"}]}
+        ]}
+      ]
+    }
+  ]
+}
