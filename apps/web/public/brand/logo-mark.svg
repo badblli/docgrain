@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Docgrain">
+  <!-- A page split into grains: 3 x 3 grid, the top-right grain is the folded corner. Grid: 8 / 4 / 8 / 4 / 8. -->
+  <g fill="#245d65">
+    <rect x="0" y="0" width="8" height="8" rx="1.5"/>
+    <rect x="12" y="0" width="8" height="8" rx="1.5"/>
+    <path d="M24 0L32 8H25.5A1.5 1.5 0 0 1 24 6.5Z"/>
+    <rect x="0" y="12" width="8" height="8" rx="1.5"/>
+    <rect x="12" y="12" width="8" height="8" rx="1.5"/>
+    <rect x="24" y="12" width="8" height="8" rx="1.5"/>
+    <rect x="0" y="24" width="8" height="8" rx="1.5"/>
+    <rect x="12" y="24" width="8" height="8" rx="1.5"/>
+    <rect x="24" y="24" width="8" height="8" rx="1.5"/>
+  </g>
+</svg>

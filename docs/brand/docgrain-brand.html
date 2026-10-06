@@ -1,0 +1,1004 @@
+<title>Docgrain Marka Kiti</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<style>
+/* Layout: a left-aligned spec sheet. Hairline sections, components on quiet stages, two full screens in container-query frames. */
+:root {
+  color-scheme: light;
+  --teal-50: #f2f7f7; --teal-100: #eaf2f2; --teal-200: #cfe1e2; --teal-300: #9fc2c5; --teal-400: #6a9fa5;
+  --teal-500: #3a7a82; --teal-600: #245d65; --teal-700: #1c4b52; --teal-800: #163c42; --teal-900: #0f2c30;
+
+  --ground: #fafbf9; --paper: #ffffff; --sheet: #f5f7f6; --sunken: #eef2f0;
+  --ink: #223333; --ink2: #445554; --muted: #647573; --faint: #73817f;
+  --line: #dce3e0; --line2: #edf0ee; --line-strong: #c4cfcb;
+  --accent: #245d65; --accent-hover: #1c4b52; --accent-soft: #eaf2f2; --accent-line: #c4dadb;
+  --on-accent: #ffffff; --focus: #245d65; --mark: #dcecea;
+  --ok: #327251; --ok-soft: #eff6f1; --ok-line: #cfe4d7;
+  --warn: #956316; --warn-soft: #fff5df; --warn-line: #f0ddb0;
+  --danger: #a5423a; --danger-soft: #fbefed; --danger-line: #efcdc8;
+  --idle: #647573; --idle-soft: #eef2f0;
+  --shadow-1: 0 1px 2px rgb(24 48 48 / 0.05);
+  --shadow-2: 0 10px 28px -14px rgb(24 48 48 / 0.22), 0 1px 2px rgb(24 48 48 / 0.05);
+
+  /* Board-only: fixed tiles that show the logo on light and on dark regardless of theme. */
+  --tile-light: #fafbf9; --tile-light-line: #dce3e0; --tile-light-ink: #223333; --tile-light-accent: #245d65;
+  --tile-dark: #0e1514; --tile-dark-line: #283331; --tile-dark-ink: #e2eae7; --tile-dark-accent: #79b7bd;
+
+  --f-ui: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-doc: "Source Serif 4", "Source Serif Pro", Georgia, "Times New Roman", serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
+
+  --text-2xs: 11px; --text-xs: 12px; --text-sm: 13px; --text-base: 14px; --text-md: 16px;
+  --text-lg: 18px; --text-xl: 23px; --text-2xl: 30px; --text-3xl: 36px;
+
+  --radius-xs: 4px; --radius-sm: 6px; --radius: 8px; --radius-card: 12px;
+  --dur-fast: 120ms; --dur-base: 180ms; --dur-enter: 280ms;
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ground: #0e1514; --paper: #141c1b; --sheet: #18211f; --sunken: #0b1110;
+    --ink: #e2eae7; --ink2: #c0ccc9; --muted: #92a29f; --faint: #7f8f8c;
+    --line: #283331; --line2: #1e2826; --line-strong: #3a4745;
+    --accent: #79b7bd; --accent-hover: #97cacf; --accent-soft: #17302f; --accent-line: #2c5154;
+    --on-accent: #0b1d1f; --focus: #79b7bd; --mark: #1f3d3d;
+    --ok: #7cc39a; --ok-soft: #142a1f; --ok-line: #24452f;
+    --warn: #e2b45f; --warn-soft: #2b2313; --warn-line: #4b3d1d;
+    --danger: #ec8f86; --danger-soft: #2f1a18; --danger-line: #52302b;
+    --idle: #92a29f; --idle-soft: #1e2826;
+    --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-2: 0 12px 30px -12px rgb(0 0 0 / 0.65), 0 0 0 1px rgb(255 255 255 / 0.03);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ground: #0e1514; --paper: #141c1b; --sheet: #18211f; --sunken: #0b1110;
+  --ink: #e2eae7; --ink2: #c0ccc9; --muted: #92a29f; --faint: #7f8f8c;
+  --line: #283331; --line2: #1e2826; --line-strong: #3a4745;
+  --accent: #79b7bd; --accent-hover: #97cacf; --accent-soft: #17302f; --accent-line: #2c5154;
+  --on-accent: #0b1d1f; --focus: #79b7bd; --mark: #1f3d3d;
+  --ok: #7cc39a; --ok-soft: #142a1f; --ok-line: #24452f;
+  --warn: #e2b45f; --warn-soft: #2b2313; --warn-line: #4b3d1d;
+  --danger: #ec8f86; --danger-soft: #2f1a18; --danger-line: #52302b;
+  --idle: #92a29f; --idle-soft: #1e2826;
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-2: 0 12px 30px -12px rgb(0 0 0 / 0.65), 0 0 0 1px rgb(255 255 255 / 0.03);
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0; background: var(--ground); color: var(--ink2);
+  font: var(--text-base)/1.55 var(--f-ui); -webkit-font-smoothing: antialiased;
+}
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+h1, h2, h3, h4 { color: var(--ink); text-wrap: balance; margin: 0; }
+p { margin: 0; }
+a { color: var(--accent); text-underline-offset: 3px; }
+code, .mono { font-family: var(--f-mono); }
+
+.page { max-width: 1200px; margin: 0 auto; padding-inline: clamp(16px, 4vw, 40px); padding-block: 28px 96px; }
+
+/* Header */
+.top { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.top .lg { height: 26px; width: auto; }
+.theme { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
+.theme button { border: 0; background: none; padding: 5px 10px; border-radius: var(--radius-sm); font: 500 var(--text-xs)/1.2 var(--f-ui); color: var(--muted); cursor: pointer; }
+.theme button:hover { color: var(--ink); }
+.theme button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.intro { display: grid; gap: 20px; padding-block: 56px 48px; max-width: 760px; }
+.intro .kicker { color: var(--accent); }
+.intro h1 { font-size: clamp(38px, 7vw, 60px); line-height: 1.02; letter-spacing: -0.045em; font-weight: 600; }
+.intro .lead { font-size: var(--text-lg); line-height: 1.55; max-width: 58ch; }
+.promises { list-style: none; padding: 0; margin: 4px 0 0; display: flex; flex-wrap: wrap; gap: 8px 24px; font-size: var(--text-sm); color: var(--ink); font-weight: 500; }
+.promises li { display: flex; align-items: center; gap: 8px; }
+.promises li::before { content: ""; width: 6px; height: 6px; border-radius: 1.5px; background: var(--accent); flex: none; }
+.toc { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: var(--text-sm); padding-bottom: 8px; }
+.toc a { color: var(--muted); text-decoration: none; padding: 4px 0; }
+.toc a:hover { color: var(--accent); }
+
+/* Sections */
+.sec { border-top: 1px solid var(--line); padding-block: 56px; display: grid; gap: 28px; }
+.sec-head { display: grid; gap: 8px; max-width: 66ch; }
+.sec-head h2 { font-size: var(--text-xl); letter-spacing: -0.02em; font-weight: 600; }
+.sec-head p { color: var(--muted); }
+.kicker { font: 600 var(--text-2xs)/1.3 var(--f-ui); letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
+.sub-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.sub-head h3 { font-size: var(--text-md); font-weight: 600; }
+.sub-head p { color: var(--muted); font-size: var(--text-sm); }
+.stack { display: grid; gap: 14px; min-width: 0; }
+
+/* Icons */
+svg.ic { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.lg { color: var(--ink); --logo-accent: var(--accent); display: block; }
+.lg-mark { color: var(--logo-accent); }
+
+/* Logo section */
+.logos { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 16px; }
+.logos figure { margin: 0; display: grid; gap: 10px; min-width: 0; }
+.logos figcaption { font-size: var(--text-xs); color: var(--muted); }
+.logos figcaption b { color: var(--ink); font-weight: 600; }
+.tile { border: 1px solid var(--line); border-radius: var(--radius-card); min-height: 210px; display: grid; place-items: center; padding: 32px 24px; }
+.tile .lg { width: min(100%, 220px); height: auto; }
+.tile.l { background: var(--tile-light); border-color: var(--tile-light-line); }
+.tile.l .lg { color: var(--tile-light-ink); --logo-accent: var(--tile-light-accent); }
+.tile.d { background: var(--tile-dark); border-color: var(--tile-dark-line); }
+.tile.d .lg { color: var(--tile-dark-ink); --logo-accent: var(--tile-dark-accent); }
+.tile.m { background: var(--paper); }
+.tile.m .lg { color: var(--ink); --logo-accent: currentColor; }
+.tile.sizes { background: var(--paper); }
+.sizes-row { display: flex; align-items: flex-end; gap: 28px; flex-wrap: wrap; justify-content: center; }
+.sizes-row div { display: grid; justify-items: center; gap: 10px; }
+.sizes-row svg { color: var(--accent); display: block; }
+.sizes-row span { font: var(--text-2xs) var(--f-mono); color: var(--faint); }
+.tile.build { background: var(--paper); gap: 12px; }
+.build svg { width: 168px; height: 168px; max-width: 100%; overflow: visible; }
+.build .grid line { stroke: var(--line); stroke-width: 0.12; }
+.build .shape { fill: var(--accent); }
+.build .shape.fold { fill: var(--accent); opacity: 0.35; }
+.build p { font: var(--text-2xs) var(--f-mono); color: var(--faint); }
+.rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 16px 32px; }
+.rules ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; font-size: var(--text-sm); }
+.rules li { display: flex; gap: 10px; align-items: baseline; }
+.rules li::before { content: ""; width: 6px; height: 6px; border-radius: 1.5px; background: var(--ok); flex: none; transform: translateY(-1px); }
+.rules .dont li::before { background: none; box-shadow: inset 0 0 0 1.5px var(--danger); border-radius: 50%; }
+
+/* Palette */
+.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 188px), 1fr)); gap: 12px; }
+.sw { border: 1px solid var(--line); border-radius: var(--radius-card); overflow: hidden; background: var(--paper); min-width: 0; }
+.sw i { display: block; height: 64px; background: var(--c); border-bottom: 1px solid var(--line2); }
+.sw div { padding: 10px 12px 12px; display: grid; gap: 2px; }
+.sw b { font: 600 var(--text-sm)/1.3 var(--f-mono); color: var(--ink); }
+.sw span { font-size: var(--text-xs); color: var(--muted); }
+.sw small { font: var(--text-2xs) var(--f-mono); color: var(--faint); margin-top: 4px; }
+.scale { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); border-radius: var(--radius-card); overflow: hidden; border: 1px solid var(--line); }
+.scale div { min-height: 84px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; background: var(--c); color: var(--teal-900); font: var(--text-2xs)/1.3 var(--f-mono); }
+.scale div.dk { color: var(--teal-50); }
+.scale div b { font-weight: 500; }
+
+/* Type */
+.specimens { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 16px; }
+.spec { border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--paper); padding: 22px; display: grid; gap: 14px; align-content: start; min-width: 0; }
+.spec .s-ui { font: 600 var(--text-2xl)/1.15 var(--f-ui); letter-spacing: -0.03em; color: var(--ink); }
+.spec .s-doc { font: 400 21px/1.45 var(--f-doc); color: var(--ink); }
+.spec .s-mono { font: 400 var(--text-md)/1.6 var(--f-mono); color: var(--ink); overflow-wrap: anywhere; }
+.spec p { font-size: var(--text-sm); color: var(--muted); }
+.spec .weights { display: flex; gap: 14px; flex-wrap: wrap; font-size: var(--text-sm); color: var(--ink2); }
+.typescale { border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--paper); }
+.ts-row { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 16px; align-items: baseline; padding: 14px 20px; border-bottom: 1px solid var(--line2); }
+.ts-row:last-child { border-bottom: 0; }
+.ts-row code { font-size: var(--text-2xs); color: var(--faint); }
+.ts-row div { color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
+
+/* Components: shared */
+.comp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 28px 20px; align-items: start; }
+.stage { background: var(--sheet); border: 1px solid var(--line2); border-radius: var(--radius-card); padding: 24px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; min-width: 0; }
+.stage.col { flex-direction: column; align-items: stretch; }
+.caption { font-size: var(--text-xs); color: var(--muted); max-width: 62ch; }
+
+.pill { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px 0 8px; border-radius: 999px; border: 1px solid transparent; font: 600 var(--text-2xs)/1 var(--f-ui); white-space: nowrap; }
+.pill .pd { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+.pill svg.ic { width: 12px; height: 12px; stroke-width: 2.2; }
+.pill.oneri { background: var(--paper); color: var(--muted); border-color: var(--line); }
+.pill.oneri .pd { background: none; box-shadow: inset 0 0 0 1.5px currentColor; }
+.pill.bekliyor { background: var(--warn-soft); color: var(--warn); border-color: var(--warn-line); }
+.pill.onay { background: var(--ok-soft); color: var(--ok); border-color: var(--ok-line); }
+.pill.red { background: var(--danger-soft); color: var(--danger); border-color: var(--danger-line); }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 38px; padding: 8px 14px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--paper); color: var(--ink); font: 600 var(--text-sm)/1.2 var(--f-ui); cursor: pointer; text-decoration: none; transition: background var(--dur-fast), border-color var(--dur-fast), color var(--dur-fast); }
+.btn:hover { background: var(--sheet); border-color: var(--line-strong); }
+.btn.pri { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn.pri:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn.quiet { background: transparent; border-color: transparent; color: var(--accent); padding-inline: 8px; }
+.btn.quiet:hover { background: var(--accent-soft); }
+.btn.quiet.mut { color: var(--muted); }
+.btn.quiet.mut:hover { background: var(--sheet); color: var(--ink); }
+.btn.sm { min-height: 30px; padding: 4px 10px; font-size: var(--text-xs); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn:disabled:hover { background: var(--paper); border-color: var(--line); }
+.btn.quiet:disabled:hover { background: transparent; border-color: transparent; }
+.btn.pri:disabled:hover { background: var(--accent); border-color: var(--accent); }
+.btn.is-focus { outline: 2px solid var(--focus); outline-offset: 2px; }
+.btn svg.ic { width: 16px; height: 16px; }
+
+/* Metric tile */
+.metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.metric { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-card); padding: 18px 20px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.metric .lb { font-size: var(--text-sm); color: var(--ink2); }
+.metric .vl { font-size: 34px; line-height: 1.2; font-weight: 500; letter-spacing: -0.04em; color: var(--ink); font-variant-numeric: tabular-nums; margin-top: 6px; }
+.metric .vl small { font-size: 20px; margin-left: 2px; letter-spacing: 0; }
+.metric .nt { font-size: var(--text-xs); color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.metric.ok .vl { color: var(--ok); }
+.metric.warn .vl { color: var(--warn); }
+.metric .meter { height: 4px; border-radius: 4px; background: var(--sunken); overflow: hidden; margin-top: 8px; }
+.metric .meter i { display: block; height: 100%; width: var(--v); background: var(--ok); border-radius: 4px; }
+.stage .metric { flex: 1 1 180px; }
+
+/* Collection card */
+.ccard { display: flex; flex-direction: column; text-align: left; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-card); padding: 20px; color: inherit; font: inherit; cursor: pointer; min-width: 0; width: 100%; transition: border-color var(--dur-fast); }
+.ccard:hover { border-color: var(--accent); }
+.ccard .ct { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.ccard .ico { width: 36px; height: 36px; border-radius: var(--radius); border: 1px solid var(--line); display: grid; place-items: center; color: var(--accent); }
+.ccard .go { color: var(--faint); }
+.ccard h3 { font-size: var(--text-md); font-weight: 600; letter-spacing: -0.01em; margin: 16px 0 4px; }
+.ccard p { font-size: var(--text-sm); color: var(--muted); }
+.ccard .bar { display: flex; gap: 2px; height: 4px; border-radius: 4px; overflow: hidden; background: var(--sunken); margin-top: 18px; }
+.ccard .bar i { display: block; height: 100%; }
+.ccard .bar .o { background: var(--ok); }
+.ccard .bar .w { background: var(--warn); }
+.ccard .ft { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 10px; font-size: var(--text-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+.ccard .ft b { color: var(--ink2); font-weight: 600; }
+.ccard .ft .q { color: var(--warn); font-weight: 600; }
+.stage .ccard { max-width: 340px; }
+
+/* Source quote: the one distinctive detail. The exact span the value came from is marked like a highlighter on paper. */
+.says { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--text-sm); color: var(--muted); min-width: 0; }
+.says .doc { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; min-width: 0; }
+.says .doc svg.ic { width: 15px; height: 15px; color: var(--accent); }
+.when { font: var(--text-2xs) var(--f-mono); color: var(--faint); }
+blockquote.q { margin: 0; font: 400 var(--text-md)/1.6 var(--f-doc); color: var(--ink2); overflow-wrap: anywhere; }
+blockquote.q mark { background: var(--mark); color: var(--ink); box-shadow: inset 0 -2px 0 var(--accent); padding: 1px 2px; border-radius: 2px 2px 0 0; }
+.loc { font: var(--text-2xs) var(--f-mono); color: var(--faint); }
+.evidence { display: grid; gap: 6px; }
+
+/* Question card */
+.qcard { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-card); overflow: hidden; min-width: 0; }
+.qhead { padding: 24px 24px 0; display: grid; gap: 8px; }
+.conflict { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--text-xs); font-weight: 600; color: var(--warn); }
+.conflict .pd { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.conflict .col { color: var(--muted); font-weight: 400; }
+.qhead h3 { font-size: var(--text-xl); line-height: 1.3; font-weight: 600; letter-spacing: -0.022em; }
+.qhead p { color: var(--muted); }
+.qgroups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 12px; padding: 20px 24px 24px; }
+.qsrc { border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0; background: var(--paper); transition: border-color var(--dur-base), background var(--dur-base), opacity var(--dur-base); }
+.qsrc .val { font-size: 26px; line-height: 1.2; font-weight: 500; letter-spacing: -0.025em; color: var(--ink); overflow-wrap: anywhere; }
+.qsrc .evs { display: grid; gap: 12px; padding-top: 12px; border-top: 1px solid var(--line2); }
+.qsrc .btn { margin-top: auto; align-self: flex-start; }
+.qsrc.is-chosen { border-color: var(--accent); background: var(--accent-soft); }
+.qsrc.is-chosen .btn { background: var(--accent); border-color: var(--accent); color: var(--on-accent); opacity: 1; }
+.qsrc.is-dim { opacity: 0.55; }
+.qfoot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 4px; padding: 12px 16px 14px; border-top: 1px solid var(--line2); }
+.qfoot .btn:first-child:not(.quiet) { margin-right: 8px; }
+.qfoot .count { margin-left: auto; padding-inline: 8px; font: var(--text-xs) var(--f-mono); color: var(--faint); font-variant-numeric: tabular-nums; }
+.qfix { padding: 4px 24px 20px; display: grid; gap: 8px; }
+.qfix label { font-size: var(--text-xs); font-weight: 600; color: var(--ink); }
+.qfix .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.field { flex: 1 1 200px; min-width: 0; min-height: 38px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); color: var(--ink); padding: 8px 12px; font: inherit; }
+.field:hover { border-color: var(--line-strong); }
+.field:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; border-color: var(--accent); }
+.qnote { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 24px; font-size: var(--text-sm); border-top: 1px solid var(--ok-line); background: var(--ok-soft); color: var(--ok); }
+.qnote.neutral { border-top-color: var(--line2); background: var(--sheet); color: var(--ink2); }
+.qnote span { flex: 1 1 220px; min-width: 0; }
+.qnote .btn { min-height: 30px; }
+
+/* Sidebar */
+.side { background: var(--paper); border-right: 1px solid var(--line); padding: 22px 14px 18px; display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+.side .brand { display: flex; align-items: center; padding: 0 8px; background: none; border: 0; cursor: pointer; border-radius: var(--radius-sm); }
+.side .brand .lg { height: 22px; width: auto; }
+.ws { display: grid; gap: 6px; }
+.ws > .kicker { padding-inline: 8px; }
+.ws-btn { display: flex; align-items: center; gap: 10px; width: 100%; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); padding: 7px 10px 7px 7px; text-align: left; color: var(--ink); font: inherit; cursor: pointer; min-width: 0; }
+.ws-btn:hover { border-color: var(--line-strong); }
+.ws-btn .av { width: 26px; height: 26px; border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-weight: 700; font-size: var(--text-xs); flex: none; }
+.ws-btn .nm { display: grid; min-width: 0; flex: 1; }
+.ws-btn .nm b { font-size: var(--text-sm); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-btn .nm small { font-size: var(--text-2xs); color: var(--muted); }
+.ws-btn > svg.ic { color: var(--muted); width: 16px; height: 16px; }
+.nav { display: grid; gap: 2px; }
+.ni { position: relative; display: flex; align-items: center; gap: 10px; min-height: 38px; padding: 8px 10px; border-radius: var(--radius); border: 0; background: none; width: 100%; text-align: left; color: var(--ink2); font: 500 13.5px/1.2 var(--f-ui); cursor: pointer; transition: background var(--dur-fast), color var(--dur-fast); }
+.ni:hover { background: var(--sheet); color: var(--ink); }
+.ni[aria-current="page"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.badge { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: var(--radius-sm); background: var(--warn-soft); color: var(--warn); font: 600 var(--text-2xs)/20px var(--f-ui); text-align: center; font-variant-numeric: tabular-nums; }
+.side-foot { margin-top: auto; display: grid; gap: 12px; padding: 14px 8px 0; border-top: 1px solid var(--line2); font-size: var(--text-xs); color: var(--muted); }
+.toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--ink2); }
+.toggle input { accent-color: var(--accent); margin: 0; width: 14px; height: 14px; }
+.comp-split { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 28px 20px; align-items: start; }
+.stage .side { width: 244px; max-width: 100%; min-height: 470px; border: 1px solid var(--line); border-radius: var(--radius-card); }
+
+/* Empty states */
+.empty { display: flex; gap: 16px; align-items: flex-start; padding: 22px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--paper); min-width: 0; }
+.empty.start { border-style: dashed; border-color: var(--line-strong); }
+.empty .ei { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--ok-soft); color: var(--ok); }
+.empty.start .ei { background: var(--sheet); color: var(--muted); border-radius: var(--radius); }
+.empty > div { display: grid; gap: 4px; min-width: 0; }
+.empty h4 { font-size: 15px; font-weight: 600; }
+.empty p { font-size: var(--text-sm); color: var(--muted); max-width: 52ch; }
+.empty .btn { justify-self: start; margin-top: 10px; }
+
+/* Screens */
+.screens { display: grid; gap: 40px; }
+.screen-wrap { display: grid; gap: 12px; min-width: 0; }
+.screen { border: 1px solid var(--line); border-radius: var(--radius-card); overflow: hidden; background: var(--ground); container-type: inline-size; box-shadow: var(--shadow-2); }
+.app { display: grid; grid-template-columns: 232px minmax(0, 1fr); }
+.main { padding: 40px 40px 48px; display: flex; flex-direction: column; gap: 36px; min-width: 0; }
+.ph { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.ph > div { display: grid; gap: 4px; min-width: 0; flex: 1 1 320px; }
+.ph .eyebrow { font-size: var(--text-xs); color: var(--muted); }
+.ph h2 { font-size: var(--text-2xl); font-weight: 600; letter-spacing: -0.03em; line-height: 1.15; }
+.ph p { color: var(--muted); max-width: 64ch; }
+.blk { display: grid; gap: 16px; min-width: 0; }
+.sh { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.sh h3 { font-size: var(--text-lg); font-weight: 600; letter-spacing: -0.02em; }
+.cgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.toolbar { display: flex; gap: 16px 32px; flex-wrap: wrap; align-items: flex-end; }
+.progress { flex: 1 1 260px; display: grid; gap: 10px; font-size: var(--text-sm); color: var(--muted); }
+.progress b { color: var(--ink); font-weight: 600; }
+.progress .track { height: 4px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.progress .track i { display: block; height: 100%; width: 28.6%; background: var(--accent); border-radius: 4px; }
+.filter { display: grid; gap: 6px; font-size: var(--text-xs); color: var(--muted); }
+.filter select { min-height: 38px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); color: var(--ink); padding: 6px 10px; font: inherit; font-size: var(--text-sm); max-width: 100%; }
+.qlayout { display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 20px; align-items: start; }
+.qlist { list-style: none; margin: 0; padding: 6px; display: grid; gap: 2px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-card); }
+.qi { width: 100%; display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: 4px 10px; align-items: baseline; text-align: left; padding: 10px; border: 0; border-radius: var(--radius); background: none; color: var(--ink2); font: inherit; cursor: pointer; }
+.qi:hover { background: var(--sheet); }
+.qi[aria-current="true"] { background: var(--accent-soft); }
+.qi .st { width: 6px; height: 6px; border-radius: 50%; background: var(--warn); transform: translateY(-2px); }
+.qi .st.done { background: var(--ok); }
+.qi .st.later { background: none; box-shadow: inset 0 0 0 1.5px var(--faint); }
+.qi .t { font-size: var(--text-sm); font-weight: 500; color: var(--ink); line-height: 1.35; }
+.qi[aria-current="true"] .t { color: var(--accent); font-weight: 600; }
+.qi .m { grid-column: 2; font-size: var(--text-2xs); color: var(--muted); display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.qi .m .pill { height: 18px; padding: 0 7px; font-size: 10.5px; }
+
+@container (max-width: 980px) {
+  .cgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .qlayout { grid-template-columns: minmax(0, 1fr); }
+  .qlist { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+}
+@container (max-width: 780px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .side { border-right: 0; border-bottom: 1px solid var(--line); padding: 14px 16px 10px; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; }
+  .side .brand { padding: 0; }
+  .ws > .kicker, .side-foot { display: none; }
+  .ws-btn { padding-block: 5px; }
+  .side .nav { grid-column: 1 / -1; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .ni { flex-direction: column; justify-content: center; gap: 4px; padding: 8px 2px; font-size: 11.5px; text-align: center; }
+  .ni .badge { position: absolute; top: 3px; right: 6px; height: 17px; min-width: 17px; padding: 0 4px; line-height: 17px; font-size: 10px; }
+  .main { padding: 28px 16px 32px; gap: 28px; }
+  .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metric { padding: 16px; }
+  .metric .vl { font-size: 30px; }
+  .qhead { padding: 20px 18px 0; }
+  .qhead h3 { font-size: 20px; }
+  .qgroups { padding: 16px 18px 18px; }
+  .qfix { padding-inline: 18px; }
+  .qnote { padding-inline: 18px; }
+}
+@container (max-width: 520px) {
+  .cgrid { grid-template-columns: minmax(0, 1fr); }
+  .qlist { grid-template-columns: minmax(0, 1fr); }
+  .qfoot .count { margin-left: 0; }
+}
+@media (max-width: 900px) {
+  .comp-split { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+  .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ts-row { grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 12px 16px; }
+  .stage { padding: 16px; }
+  .sec { padding-block: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="dg-mark" viewBox="0 0 32 32">
+    <g fill="currentColor">
+      <rect x="0" y="0" width="8" height="8" rx="1.5"/><rect x="12" y="0" width="8" height="8" rx="1.5"/>
+      <path d="M24 0L32 8H25.5A1.5 1.5 0 0 1 24 6.5Z"/>
+      <rect x="0" y="12" width="8" height="8" rx="1.5"/><rect x="12" y="12" width="8" height="8" rx="1.5"/><rect x="24" y="12" width="8" height="8" rx="1.5"/>
+      <rect x="0" y="24" width="8" height="8" rx="1.5"/><rect x="12" y="24" width="8" height="8" rx="1.5"/><rect x="24" y="24" width="8" height="8" rx="1.5"/>
+    </g>
+  </symbol>
+  <symbol id="dg-fav" viewBox="0 0 16 16">
+    <g fill="currentColor">
+      <rect x="0" y="0" width="4" height="4" rx="0.75"/><rect x="6" y="0" width="4" height="4" rx="0.75"/>
+      <path d="M12 0L16 4H12.75A0.75 0.75 0 0 1 12 3.25Z"/>
+      <rect x="0" y="6" width="4" height="4" rx="0.75"/><rect x="6" y="6" width="4" height="4" rx="0.75"/><rect x="12" y="6" width="4" height="4" rx="0.75"/>
+      <rect x="0" y="12" width="4" height="4" rx="0.75"/><rect x="6" y="12" width="4" height="4" rx="0.75"/><rect x="12" y="12" width="4" height="4" rx="0.75"/>
+    </g>
+  </symbol>
+  <symbol id="dg-word" viewBox="0 0 157 48">
+    <g fill="none" stroke="currentColor" stroke-width="3.4">
+      <circle cx="10" cy="26" r="8.3"/><path d="M18.3 8V36"/>
+      <circle cx="33.5" cy="26" r="8.3"/>
+      <path d="M62.87 20.13A8.3 8.3 0 1 0 62.87 31.87"/>
+      <circle cx="77.6" cy="26" r="8.3"/><path d="M85.9 16V36A8.3 8.3 0 0 1 71.73 41.87"/>
+      <path d="M92.8 36V16M92.8 26A8.3 8.3 0 0 1 101.1 17.7H103.5"/>
+      <circle cx="116" cy="26" r="8.3"/><path d="M124.3 16V36"/>
+      <path d="M131.2 16V36"/>
+      <path d="M138.1 36V16M138.1 26A8.3 8.3 0 0 1 154.7 26V36"/>
+    </g>
+    <rect x="129.2" y="8" width="4" height="4" rx="0.6" style="fill: var(--logo-accent, currentColor)"/>
+  </symbol>
+  <symbol id="i-summary" viewBox="0 0 20 20"><path d="M4 16.5V10M10 16.5V3.5M16 16.5V7.5"/></symbol>
+  <symbol id="i-question" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M7.9 7.9a2.2 2.2 0 1 1 3 2c-.6.3-.9.7-.9 1.3v.4M10 14.2v.1"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 20 20"><path d="M10 3l7.5 4L10 11 2.5 7z"/><path d="M2.5 10.5L10 14.5l7.5-4M2.5 14L10 18l7.5-4"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 20 20"><path d="M5 2.5h6.5L15.5 6.5v11H5z"/><path d="M11.5 2.5v4h4"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 20 20"><path d="M4 10h12M11.5 5.5L16 10l-4.5 4.5"/></symbol>
+  <symbol id="i-chev-r" viewBox="0 0 20 20"><path d="M8 5l5 5-5 5"/></symbol>
+  <symbol id="i-updown" viewBox="0 0 20 20"><path d="M7 8l3-3 3 3M7 12l3 3 3-3"/></symbol>
+  <symbol id="i-check" viewBox="0 0 20 20"><path d="M4.5 10.5l3.5 3.5 7.5-8"/></symbol>
+  <symbol id="i-x" viewBox="0 0 20 20"><path d="M6 6l8 8M14 6l-8 8"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 20 20"><path d="M10 4.5v11M4.5 10h11"/></symbol>
+  <symbol id="i-bed" viewBox="0 0 20 20"><path d="M2.5 15.5V4.5M2.5 12h15v3.5M17.5 12V10a2.5 2.5 0 0 0-2.5-2.5H9V12"/><circle cx="5.75" cy="9.25" r="1.25"/></symbol>
+  <symbol id="i-fork" viewBox="0 0 20 20"><path d="M6 2.5v15M3.5 2.5V6a2.5 2.5 0 0 0 5 0V2.5M14.5 17.5v-15c-2 1-3.2 3.4-3.2 6.5h3.2"/></symbol>
+  <symbol id="i-wave" viewBox="0 0 20 20"><path d="M2.5 8c1.9 0 1.9-1.5 3.8-1.5S8.1 8 10 8s1.9-1.5 3.8-1.5S15.6 8 17.5 8M2.5 13c1.9 0 1.9-1.5 3.8-1.5S8.1 13 10 13s1.9-1.5 3.8-1.5 1.9 1.5 3.7 1.5"/></symbol>
+  <symbol id="i-leaf" viewBox="0 0 20 20"><path d="M4 16C4 9 8.5 4 16.5 3.5 16.5 11.5 11.5 16 4 16z"/><path d="M4 16l6.5-6.5"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 20 20"><path d="M10 17.5s5.5-5 5.5-9.5a5.5 5.5 0 0 0-11 0c0 4.5 5.5 9.5 5.5 9.5z"/><circle cx="10" cy="8" r="2"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 20 20"><path d="M10 2.5l6 2.5v4.5c0 4-2.6 6.8-6 8-3.4-1.2-6-4-6-8V5z"/></symbol>
+</svg>
+
+<div class="page">
+  <header class="top">
+    <svg class="lg" viewBox="0 0 201 48" role="img" aria-label="Docgrain"><use href="#dg-mark" class="lg-mark" x="0" y="4" width="32" height="32"/><use href="#dg-word" x="44" y="0" width="157" height="48"/></svg>
+    <div class="theme" role="group" aria-label="Tema">
+      <button type="button" data-theme-set="system" aria-pressed="true">Sistem</button>
+      <button type="button" data-theme-set="light" aria-pressed="false">Açık</button>
+      <button type="button" data-theme-set="dark" aria-pressed="false">Koyu</button>
+    </div>
+  </header>
+
+  <section class="intro" aria-labelledby="intro-title">
+    <span class="kicker">Marka kiti · 2026</span>
+    <h1 id="intro-title">Şirketinizin ortak hafızası, kaynağıyla birlikte.</h1>
+    <p class="lead">Docgrain bir şirketin belgelerini kaynağa bağlı koleksiyonlara dönüştürür. Bu kit logoyu, renkleri, yazıyı ve ekran dilini tek yerde toplar. Her şey aynı fikre hizmet eder: sakin bir defter, dikkat yalnızca bir cevap gerektiğinde çekilir.</p>
+    <ul class="promises">
+      <li>Her bilginin kaynağı var</li>
+      <li>Çelişki sorulur, tahmin edilmez</li>
+      <li>Sürümler saklanır</li>
+    </ul>
+  </section>
+
+  <nav class="toc" aria-label="Bölümler">
+    <a href="#logo">Logo</a><a href="#renk">Renkler</a><a href="#yazi">Yazı</a><a href="#bilesen">Bileşenler</a><a href="#ekran">Ekranlar</a>
+  </nav>
+
+  <!-- LOGO -->
+  <section class="sec" id="logo" aria-labelledby="logo-title">
+    <div class="sec-head">
+      <span class="kicker">Logo</span>
+      <h2 id="logo-title">Tanelere ayrılmış bir sayfa</h2>
+      <p>İşaret dokuz taneden oluşan bir sayfadır; sağ üst tane kıvrık köşedir. Belge, yerini bilen bilgi tanelerine ayrılır. Kelime işareti aynı kalınlıkta tek çizgiyle çizildi; i harfinin noktası da bir tanedir.</p>
+    </div>
+    <div class="logos">
+      <figure>
+        <div class="tile l"><svg class="lg" viewBox="0 0 201 48" role="img" aria-label="Docgrain, açık zeminde"><use href="#dg-mark" class="lg-mark" x="0" y="4" width="32" height="32"/><use href="#dg-word" x="44" y="0" width="157" height="48"/></svg></div>
+        <figcaption><b>Açık zemin.</b> Koyu teal işaret, mürekkep rengi kelime. <code>logo.svg</code></figcaption>
+      </figure>
+      <figure>
+        <div class="tile d"><svg class="lg" viewBox="0 0 201 48" role="img" aria-label="Docgrain, koyu zeminde"><use href="#dg-mark" class="lg-mark" x="0" y="4" width="32" height="32"/><use href="#dg-word" x="44" y="0" width="157" height="48"/></svg></div>
+        <figcaption><b>Koyu zemin.</b> Açık teal işaret, açık mürekkep. Aynı dosya koyu temada kendini değiştirir.</figcaption>
+      </figure>
+      <figure>
+        <div class="tile m"><svg class="lg" viewBox="0 0 201 48" role="img" aria-label="Docgrain, tek renk"><use href="#dg-mark" class="lg-mark" x="0" y="4" width="32" height="32"/><use href="#dg-word" x="44" y="0" width="157" height="48"/></svg></div>
+        <figcaption><b>Tek renk.</b> Baskı, damga, belge altbilgisi. <code>logo-mono.svg</code> metin rengini alır.</figcaption>
+      </figure>
+      <figure>
+        <div class="tile sizes">
+          <div class="sizes-row">
+            <div><svg width="16" height="16" aria-hidden="true"><use href="#dg-fav"/></svg><span>16</span></div>
+            <div><svg width="20" height="20" aria-hidden="true"><use href="#dg-fav"/></svg><span>20</span></div>
+            <div><svg width="24" height="24" aria-hidden="true"><use href="#dg-mark"/></svg><span>24</span></div>
+            <div><svg width="32" height="32" aria-hidden="true"><use href="#dg-mark"/></svg><span>32</span></div>
+            <div><svg width="56" height="56" aria-hidden="true"><use href="#dg-mark"/></svg><span>56</span></div>
+          </div>
+        </div>
+        <figcaption><b>İşaret tek başına.</b> 20 px ve altında piksel ızgarasına oturan <code>favicon.svg</code>, üstünde <code>logo-mark.svg</code>.</figcaption>
+      </figure>
+      <figure>
+        <div class="tile build">
+          <svg viewBox="-2 -2 36 36" aria-hidden="true">
+            <g class="grid">
+              <line x1="0" y1="-2" x2="0" y2="34"/><line x1="8" y1="-2" x2="8" y2="34"/><line x1="12" y1="-2" x2="12" y2="34"/><line x1="20" y1="-2" x2="20" y2="34"/><line x1="24" y1="-2" x2="24" y2="34"/><line x1="32" y1="-2" x2="32" y2="34"/>
+              <line y1="0" x1="-2" y2="0" x2="34"/><line y1="8" x1="-2" y2="8" x2="34"/><line y1="12" x1="-2" y2="12" x2="34"/><line y1="20" x1="-2" y2="20" x2="34"/><line y1="24" x1="-2" y2="24" x2="34"/><line y1="32" x1="-2" y2="32" x2="34"/>
+              <line x1="24" y1="0" x2="32" y2="8"/>
+            </g>
+            <g class="shape">
+              <rect x="0" y="0" width="8" height="8" rx="1.5"/><rect x="12" y="0" width="8" height="8" rx="1.5"/>
+              <rect x="0" y="12" width="8" height="8" rx="1.5"/><rect x="12" y="12" width="8" height="8" rx="1.5"/><rect x="24" y="12" width="8" height="8" rx="1.5"/>
+              <rect x="0" y="24" width="8" height="8" rx="1.5"/><rect x="12" y="24" width="8" height="8" rx="1.5"/><rect x="24" y="24" width="8" height="8" rx="1.5"/>
+            </g>
+            <path class="shape fold" d="M24 0L32 8H25.5A1.5 1.5 0 0 1 24 6.5Z"/>
+          </svg>
+          <p>8 · 4 · 8 · 4 · 8 &nbsp;/&nbsp; köşe yarıçapı 1,5</p>
+        </div>
+        <figcaption><b>Yapı.</b> 32 birimlik ızgara. Kıvrık köşe sağ üst tanenin alt yarısıdır.</figcaption>
+      </figure>
+    </div>
+    <div class="rules">
+      <div class="stack">
+        <span class="kicker">Böyle kullanın</span>
+        <ul>
+          <li>Logonun çevresinde en az bir tane genişliği (işaretin dörtte biri) boşluk bırakın.</li>
+          <li>Tam logo en az 96 px genişlikte, işaret tek başına en az 16 px olsun.</li>
+          <li>Kelime her zaman küçük harf: docgrain. Cümle içinde ürün adı Docgrain yazılır.</li>
+          <li>Kenar çubuğunda tam logo, sekme ve uygulama ikonunda yalnızca işaret.</li>
+        </ul>
+      </div>
+      <div class="stack dont">
+        <span class="kicker">Yapmayın</span>
+        <ul>
+          <li>Gradyan, gölge, kontur ya da parıltı eklemeyin.</li>
+          <li>Kıvrık köşeyi başka köşeye taşımayın, işareti döndürmeyin.</li>
+          <li>i'nin tanesini ayrı bir renge boyamayın; işaretle aynı renktir.</li>
+          <li>İşareti renkli kutu içine koymayın; zemin her zaman sayfanın zeminidir.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- COLOR -->
+  <section class="sec" id="renk" aria-labelledby="color-title">
+    <div class="sec-head">
+      <span class="kicker">Renkler</span>
+      <h2 id="color-title">Tek vurgu, durum için üç renk</h2>
+      <p>Nötrler hafifçe teal'e çeker; böylece gri sıradan görünmez. Koyu teal markanın ve birincil eylemin rengidir. Yeşil, amber ve kırmızı yalnızca durum anlatır, süs için kullanılmaz. Her kartta açık ve koyu tema değeri yazılıdır; kutu o an seçili temayı gösterir.</p>
+    </div>
+
+    <div class="stack">
+      <div class="sub-head"><h3>Vurgu skalası</h3><p>Ham değerler; bileşenlerde rol adlarını kullanın.</p></div>
+      <div class="scale" role="list">
+        <div role="listitem" style="--c: var(--teal-50)"><b>50</b>#f2f7f7</div>
+        <div role="listitem" style="--c: var(--teal-100)"><b>100</b>#eaf2f2</div>
+        <div role="listitem" style="--c: var(--teal-200)"><b>200</b>#cfe1e2</div>
+        <div role="listitem" style="--c: var(--teal-300)"><b>300</b>#9fc2c5</div>
+        <div role="listitem" class="dk" style="--c: var(--teal-400)"><b>400</b>#6a9fa5</div>
+        <div role="listitem" class="dk" style="--c: var(--teal-500)"><b>500</b>#3a7a82</div>
+        <div role="listitem" class="dk" style="--c: var(--teal-600)"><b>600 · marka</b>#245d65</div>
+        <div role="listitem" class="dk" style="--c: var(--teal-700)"><b>700</b>#1c4b52</div>
+        <div role="listitem" class="dk" style="--c: var(--teal-900)"><b>900</b>#0f2c30</div>
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="sub-head"><h3>Yüzeyler ve mürekkep</h3></div>
+      <div class="swatches">
+        <div class="sw"><i style="--c: var(--ground)"></i><div><b>--ground</b><span>Uygulama zemini</span><small>#fafbf9 · #0e1514</small></div></div>
+        <div class="sw"><i style="--c: var(--paper)"></i><div><b>--paper</b><span>Kart, kenar çubuğu, giriş alanı</span><small>#ffffff · #141c1b</small></div></div>
+        <div class="sw"><i style="--c: var(--sheet)"></i><div><b>--sheet</b><span>Üzerine gelme, sessiz dolgu</span><small>#f5f7f6 · #18211f</small></div></div>
+        <div class="sw"><i style="--c: var(--sunken)"></i><div><b>--sunken</b><span>İlerleme yolu, boş çubuk</span><small>#eef2f0 · #0b1110</small></div></div>
+        <div class="sw"><i style="--c: var(--ink)"></i><div><b>--ink</b><span>Başlık ve değer</span><small>#223333 · #e2eae7</small></div></div>
+        <div class="sw"><i style="--c: var(--ink2)"></i><div><b>--ink2</b><span>Gövde metni</span><small>#445554 · #c0ccc9</small></div></div>
+        <div class="sw"><i style="--c: var(--muted)"></i><div><b>--muted</b><span>İkincil metin</span><small>#647573 · #92a29f</small></div></div>
+        <div class="sw"><i style="--c: var(--line)"></i><div><b>--line</b><span>Kart ve alan kenarı</span><small>#dce3e0 · #283331</small></div></div>
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="sub-head"><h3>Vurgu ve durum</h3></div>
+      <div class="swatches">
+        <div class="sw"><i style="--c: var(--accent)"></i><div><b>--accent</b><span>Birincil eylem, seçili yer, bağlantı</span><small>#245d65 · #79b7bd</small></div></div>
+        <div class="sw"><i style="--c: var(--accent-soft)"></i><div><b>--accent-soft</b><span>Seçili menü, seçilen kaynak</span><small>#eaf2f2 · #17302f</small></div></div>
+        <div class="sw"><i style="--c: var(--mark)"></i><div><b>--mark</b><span>Alıntıda değerin geçtiği yer</span><small>#dcecea · #1f3d3d</small></div></div>
+        <div class="sw"><i style="--c: var(--ok)"></i><div><b>--ok</b><span>Onaylandı, kaynağı var</span><small>#327251 · #7cc39a</small></div></div>
+        <div class="sw"><i style="--c: var(--warn)"></i><div><b>--warn</b><span>Kaynaklar farklı söylüyor, inceleme bekliyor</span><small>#956316 · #e2b45f</small></div></div>
+        <div class="sw"><i style="--c: var(--danger)"></i><div><b>--danger</b><span>Reddedildi, hata</span><small>#a5423a · #ec8f86</small></div></div>
+        <div class="sw"><i style="--c: var(--ok-soft)"></i><div><b>--ok-soft</b><span>Onay hapı zemini</span><small>#eff6f1 · #142a1f</small></div></div>
+        <div class="sw"><i style="--c: var(--warn-soft)"></i><div><b>--warn-soft</b><span>Soru rozeti, bekleyen hap</span><small>#fff5df · #2b2313</small></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TYPE -->
+  <section class="sec" id="yazi" aria-labelledby="type-title">
+    <div class="sec-head">
+      <span class="kicker">Yazı</span>
+      <h2 id="type-title">Arayüz konuşur, belge alıntılanır</h2>
+      <p>Üç yazı ailesinin üç ayrı işi var. Serif yalnızca belgeden gelen metinde kullanılır; okuyan kişi hangi cümlenin belgeye, hangisinin Docgrain'e ait olduğunu yazıdan anlar.</p>
+    </div>
+    <div class="specimens">
+      <div class="spec">
+        <span class="kicker">Arayüz · Instrument Sans</span>
+        <div class="s-ui">Sizden bir cevap bekliyor</div>
+        <div class="weights"><span style="font-weight:400">Normal 400</span><span style="font-weight:500">Orta 500</span><span style="font-weight:600">Yarı kalın 600</span></div>
+        <p>Başlık, düğme, menü, metrik. Başlıklarda hafif sıkı aralık, gövdede 14 px.</p>
+      </div>
+      <div class="spec">
+        <span class="kicker">Belge · Source Serif 4</span>
+        <div class="s-doc">“Aile odalarımız ana binanın arka cephesindedir ve bahçe manzaralıdır.”</div>
+        <p>Yalnızca alıntılar ve belgeden aynen gelen metin. Asla başlık ya da düğme değil.</p>
+      </div>
+      <div class="spec">
+        <span class="kicker">Veri · JetBrains Mono</span>
+        <div class="s-mono">satır 118 · sayfa 2 · B14<br>factsheet-2026.pdf<br>GET /v1/workspaces/…/summary</div>
+        <p>Konum, dosya adı ayrıntısı, sayaç, API. Küçük boyda ve soluk renkte kalır.</p>
+      </div>
+    </div>
+    <div class="typescale">
+      <div class="ts-row"><code>--text-3xl · 36</code><div style="font-size:36px;font-weight:500;letter-spacing:-0.04em;line-height:1.15">69 kayıt</div></div>
+      <div class="ts-row"><code>--text-2xl · 30</code><div style="font-size:30px;font-weight:600;letter-spacing:-0.03em;line-height:1.2">Mavikoy Otelleri</div></div>
+      <div class="ts-row"><code>--text-xl · 23</code><div style="font-size:23px;font-weight:600;letter-spacing:-0.022em;line-height:1.3">Aile Odası'nın manzarası hangisi?</div></div>
+      <div class="ts-row"><code>--text-lg · 18</code><div style="font-size:18px;font-weight:600;letter-spacing:-0.02em">Koleksiyonlar</div></div>
+      <div class="ts-row"><code>--text-md · 16</code><div style="font-size:16px;font-weight:600">Spa hizmetleri</div></div>
+      <div class="ts-row"><code>--text-base · 14</code><div style="font-size:14px;color:var(--ink2)">Doğru bilgiyi seçin; koleksiyonunuz buna göre güncellenir.</div></div>
+      <div class="ts-row"><code>--text-xs · 12</code><div style="font-size:12px;color:var(--muted)">5 belgeden derlendi · son güncelleme 6 Ekim 2026, 14:20</div></div>
+      <div class="ts-row"><code>--text-2xs · 11</code><div style="font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--faint)">Şirket</div></div>
+    </div>
+  </section>
+
+  <!-- COMPONENTS -->
+  <section class="sec" id="bilesen" aria-labelledby="comp-title">
+    <div class="sec-head">
+      <span class="kicker">Bileşenler</span>
+      <h2 id="comp-title">Az parça, her biri bir iş görür</h2>
+      <p>Kartlar ince çizgiyle ayrılır, gölge almaz. Durum hem renkle hem biçimle anlatılır: halka, nokta, tik, çarpı.</p>
+    </div>
+
+    <div class="comp-grid">
+      <div class="stack">
+        <span class="kicker">İnceleme durumu</span>
+        <div class="stage">
+          <span class="pill oneri"><span class="pd"></span>Öneri</span>
+          <span class="pill bekliyor"><span class="pd"></span>İnceleme bekliyor</span>
+          <span class="pill onay"><svg class="ic"><use href="#i-check"/></svg>Onaylandı</span>
+          <span class="pill red"><svg class="ic"><use href="#i-x"/></svg>Reddedildi</span>
+        </div>
+        <p class="caption">Öneri: Docgrain'in çıkardığı, kimsenin bakmadığı bilgi. İnceleme bekliyor: bir insanın kararı gerekiyor. Onaylandı ve Reddedildi: karar verildi, kim ve ne zaman kayıtlı.</p>
+      </div>
+
+      <div class="stack">
+        <span class="kicker">Düğmeler</span>
+        <div class="stage">
+          <button type="button" class="btn pri">Belge ekle</button>
+          <button type="button" class="btn">Bu belge güncel</button>
+          <button type="button" class="btn quiet">Tüm sorular <svg class="ic"><use href="#i-arrow"/></svg></button>
+          <button type="button" class="btn quiet mut">Sonra sor</button>
+          <button type="button" class="btn sm">Küçük</button>
+          <button type="button" class="btn is-focus">Klavye odağı</button>
+          <button type="button" class="btn pri" disabled>Kaydediliyor</button>
+        </div>
+        <p class="caption">Bir ekranda tek birincil düğme. Yan yana seçenekler ikincil düğmedir; seçilen seçenek vurgu rengini alır.</p>
+      </div>
+
+      <div class="stack">
+        <span class="kicker">Metrik</span>
+        <div class="stage">
+          <div class="metric warn"><span class="lb">Çelişki</span><span class="vl">5</span><span class="nt">Kaynaklar farklı söylüyor</span></div>
+          <div class="metric"><span class="lb">Onaylı</span><span class="vl">65<small>%</small></span><div class="meter" style="--v: 65%"><i></i></div><span class="nt">69 kayıttan 45'i</span></div>
+        </div>
+        <p class="caption">Etiket, sayı, tek satır açıklama. Sayı yalnızca durum anlatıyorsa renk alır (çelişki amber, sıfır kaynaksız yeşil).</p>
+      </div>
+
+      <div class="stack">
+        <span class="kicker">Koleksiyon kartı</span>
+        <div class="stage">
+          <button type="button" class="ccard">
+            <span class="ct"><span class="ico"><svg class="ic"><use href="#i-bed"/></svg></span><svg class="ic go"><use href="#i-chev-r"/></svg></span>
+            <h3>Odalar</h3>
+            <p>Oda tipleri, kapasite, metrekare, manzara</p>
+            <span class="bar" aria-hidden="true"><i class="o" style="width:64%"></i><i class="w" style="width:14%"></i></span>
+            <span class="ft"><span><b>14</b> kayıt</span><span><b>9</b> onaylı</span><span class="q">2 soru</span></span>
+          </button>
+        </div>
+        <p class="caption">Çubuk: yeşil onaylı, amber soru bekleyen, boş kısım öneri. Soru yoksa amber kısım ve "soru" yazısı görünmez.</p>
+      </div>
+
+      <div class="stack">
+        <span class="kicker">Kaynak alıntısı</span>
+        <div class="stage col">
+          <div class="says"><span class="doc"><svg class="ic"><use href="#i-doc"/></svg>talimatlar.txt</span>diyor ki<span class="when">3 Şub 2026</span></div>
+          <div class="evidence">
+            <blockquote class="q">“Defne Restoran'da akşam yemeği <mark>19.00 ile 21.30</mark> saatleri arasında açık büfe olarak servis edilir.”</blockquote>
+            <span class="loc">satır 42</span>
+          </div>
+        </div>
+        <p class="caption">Markanın imzası. Değerin belgede geçtiği yer fosforlu kalemle çizilmiş gibi işaretlenir; konum her zaman altında durur.</p>
+      </div>
+
+      <div class="stack">
+        <span class="kicker">Boş durumlar</span>
+        <div class="stage col">
+          <div class="empty"><span class="ei"><svg class="ic"><use href="#i-check"/></svg></span><div><h4>Bütün sorular cevaplandı</h4><p>Şu anda sizden cevap bekleyen bir soru yok. Yeni bir belge farklı bir şey söylerse burada sorarız.</p></div></div>
+          <div class="empty start"><span class="ei"><svg class="ic"><use href="#i-layers"/></svg></span><div><h4>Henüz koleksiyon yok</h4><p>İlk belgenizi ekleyin; odalar, restoranlar ve kurallar burada koleksiyon olarak toplanır.</p><button type="button" class="btn sm">Belge ekle</button></div></div>
+        </div>
+        <p class="caption">Boş durum ne olduğunu ve sıradaki adımı söyler. İllüstrasyon yok, tek ikon.</p>
+      </div>
+    </div>
+
+    <div class="comp-split">
+      <div class="stack">
+        <span class="kicker">Kenar çubuğu</span>
+        <div class="stage" style="justify-content:center">
+          <aside class="side" aria-label="Örnek kenar çubuğu">
+            <button type="button" class="brand" aria-label="Özete git"><svg class="lg" viewBox="0 0 201 48" aria-hidden="true"><use href="#dg-mark" class="lg-mark" x="0" y="4" width="32" height="32"/><use href="#dg-word" x="44" y="0" width="157" height="48"/></svg></button>
+            <div class="ws"><span class="kicker">Şirket</span><button type="button" class="ws-btn"><span class="av">M</span><span class="nm"><b>Mavikoy Otelleri</b><small>5 belge</small></span><svg class="ic"><use href="#i-updown"/></svg></button></div>
+            <nav class="nav" aria-label="Örnek menü">
+              <button type="button" class="ni" aria-current="page"><svg class="ic"><use href="#i-summary"/></svg>Özet</button>
+              <button type="button" class="ni"><svg class="ic"><use href="#i-question"/></svg>Sorular<span class="badge">5</span></button>
+              <button type="button" class="ni"><svg class="ic"><use href="#i-layers"/></svg>Koleksiyonlar</button>
+              <button type="button" class="ni"><svg class="ic"><use href="#i-doc"/></svg>Belgeler</button>
+            </nav>
+            <div class="side-foot"><label class="toggle"><input type="checkbox" id="dev-demo">Geliştirici modu</label><span>Belgeden bilgiye. Kaynağı her zaman yanında.</span></div>
+          </aside>
+        </div>
+      </div>
+      <div class="stack">
+        <span class="kicker">Soru kartı</span>
+        <article class="qcard" aria-labelledby="q-demo-title" data-all="">
+          <div class="qhead">
+            <p class="conflict"><span class="pd"></span>Kaynaklar farklı söylüyor <span class="col">· Restoranlar ve barlar</span></p>
+            <h3 id="q-demo-title">Defne Restoran'da akşam yemeği saat kaçta?</h3>
+            <p>İki belge farklı saat veriyor. Güncel olanı seçin.</p>
+          </div>
+          <div class="qgroups">
+            <section class="qsrc" data-value="19:00 – 21:30" data-doc="talimatlar.txt">
+              <div class="says"><span class="doc"><svg class="ic"><use href="#i-doc"/></svg>talimatlar.txt</span>diyor ki<span class="when">3 Şub 2026</span></div>
+              <div class="val">19:00 – 21:30</div>
+              <div class="evs"><div class="evidence"><blockquote class="q">“Defne Restoran'da akşam yemeği <mark>19.00 ile 21.30</mark> saatleri arasında açık büfe olarak servis edilir.”</blockquote><span class="loc">satır 42</span></div></div>
+              <button type="button" class="btn" data-act="pick">Bu belge güncel</button>
+            </section>
+            <section class="qsrc" data-value="18:30 – 21:00" data-doc="factsheet-2026.pdf">
+              <div class="says"><span class="doc"><svg class="ic"><use href="#i-doc"/></svg>factsheet-2026.pdf</span>diyor ki<span class="when">12 Mar 2026</span></div>
+              <div class="val">18:30 – 21:00</div>
+              <div class="evs"><div class="evidence"><blockquote class="q">“Main restaurant Defne: dinner <mark>18:30–21:00</mark>, open buffet.”</blockquote><span class="loc">sayfa 2</span></div></div>
+              <button type="button" class="btn" data-act="pick">Bu belge güncel</button>
+            </section>
+          </div>
+          <div class="qfix" hidden>
+            <label for="fix-demo">Doğru değer</label>
+            <form class="row" data-fix><input class="field" id="fix-demo" placeholder="Örneğin 19:00 – 22:00" required><button type="submit" class="btn pri">Kaydet</button></form>
+          </div>
+          <footer class="qfoot">
+            <button type="button" class="btn quiet" data-act="fix" aria-expanded="false" aria-controls="fix-demo">İkisi de yanlış, düzelt</button>
+            <button type="button" class="btn quiet mut" data-act="later">Sonra sor</button>
+            <span class="count">4 / 7</span>
+          </footer>
+          <div class="qnote" hidden role="status"><span></span><button type="button" class="btn quiet sm" data-act="undo">Geri al</button></div>
+        </article>
+        <p class="caption">Seçenekler değere göre değil belgeye göre gruplanır: her grup "dosya diyor ki" ile başlar, belgenin tarihini gösterir ve kendi alıntılarını taşır. Bu alan tek değer aldığı için "Hepsi doğru" görünmez; liste alanlarında görünür (aşağıdaki Özet ekranı).</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCREENS -->
+  <section class="sec" id="ekran" aria-labelledby="screen-title">
+    <div class="sec-head">
+      <span class="kicker">Ekranlar</span>
+      <h2 id="screen-title">Özet ve Sorular</h2>
+      <p>Özet, şirketin durumunu tek bakışta verir ve sıradaki soruyu öne koyar. Sorular ekranı aynı kartı bir liste ile açar. Üstteki tema düğmesiyle iki ekranı koyu temada da görebilirsiniz; dar ekranda kenar çubuğu üst menüye dönüşür.</p>
+    </div>
+
+    <div class="screens">
+      <div class="screen-wrap">
+        <span class="kicker">Özet</span>
+        <div class="screen">
+          <div class="app">
+            <aside class="side" aria-label="Özet ekranı kenar çubuğu">
+              <button type="button" class="brand" aria-label="Özete git"><svg class="lg" viewBox="0 0 201 48" aria-hidden="true"><use href="#dg-mark" class="lg-mark" x="0" y="4" width="32" height="32"/><use href="#dg-word" x="44" y="0" width="157" height="48"/></svg></button>
+              <div class="ws"><span class="kicker">Şirket</span><button type="button" class="ws-btn"><span class="av">M</span><span class="nm"><b>Mavikoy Otelleri</b><small>5 belge</small></span><svg class="ic"><use href="#i-updown"/></svg></button></div>
+              <nav class="nav" aria-label="Özet ekranı menüsü">
+                <button type="button" class="ni" aria-current="page"><svg class="ic"><use href="#i-summary"/></svg>Özet</button>
+                <button type="button" class="ni"><svg class="ic"><use href="#i-question"/></svg>Sorular<span class="badge">5</span></button>
+                <button type="button" class="ni"><svg class="ic"><use href="#i-layers"/></svg>Koleksiyonlar</button>
+                <button type="button" class="ni"><svg class="ic"><use href="#i-doc"/></svg>Belgeler</button>
+              </nav>
+              <div class="side-foot"><label class="toggle"><input type="checkbox" id="dev-a">Geliştirici modu</label><span>Belgeden bilgiye. Kaynağı her zaman yanında.</span></div>
+            </aside>
+            <div class="main">
+              <header class="ph">
+                <div><span class="eyebrow">Şirket özeti</span><h2>Mavikoy Otelleri</h2><p>5 belgeden derlendi · son güncelleme 6 Ekim 2026, 14:20</p></div>
+                <button type="button" class="btn"><svg class="ic"><use href="#i-plus"/></svg>Belge ekle</button>
+              </header>
+              <div class="metrics" aria-label="Özet sayıları">
+                <div class="metric"><span class="lb">Kayıt</span><span class="vl">69</span><span class="nt">6 koleksiyonda</span></div>
+                <div class="metric ok"><span class="lb">Kaynaksız bilgi</span><span class="vl">0</span><span class="nt">Her bilginin kaynağı var</span></div>
+                <div class="metric warn"><span class="lb">Çelişki</span><span class="vl">5</span><span class="nt">Kaynaklar farklı söylüyor</span></div>
+                <div class="metric"><span class="lb">Onaylı</span><span class="vl">65<small>%</small></span><div class="meter" style="--v: 65%"><i></i></div><span class="nt">69 kayıttan 45'i</span></div>
+              </div>
+              <section class="blk" aria-labelledby="wait-title">
+                <div class="sh"><h3 id="wait-title">Sizden bir cevap bekliyor</h3><button type="button" class="btn quiet">Tüm sorular <svg class="ic"><use href="#i-arrow"/></svg></button></div>
+                <article class="qcard" aria-labelledby="q-a-title" data-all="İki manzara da kaydedildi; Aile Odası için liste olarak tutulacak.">
+                  <div class="qhead">
+                    <p class="conflict"><span class="pd"></span>Kaynaklar farklı söylüyor <span class="col">· Odalar</span></p>
+                    <h3 id="q-a-title">Aile Odası'nın manzarası hangisi?</h3>
+                    <p>İki belge farklı manzara yazıyor. Güncel belgeyi seçin; iki tip oda da varsa "Hepsi doğru" deyin.</p>
+                  </div>
+                  <div class="qgroups">
+                    <section class="qsrc" data-value="Bahçe manzarası" data-doc="talimatlar.txt">
+                      <div class="says"><span class="doc"><svg class="ic"><use href="#i-doc"/></svg>talimatlar.txt</span>diyor ki<span class="when">3 Şub 2026</span></div>
+                      <div class="val">Bahçe manzarası</div>
+                      <div class="evs"><div class="evidence"><blockquote class="q">“Aile odalarımız ana binanın arka cephesindedir ve <mark>bahçe manzaralıdır</mark>.”</blockquote><span class="loc">satır 117</span></div></div>
+                      <button type="button" class="btn" data-act="pick">Bu belge güncel</button>
+                    </section>
+                    <section class="qsrc" data-value="Deniz manzarası" data-doc="factsheet-2026.pdf">
+                      <div class="says"><span class="doc"><svg class="ic"><use href="#i-doc"/></svg>factsheet-2026.pdf</span>diyor ki<span class="when">12 Mar 2026</span></div>
+                      <div class="val">Deniz manzarası</div>
+                      <div class="evs"><div class="evidence"><blockquote class="q">“Family Room · 42 m² · balcony with <mark>sea view</mark>”</blockquote><span class="loc">sayfa 2</span></div></div>
+                      <button type="button" class="btn" data-act="pick">Bu belge güncel</button>
+                    </section>
+                  </div>
+                  <div class="qfix" hidden>
+                    <label for="fix-a">Doğru değer</label>
+                    <form class="row" data-fix><input class="field" id="fix-a" placeholder="Örneğin Kısmi deniz manzarası" required><button type="submit" class="btn pri">Kaydet</button></form>
+                  </div>
+                  <footer class="qfoot">
+                    <button type="button" class="btn" data-act="all">Hepsi doğru</button>
+                    <button type="button" class="btn quiet" data-act="fix" aria-expanded="false" aria-controls="fix-a">İkisi de yanlış, düzelt</button>
+                    <button type="button" class="btn quiet mut" data-act="later">Sonra sor</button>
+                    <span class="count">3 / 7</span>
+                  </footer>
+                  <div class="qnote" hidden role="status"><span></span><button type="button" class="btn quiet sm" data-act="undo">Geri al</button></div>
+                </article>
+              </section>
+              <section class="blk" aria-labelledby="col-title">
+                <div class="sh"><h3 id="col-title">Koleksiyonlar</h3><button type="button" class="btn quiet">Tümünü gör <svg class="ic"><use href="#i-arrow"/></svg></button></div>
+                <div class="cgrid">
+                  <button type="button" class="ccard"><span class="ct"><span class="ico"><svg class="ic"><use href="#i-bed"/></svg></span><svg class="ic go"><use href="#i-chev-r"/></svg></span><h3>Odalar</h3><p>Oda tipleri, kapasite, metrekare, manzara</p><span class="bar" aria-hidden="true"><i class="o" style="width:64%"></i><i class="w" style="width:14%"></i></span><span class="ft"><span><b>14</b> kayıt</span><span><b>9</b> onaylı</span><span class="q">2 soru</span></span></button>
+                  <button type="button" class="ccard"><span class="ct"><span class="ico"><svg class="ic"><use href="#i-fork"/></svg></span><svg class="ic go"><use href="#i-chev-r"/></svg></span><h3>Restoranlar ve barlar</h3><p>Açılış saatleri, mutfak, rezervasyon</p><span class="bar" aria-hidden="true"><i class="o" style="width:67%"></i><i class="w" style="width:11%"></i></span><span class="ft"><span><b>9</b> kayıt</span><span><b>6</b> onaylı</span><span class="q">1 soru</span></span></button>
+                  <button type="button" class="ccard"><span class="ct"><span class="ico"><svg class="ic"><use href="#i-wave"/></svg></span><svg class="ic go"><use href="#i-chev-r"/></svg></span><h3>Havuzlar</h3><p>Açık ve kapalı havuzlar, çocuk havuzu, saatler</p><span class="bar" aria-hidden="true"><i class="o" style="width:50%"></i><i class="w" style="width:17%"></i></span><span class="ft"><span><b>6</b> kayıt</span><span><b>3</b> onaylı</span><span class="q">1 soru</span></span></button>
+                  <button type="button" class="ccard"><span class="ct"><span class="ico"><svg class="ic"><use href="#i-leaf"/></svg></span><svg class="ic go"><use href="#i-chev-r"/></svg></span><h3>Spa hizmetleri</h3><p>Masaj, hamam, süreler ve fiyatlar</p><span class="bar" aria-hidden="true"><i class="o" style="width:57%"></i><i class="w" style="width:5%"></i></span><span class="ft"><span><b>21</b> kayıt</span><span><b>12</b> onaylı</span><span class="q">1 soru</span></span></button>
+                  <button type="button" class="ccard"><span class="ct"><span class="ico"><svg class="ic"><use href="#i-pin"/></svg></span><svg class="ic go"><use href="#i-chev-r"/></svg></span><h3>Konum ve ulaşım</h3><p>Havalimanı, transfer, yakın yerler</p><span class="bar" aria-hidden="true"><i class="o" style="width:100%"></i></span><span class="ft"><span><b>8</b> kayıt</span><span><b>8</b> onaylı</span></span></button>
+                  <button type="button" class="ccard"><span class="ct"><span class="ico"><svg class="ic"><use href="#i-shield"/></svg></span><svg class="ic go"><use href="#i-chev-r"/></svg></span><h3>Politikalar</h3><p>Giriş ve çıkış, evcil hayvan, iptal</p><span class="bar" aria-hidden="true"><i class="o" style="width:64%"></i></span><span class="ft"><span><b>11</b> kayıt</span><span><b>7</b> onaylı</span></span></button>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="screen-wrap">
+        <span class="kicker">Sorular</span>
+        <div class="screen">
+          <div class="app">
+            <aside class="side" aria-label="Sorular ekranı kenar çubuğu">
+              <button type="button" class="brand" aria-label="Özete git"><svg class="lg" viewBox="0 0 201 48" aria-hidden="true"><use href="#dg-mark" class="lg-mark" x="0" y="4" width="32" height="32"/><use href="#dg-word" x="44" y="0" width="157" height="48"/></svg></button>
+              <div class="ws"><span class="kicker">Şirket</span><button type="button" class="ws-btn"><span class="av">M</span><span class="nm"><b>Mavikoy Otelleri</b><small>5 belge</small></span><svg class="ic"><use href="#i-updown"/></svg></button></div>
+              <nav class="nav" aria-label="Sorular ekranı menüsü">
+                <button type="button" class="ni"><svg class="ic"><use href="#i-summary"/></svg>Özet</button>
+                <button type="button" class="ni" aria-current="page"><svg class="ic"><use href="#i-question"/></svg>Sorular<span class="badge">5</span></button>
+                <button type="button" class="ni"><svg class="ic"><use href="#i-layers"/></svg>Koleksiyonlar</button>
+                <button type="button" class="ni"><svg class="ic"><use href="#i-doc"/></svg>Belgeler</button>
+              </nav>
+              <div class="side-foot"><label class="toggle"><input type="checkbox" id="dev-b">Geliştirici modu</label><span>Belgeden bilgiye. Kaynağı her zaman yanında.</span></div>
+            </aside>
+            <div class="main">
+              <header class="ph">
+                <div><h2>Sorular</h2><p>Belgeleriniz bazı konularda farklı şeyler söylüyor. Doğru olanı seçin; koleksiyonlarınız buna göre güncellenir.</p></div>
+              </header>
+              <div class="toolbar">
+                <div class="progress"><span><b>7 sorudan 2'si</b> cevaplandı</span><span class="track" aria-hidden="true"><i></i></span></div>
+                <label class="filter" for="col-filter">Koleksiyon
+                  <select id="col-filter"><option>Tümü</option><option>Odalar</option><option>Restoranlar ve barlar</option><option>Havuzlar</option><option>Spa hizmetleri</option></select>
+                </label>
+              </div>
+              <div class="qlayout">
+                <ul class="qlist" aria-label="Soru listesi">
+                  <li><button type="button" class="qi"><span class="st"></span><span class="t">Aile Odası'nın manzarası</span><span class="m">Odalar</span></button></li>
+                  <li><button type="button" class="qi" aria-current="true"><span class="st"></span><span class="t">Aile Odası'nda kaç kişi kalabilir?</span><span class="m">Odalar</span></button></li>
+                  <li><button type="button" class="qi"><span class="st"></span><span class="t">Defne Restoran akşam yemeği saati</span><span class="m">Restoranlar ve barlar</span></button></li>
+                  <li><button type="button" class="qi"><span class="st"></span><span class="t">Çocuk havuzunun açılış saati</span><span class="m">Havuzlar</span></button></li>
+                  <li><button type="button" class="qi"><span class="st later"></span><span class="t">Hamam kullanımı ücretli mi?</span><span class="m">Spa hizmetleri · sonraya bırakıldı</span></button></li>
+                  <li><button type="button" class="qi"><span class="st done"></span><span class="t">Evcil hayvan kabul ediliyor mu?</span><span class="m">Politikalar <span class="pill onay"><svg class="ic"><use href="#i-check"/></svg>Onaylandı</span></span></button></li>
+                  <li><button type="button" class="qi"><span class="st done"></span><span class="t">Havalimanına uzaklık</span><span class="m">Konum ve ulaşım <span class="pill onay"><svg class="ic"><use href="#i-check"/></svg>Onaylandı</span></span></button></li>
+                </ul>
+                <article class="qcard" aria-labelledby="q-b-title" data-all="">
+                  <div class="qhead">
+                    <p class="conflict"><span class="pd"></span>Kaynaklar farklı söylüyor <span class="col">· Odalar</span></p>
+                    <h3 id="q-b-title">Aile Odası'nda en fazla kaç kişi kalabilir?</h3>
+                    <p>Üç belge iki farklı sayı veriyor. Güncel belgeyi seçin.</p>
+                  </div>
+                  <div class="qgroups">
+                    <section class="qsrc" data-value="4 kişi" data-doc="talimatlar.txt">
+                      <div class="says"><span class="doc"><svg class="ic"><use href="#i-doc"/></svg>talimatlar.txt</span>diyor ki<span class="when">3 Şub 2026</span></div>
+                      <div class="val">4 kişi</div>
+                      <div class="evs"><div class="evidence"><blockquote class="q">“Aile odaları en fazla <mark>4 kişi (2 yetişkin + 2 çocuk)</mark> için uygundur.”</blockquote><span class="loc">satır 118</span></div></div>
+                      <button type="button" class="btn" data-act="pick">Bu belge güncel</button>
+                    </section>
+                    <section class="qsrc" data-value="5 kişi" data-doc="factsheet-2026.pdf">
+                      <div class="says"><span class="doc"><svg class="ic"><use href="#i-doc"/></svg>factsheet-2026.pdf</span>diyor ki<span class="when">12 Mar 2026</span></div>
+                      <div class="val">5 kişi</div>
+                      <div class="evs">
+                        <div class="evidence"><blockquote class="q">“Family Room: max. <mark>3 adults + 2 children</mark>”</blockquote><span class="loc">sayfa 2</span></div>
+                        <div class="evidence"><blockquote class="q">“Aile Odası · 42 m² · <mark>5 kişiye kadar</mark>”</blockquote><span class="loc">sayfa 4</span></div>
+                      </div>
+                      <button type="button" class="btn" data-act="pick">Bu belge güncel</button>
+                    </section>
+                    <section class="qsrc" data-value="4 kişi" data-doc="fiyat-listesi-yaz-2026.xlsx">
+                      <div class="says"><span class="doc"><svg class="ic"><use href="#i-doc"/></svg>fiyat-listesi-yaz-2026.xlsx</span>diyor ki<span class="when">2 Nis 2026</span></div>
+                      <div class="val">4 kişi</div>
+                      <div class="evs"><div class="evidence"><blockquote class="q">“Aile Odası <mark>(2+2)</mark> · kişi başı gecelik”</blockquote><span class="loc">Oda fiyatları · B14</span></div></div>
+                      <button type="button" class="btn" data-act="pick">Bu belge güncel</button>
+                    </section>
+                  </div>
+                  <div class="qfix" hidden>
+                    <label for="fix-b">Doğru değer</label>
+                    <form class="row" data-fix><input class="field" id="fix-b" placeholder="Örneğin 4 kişi" required><button type="submit" class="btn pri">Kaydet</button></form>
+                  </div>
+                  <footer class="qfoot">
+                    <button type="button" class="btn quiet" data-act="fix" aria-expanded="false" aria-controls="fix-b">Hiçbiri doğru değil, düzelt</button>
+                    <button type="button" class="btn quiet mut" data-act="later">Sonra sor</button>
+                    <span class="count">5 / 7</span>
+                  </footer>
+                  <div class="qnote" hidden role="status"><span></span><button type="button" class="btn quiet sm" data-act="undo">Geri al</button></div>
+                </article>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  var themeButtons = document.querySelectorAll("[data-theme-set]");
+  themeButtons.forEach(function (button) {
+    button.addEventListener("click", function () {
+      var value = button.getAttribute("data-theme-set");
+      if (value === "system") root.removeAttribute("data-theme"); else root.setAttribute("data-theme", value);
+      themeButtons.forEach(function (other) { other.setAttribute("aria-pressed", String(other === button)); });
+    });
+  });
+
+  document.querySelectorAll(".qcard").forEach(function (card) {
+    var groups = card.querySelectorAll(".qsrc");
+    var note = card.querySelector(".qnote");
+    var noteText = note.querySelector("span");
+    var fix = card.querySelector(".qfix");
+    var fixToggle = card.querySelector('[data-act="fix"]');
+    var actions = card.querySelectorAll('[data-act]:not([data-act="undo"]), .qfix button, .qfix input');
+
+    function lock(message, tone) {
+      actions.forEach(function (el) { el.disabled = true; });
+      fix.hidden = true;
+      if (fixToggle) fixToggle.setAttribute("aria-expanded", "false");
+      noteText.textContent = message;
+      note.classList.toggle("neutral", tone === "neutral");
+      note.hidden = false;
+    }
+    function reset() {
+      groups.forEach(function (group) {
+        group.classList.remove("is-chosen", "is-dim");
+        var pick = group.querySelector('[data-act="pick"]');
+        pick.textContent = "Bu belge güncel";
+      });
+      actions.forEach(function (el) { el.disabled = false; });
+      note.hidden = true;
+    }
+
+    card.addEventListener("click", function (event) {
+      var button = event.target.closest("[data-act]");
+      if (!button || !card.contains(button)) return;
+      var act = button.getAttribute("data-act");
+      if (act === "pick") {
+        var chosen = button.closest(".qsrc");
+        groups.forEach(function (group) { group.classList.toggle("is-chosen", group === chosen); group.classList.toggle("is-dim", group !== chosen); });
+        button.textContent = "Seçildi";
+        lock("Kaydedildi. " + chosen.getAttribute("data-value") + " onaylandı; " + chosen.getAttribute("data-doc") + " güncel kaynak olarak işaretlendi.");
+      } else if (act === "all") {
+        groups.forEach(function (group) { group.classList.add("is-chosen"); group.querySelector('[data-act="pick"]').textContent = "Doğru"; });
+        lock("Kaydedildi. " + (card.getAttribute("data-all") || "Bütün değerler kaydedildi."));
+      } else if (act === "fix") {
+        var open = fix.hidden;
+        fix.hidden = !open;
+        button.setAttribute("aria-expanded", String(open));
+        if (open) fix.querySelector("input").focus();
+      } else if (act === "later") {
+        lock("Bu soru sonraya bırakıldı. Sorular bölümünden istediğiniz zaman devam edebilirsiniz.", "neutral");
+      } else if (act === "undo") {
+        reset();
+        var first = card.querySelector('[data-act="pick"]');
+        if (first) first.focus();
+      }
+    });
+
+    var form = card.querySelector("[data-fix]");
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var input = form.querySelector("input");
+      var value = input.value.trim();
+      if (!value) { input.focus(); return; }
+      groups.forEach(function (group) { group.classList.add("is-dim"); });
+      lock("Kaydedildi. Doğru değer: " + value + ". Belgelerdeki değerler reddedildi olarak işaretlendi.");
+      input.value = "";
+    });
+  });
+})();
+</script>

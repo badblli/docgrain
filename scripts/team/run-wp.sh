@@ -135,7 +135,10 @@ while [[ $status -ne 0 && $attempt -lt $max_attempts ]] && is_transient_failure 
   echo "retry $attempt" >"$run/status"
   [[ -n "${WP_RESUME_RUN:-}" && $attempt -eq 2 ]] || sleep $((60 * (attempt - 1)))
   status=0
-  if [[ "$engine" == "agy" ]]; then
+  if [[ "$engine" == "agy" && -z "$(tr -d '[:space:]' < "$run/thread" 2>/dev/null)" ]]; then
+    # The provider failed before a conversation existed: start the work package again.
+    run_agy "$wp" "$run" "$workdir" "$prompt" || status=$?
+  elif [[ "$engine" == "agy" ]]; then
     resume_agy "$wp" "$run" "$workdir" "The previous turn stopped because of a transient provider error. Continue the work package from where you left off; check git status first." || status=$?
   else
     resume_codex "$wp" "$run" "$workdir" \
