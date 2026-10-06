@@ -16,3 +16,17 @@
 
 ## Acceptance criteria
 - [ ] `docgrain-eval stability …` and a cross-company report; no golden edits after seeing predictions.
+
+## Lead notes (2026-10-06)
+
+- You run sandboxed without network: build the tooling and test it on synthetic fixtures; the lead runs
+  the real measurement (model calls, the four company workspaces) and reports numbers.
+- Inputs are local files: merge revisions / record dirs produced by `docgrain-records` and the bundle
+  reports in `.lead/bundles/*.json`. Commands:
+  `docgrain-eval stability --runs <dirA> <dirB> --out <dir>` (identical records/fields between two runs),
+  `docgrain-eval support --revision <merge_revision.json> --sources <dir>` (unsupported field rate),
+  `docgrain-eval companies --workspaces <dir>... --out <report.md>` (collections, sizes, conflicts,
+  duplicates by normalized name, e.g. "King Suite" vs "King Suit Oda").
+- Privacy: do not open documents of companies other than the Prime Beach golden already in the repo
+  data; the per-company accuracy keys for the other companies are out of scope here.
+- Report numbers only from synthetic fixtures; never print source text.
