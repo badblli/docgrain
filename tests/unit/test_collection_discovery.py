@@ -554,3 +554,48 @@ def test_workspace_api_paginates_filters_and_uses_pinned_contexts(monkeypatch):
 def test_discovery_rejects_duplicate_foreign_or_unpinned_contexts(docs):
     with pytest.raises(ValueError):
         discover(docs, "workspace-example")
+
+
+def test_align_proposal_merges_synonyms_and_leaves_unknown_untouched_via_discover(monkeypatch):
+    pool_prop = proposal(key="pools", name="Consultation")
+    swimming_prop = proposal(key="swimming_pools", name="Yoga", doc="gym")
+    room_prop = proposal(key="rooms", name="Consultation")
+    room_type_prop = proposal(key="room_types", name="Yoga", doc="gym")
+    dining_prop = proposal(key="dining_venues", name="Consultation")
+    restaurant_prop = proposal(key="restaurants", name="Yoga", doc="gym")
+    events_prop = proposal(key="events", name="Consultation")
+    activities_prop = proposal(key="activities", name="Yoga", doc="gym")
+    clinic_prop = proposal(key="services", name="Consultation", doc="clinic")
+    
+    pool_prop["fields"].append(field("service_hours", "string"))
+    pool_prop["examples"][0]["values"].append(value("service_hours", "40 EUR")) # valid quote from CLINIC
+    swimming_prop["fields"].append(field("opening_hours", "string"))
+    swimming_prop["examples"][0]["values"].append(value("opening_hours", "40 EUR", doc="gym", locator="§2")) # valid quote from GYM
+    
+    def handler(request):
+        return httpx.Response(200, json={"choices": [{"message": {
+            "content": json.dumps({"collections": [
+                pool_prop, swimming_prop, room_prop, room_type_prop, 
+                dining_prop, restaurant_prop, events_prop, activities_prop, clinic_prop
+            ]}),
+        }}]})
+
+    chat = DiscoveryClient("https://model.example/v1", "fake", "fake-key",
+                           transport=httpx.MockTransport(handler))
+                           
+    docs = [document(), document("gym", GYM)]
+    
+    try:
+        result = discover(docs, "workspace-example", chat, max_rounds=1, align=True)
+    finally:
+        chat.close()
+        
+    assert len(result.collections) == 5
+    keys = sorted([c.key for c in result.collections])
+    assert keys == ["activities", "pools", "restaurants", "rooms", "services"]
+    
+    pools = next(c for c in result.collections if c.key == "pools")
+    assert "swimming_pools" in pools.aliases
+    assert {f.key for f in pools.fields} == {"name", "price", "service_hours"}
+    
+
