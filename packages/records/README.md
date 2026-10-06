@@ -446,3 +446,68 @@ alongside clinic and gym tests, and never supplies the discovery/runtime default
 The existing fixed hospitality `extract`/`match`/`merge` commands and Python models
 remain available for compatibility with earlier work packages; their artifacts do
 not define a workspace schema and are not inputs to the generic runtime contract.
+
+## Published questions and answers (WP59)
+
+`GET /v1/workspaces/{workspace_id}/summary` and `GET
+/v1/workspaces/{workspace_id}/questions?limit=20&offset=0` use the newest published
+merge revision. Supply `?revision_id=...` to read an older publication. Summary
+records and fields are counted from preview publications: rejected-only records
+and fields are excluded, and each field/language value contributes once to
+`accepted_ratio`. Conflicts and single-candidate `needs_review` questions are
+separate counts; ordinary proposals are not questions. Empty publications have
+an accepted ratio of zero. Turkish schema labels are used when available, otherwise
+the collection/field key is returned. A source pin can supply `document_name`;
+older pins fall back to `document_id`.
+
+Questions have stable IDs within the review lineage. Skipping moves a question
+behind other questions of the same kind, preserving the conflicts-first rule.
+Skip order survives repository restarts and subsequent answers. It creates no
+merge revision and does not reduce `remaining`.
+
+For a synthetic publication with two questions, a candidate answer looks like:
+
+```http
+POST /v1/workspaces/workspace-example/questions/q_77eca1b2b75384e2abbb5c80fb88f0fe593330f4bba61961bab648139f92d506/answer?revision_id=r1
+Content-Type: application/json
+
+{"candidate_id":"view-b"}
+```
+
+Example response (the server generates the revision ID):
+
+```json
+{"revision_id":"rev_example_2","remaining":1}
+```
+
+For the same question, the alternative request bodies are exactly:
+
+```json
+{"value":"Courtyard","note":"Yerinde kontrol edildi."}
+```
+
+```json
+{"skip":true}
+```
+
+The typed alternative returns a new revision with one remaining question; skip
+returns `{"revision_id":"r1","remaining":2}`. Mixed/extra keys, `skip: false`,
+wrong value types and candidates belonging to another question return 422.
+Only the addressed language changes. Other candidates of that language become
+`rejected`; unrelated facts and translations retain their states and evidence.
+
+Each non-skip answer publishes preview and approved artifacts together, sets
+`parent_id` to the previous revision and appends a history entry with `actor:
+"local"`. A candidate keeps its original quotes. A typed answer adds evidence
+such as `{"kind":"user_edit","at":"2026-10-06T12:00:00+00:00","note":"Yerinde
+kontrol edildi."}` without a quote or invented document pin; compact context
+labels it “Sizin düzeltmeniz”. Old source and artifact bytes remain readable.
+
+Publication and answers share an OS workspace lock. A stale revision returns
+409, including skip. With a body-only answer, the expected revision is the one
+most recently served for that question ID. Because a stable ID cannot also
+identify an individual reader's revision, clients should pin both the question
+read and answer to the `revision_id` obtained from summary. This ensures stale
+screens return 409 even if another reader has since refreshed the same question.
+Unknown/foreign publications return 404, staged publications 409, and invalid
+or unavailable artifacts 503. These paths make no model or network calls.

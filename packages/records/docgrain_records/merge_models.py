@@ -40,6 +40,7 @@ class SourcePin(StrictModel):
     source_version_id: Text
     knowledge_revision_id: Text
     content_sha256: str | None = Field(default=None, pattern=r"^[0-9a-fA-F]{64}$")
+    document_name: Text | None = None
 
 
 class VersionedEvidence(Evidence):
@@ -47,11 +48,17 @@ class VersionedEvidence(Evidence):
     knowledge_revision_id: Text
 
 
+class UserEditEvidence(StrictModel):
+    kind: Literal["user_edit"] = "user_edit"
+    at: Text
+    note: str
+
+
 class FactCandidate(StrictModel):
     id: Text
     value: JsonValue
     lang: Language
-    evidence: list[VersionedEvidence] = Field(min_length=1)
+    evidence: list[VersionedEvidence | UserEditEvidence] = Field(min_length=1)
     review_state: ReviewState = "proposed"
 
 
@@ -131,6 +138,17 @@ class AliasDecision(StrictModel):
     reason: Text
 
 
+class AnswerHistory(StrictModel):
+    question_id: Text
+    record_id: Text
+    field: Text
+    lang: Language
+    candidate_id: Text
+    actor: Literal["local"] = "local"
+    at: Text
+    note: str
+
+
 class MergeRevision(StrictModel):
     workspace_id: Text
     id: Text
@@ -141,6 +159,10 @@ class MergeRevision(StrictModel):
     alias_decisions: list[AliasDecision] = Field(default_factory=list)
     # Exact accepted schema snapshot makes old publications independent of later discovery.
     workspace_schema: dict | None = None
+    parent_id: Text | None = None
+    lineage_id: Text | None = None
+    updated_at: Text | None = None
+    history: list[AnswerHistory] = Field(default_factory=list)
 
 
 class FieldChange(StrictModel):

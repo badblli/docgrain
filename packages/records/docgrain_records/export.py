@@ -3,7 +3,7 @@
 import json
 from collections import defaultdict
 
-from .merge_models import MergeRevision
+from .merge_models import MergeRevision, VersionedEvidence
 from .runtime import revision_runtime
 
 COLLECTIONS = {
@@ -150,13 +150,16 @@ def context(collection: str, rows: list[dict], workspace: str, revision: str,
             alternatives = []
             for candidate in conflict["candidates"]:
                 refs = references(candidate["evidence"])
-                documents = sorted({e["document_id"] for e in candidate["evidence"]})
+                documents = sorted({e.get("document_id", "Sizin düzeltmeniz")
+                                    for e in candidate["evidence"]})
                 alternatives.append(encode(candidate["value"]).decode() + " (belge " +
                                     encode(documents).decode() + "; " + ", ".join(refs) + ")")
             lines.append("Kaynaklar çelişiyor: " + encode(conflict["field"]).decode() +
                          " [" + conflict["lang"] + "]: " + " / ".join(alternatives))
     lines.append("## Kaynak anahtarları")
     for evidence, key in citations.items():
+        if json.loads(evidence).get("kind") == "user_edit":
+            lines.append("Sizin düzeltmeniz: " + key)
         lines.append(key + " " + evidence)
     return ("\n".join(lines) + "\n").encode("utf-8")
 
@@ -171,7 +174,7 @@ def export_bundle(revision: MergeRevision, mode: str = "preview") -> dict[str, b
         for field in record.fields.values():
             for candidate in field.candidates:
                 if any((e.document_id, e.source_version_id, e.knowledge_revision_id)
-                       not in pins for e in candidate.evidence):
+                       not in pins for e in candidate.evidence if isinstance(e, VersionedEvidence)):
                     raise ValueError("evidence outside pinned revision sources")
     projections = {"en": project_records(revision, mode=mode)}
     languages = {c.lang for r in revision.records for f in r.fields.values()
