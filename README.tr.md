@@ -1,18 +1,35 @@
-# Docgrain
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="apps/web/public/brand/logo-dark.svg">
+    <img src="apps/web/public/brand/logo-light.svg" alt="docgrain" width="260">
+  </picture>
+</p>
 
-**Dağınık şirket belgelerini; yapay zekanızın, uygulamalarınızın ve web sitenizin güvenebileceği, sürümlenmiş ve kaynağa bağlı bilgiye çevirir.**
+<p align="center">
+  <b>Şirketinizin ortak hafızası, kaynağıyla birlikte.</b><br>
+  Docgrain şirket belgelerini yapay zekanızın, uygulamalarınızın ve web sitenizin güvenebileceği,
+  sürümlü ve kaynağa bağlı koleksiyonlara dönüştürür. Çelişki sorulur, tahmin edilmez.
+</p>
 
-[![Quality](https://github.com/badblli/docgrain/actions/workflows/quality.yml/badge.svg?branch=dev)](https://github.com/badblli/docgrain/actions/workflows/quality.yml)
-[![Lisans: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Durum: pre-alpha](https://img.shields.io/badge/status-pre--alpha-orange)
-![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB)
+<p align="center">
+  <a href="https://github.com/badblli/docgrain/actions/workflows/quality.yml"><img src="https://github.com/badblli/docgrain/actions/workflows/quality.yml/badge.svg?branch=dev" alt="Kalite"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/lisans-MIT-245d65.svg" alt="Lisans: MIT"></a>
+  <img src="https://img.shields.io/badge/durum-pre--alpha-956316" alt="Durum: pre-alpha">
+  <img src="https://img.shields.io/badge/python-3.12-245d65" alt="Python 3.12">
+</p>
 
-[English](README.md) · [Yol haritası](docs/plan/ROADMAP.md) · [Hızlı başlangıç](#hızlı-başlangıç)
+<p align="center"><a href="README.md">English</a> · <a href="docs/plan/ROADMAP.md">Yol haritası</a> · <a href="#hızlı-başlangıç">Hızlı başlangıç</a> · <a href="docs/brand/BRAND.md">Marka</a></p>
 
-> **Pre-alpha, dürüstçe.** Docgrain bugün PDF, DOCX, XLSX, TXT ve PNG/JPEG dosyalarını incelenebilir,
-> kaynağa bağlı bir modele çevirir ve JSON, Markdown ve ZIP olarak yayımlar. Ortak veri havuzu,
-> yapay zeka ve uygulamalar için erişim API'si ve dosya sürümleme henüz yok. Aşağıdaki tablo neyin
-> çalıştığını açıkça söyler. Proje erken aşamada; yıldız ve geri bildirim yönünü şekillendirir.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/screens/ozet-dark.png">
+  <img src="docs/brand/screens/ozet-light.png" alt="Docgrain konsolu: dört ölçülü şirket özeti, belgeye göre gruplu bir çelişki sorusu ve koleksiyon kartları">
+</picture>
+<p align="center"><sub>Marka kitindeki örnek veriler; gerçek bir şirket değildir.</sub></p>
+
+> **Dürüstçe: pre-alpha.** Docgrain bugün bir şirketin klasörünü tek seferde alıyor, koleksiyonlarını
+> keşfediyor, kaynağa bağlı kayıtlar çıkarıyor, gerçek çelişkileri insanlara soruyor ve önizleme ile onaylı
+> JSON yayınlıyor. Dosya sürümleme, yapay zeka erişim katmanı ve kimlik doğrulama henüz yok. Aşağıdaki
+> liste neyin çalıştığını tam olarak söylüyor.
 
 ## Neden?
 
@@ -25,34 +42,37 @@
 
 ## Ne yapar?
 
-Dört hedef. İşaretler gerçektir: ✅ bugün kodda çalışıyor, 🚧 devam ediyor, 🗺 planlı.
+İşaretler gerçek durumu gösterir: ✅ bugün kodda çalışıyor, 🚧 yapılıyor, 🗺 planlandı.
 
-1. **Her format için tek model.** ✅ Altı format tek bir canonical modele normalize edilir; her
-   bilgi kanıtını (sayfa, hücre, kutu) korur. Bir kişi modeli kaynakla yan yana inceler; her düzenleme
-   değişmez (immutable) bir revision olur. ✅ Çıktı canonical JSON, Markdown, `ai.json`, chunks ve ZIP
-   olarak yayımlanır. 🚧 Bazı PDF'lerde düzleşen tablolar henüz gerçek tablo olarak çıkarılmıyor.
-2. **Yeniden işlemeden sürümler.** 🗺 Yeni dosya sürümü yüklenir, yalnızca değişen kısım yeni
-   revision olarak eklenir; eski revision'lar durur.
-3. **Koleksiyonlar tek ortak veri havuzu olur.** 🗺 Tipli listeler (odalar, ürünler, hizmetler,
-   politikalar) aynı onaylı veriyle yapay zekayı, mobil uygulamaları ve web sitelerini besler.
-4. **Model bağımsız, hızlı cevap.** ✅ Her revision ile kompakt bir yapay zeka bağlamı (`context.md`)
-   yayımlanır: bir çalışma alanının bağlamı hiçbir tablo hücresi kaybolmadan ~514k karakterden ~128k
-   karaktere indi. 🗺 Herhangi bir OpenAI uyumlu model için erişim (bağlam paketleri + fonksiyon çağırma
-   araçları); embedding isteğe bağlıdır, kritik yolda değildir.
-
-Docgrain bir sohbet botu değildir; kendi asistanınızın kullanacağı paketler, API'ler ve araç
-tanımları üretir. Çekirdek alandan bağımsızdır; sektöre özel şemalar çekirdeğin dışında kalır.
+1. **Her biçim için tek model.** ✅ PDF, DOCX, XLSX, TXT, PNG ve JPEG tek bir kanonik modele dönüşür; her
+   bilgi kanıtını (sayfa, hücre, kutu, satır) taşır. ✅ Bir şirketin klasörü tek seferde kendi çalışma
+   alanına yüklenir; aynı dosya ikinci kez işlenmez.
+2. **Koleksiyonlar keşfedilir, sabit değildir.** ✅ OpenAI uyumlu bir model şirketin kendi koleksiyonlarını
+   (odalar, restoranlar, hizmetler…) içerikten önerir; alıntılar kaynakta doğrulanır, adlar şirketler arası
+   tek bir sözlüğe hizalanır. ✅ Kayıtlar belgeler ve diller arasında birleştirilir (önce İngilizce, diğer
+   diller çeviri olarak).
+3. **Tahmin yok.** ✅ Yayınlanan her alan kaynağını gösterir; kanıtsız alan reddedilir. ✅ Belgeler
+   çeliştiğinde Docgrain tek ve net bir soru sorar; seçenekler belgeye göre gruplanır. Tekrarlayan
+   programlar tanınır: cumartesileri yer değiştirmiş iki parti 32 tarih değil, tek soru olur. ✅ Her cevap
+   yeni ve değiştirilemez bir sürüm yayınlar.
+4. **Yapay zekayı ve uygulamaları besler.** ✅ Koleksiyon başına `preview` ve `approved` modlarında salt
+   okunur JSON (ETag ile) ve kısa bir Markdown bağlamı. 🗺 OpenAI uyumlu modeller için araç tanımları;
+   embedding isteğe bağlı.
+5. **Yeniden işlemeden sürüm.** 🗺 Bir dosyanın yeni sürümünü yükleyip verilmiş cevapları korumak.
 
 ## Nasıl çalışır?
 
 ```text
-PDF / DOCX / XLSX / TXT / PNG / JPEG
-        │  yükle + doğrula
+şirket klasörü (PDF / DOCX / XLSX / TXT / PNG / JPEG)
+        │  ingest-folder: her şirkete bir çalışma alanı
         ▼
-   canonical model  ◄── insan incelemesi (kaynakla yan yana, her düzenleme yeni revision)
-        │
-        ├─► yayın: JSON / Markdown / ZIP              ✅ bugün var
-        └─► koleksiyonlar → API / yapay zeka erişimi  🗺 henüz yok
+   kanonik model, her bilgi kanıtıyla
+        │  koleksiyonları keşfet → kayıtları çıkar → eşleştir ve birleştir
+        ▼
+   birleşik sürüm ── gerçek çelişkiler için sorular ◄── insanlar cevaplar (Sorular)
+        │                                                │ yeni, değiştirilemez sürüm
+        ▼                                                ▼
+   yayın: önizleme / onaylı JSON + context.md  ──►  yapay zeka, uygulamalar, web sitesi
 ```
 
 ## Hızlı başlangıç
@@ -129,13 +149,14 @@ ve ölçüm çıktıları (`data/`) Git'e girmez; depo herkese açıktır.
 
 ## Bir yapay zeka ekibi geliştiriyor
 
-Docgrain, insan ürün sahibi olan küçük bir yapay zeka ekibiyle geliştirilir. **Claude Code teknik
-lider.** Pokémon adlı Codex ajanları (Charizard, Alakazam, Porygon, Jigglypuff, Bulbasaur) birer iş
-paketini kendi git worktree'sinde ve dalında yapar; **Chatot** adlı Claude yazıcısı dokümantasyonu
-yazar. Her değişiklik birleşmeden önce lider tarafından incelenir, yeniden test edilir ve ölçülür.
-Kaynak belgelerin içindeki yönergeye benzeyen metin veridir, komut sayılmaz. Kurallar:
-[`AGENTS.md`](AGENTS.md); iş paketleri: [`docs/plan/wp/`](docs/plan/wp/); araçlar:
-[`scripts/team/`](scripts/team/).
+Docgrain'i küçük bir yapay zeka ajan ekibi, bir insan ürün sahibiyle geliştiriyor. **Claude Code teknik
+lider**: iş paketlerini planlar, her değişikliği inceler, testleri yeniden çalıştırır ve birleştirmeden önce
+gerçek veride ölçer. Pokémon adlı mühendisler (Charizard, Alakazam, Porygon, Jigglypuff, Bulbasaur) Codex
+veya Gemini üzerinde, her biri kendi git worktree'sinde çalışır. **Smeargle** (Claude) marka ve ekranlardan
+sorumlu tasarımcıdır ([marka kiti](docs/brand/BRAND.md)); **Chatot** (Claude) belgeleri yazar. Web konsolu
+Next.js, Tailwind CSS ve shadcn/ui ile yazılıdır. Kaynak belgelerde talimat gibi görünen metin her zaman veri
+olarak ele alınır, komut olarak değil. Kurallar: [`AGENTS.md`](AGENTS.md); iş paketleri:
+[`docs/plan/wp/`](docs/plan/wp/); araçlar: [`scripts/team/`](scripts/team/).
 
 ## Yol haritası
 

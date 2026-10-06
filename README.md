@@ -1,18 +1,35 @@
-# Docgrain
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="apps/web/public/brand/logo-dark.svg">
+    <img src="apps/web/public/brand/logo-light.svg" alt="docgrain" width="260">
+  </picture>
+</p>
 
-**Turn messy company documents into versioned, source-linked knowledge your AI, apps and website can trust.**
+<p align="center">
+  <b>Your company's shared memory, with every source attached.</b><br>
+  Docgrain turns company documents into versioned, source-linked collections that your AI, apps and
+  website can trust. Conflicts are asked, never guessed.
+</p>
 
-[![Quality](https://github.com/badblli/docgrain/actions/workflows/quality.yml/badge.svg?branch=dev)](https://github.com/badblli/docgrain/actions/workflows/quality.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Status: pre-alpha](https://img.shields.io/badge/status-pre--alpha-orange)
-![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB)
+<p align="center">
+  <a href="https://github.com/badblli/docgrain/actions/workflows/quality.yml"><img src="https://github.com/badblli/docgrain/actions/workflows/quality.yml/badge.svg?branch=dev" alt="Quality"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-245d65.svg" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/status-pre--alpha-956316" alt="Status: pre-alpha">
+  <img src="https://img.shields.io/badge/python-3.12-245d65" alt="Python 3.12">
+</p>
 
-[Türkçe](README.tr.md) · [Roadmap](docs/plan/ROADMAP.md) · [Quick start](#quick-start)
+<p align="center"><a href="README.tr.md">Türkçe</a> · <a href="docs/plan/ROADMAP.md">Roadmap</a> · <a href="#quick-start">Quick start</a> · <a href="docs/brand/BRAND.md">Brand</a></p>
 
-> **Pre-alpha, honestly.** Today Docgrain turns PDF, DOCX, XLSX, TXT and PNG/JPEG files into a
-> reviewable, source-linked model and publishes it as JSON, Markdown and ZIP. The shared data pool,
-> the access API for AI and apps, and file versioning are not built yet. The table below says exactly
-> what works. It is early; stars and feedback help shape it.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/screens/ozet-dark.png">
+  <img src="docs/brand/screens/ozet-light.png" alt="Docgrain console: company summary with four measures, a conflict question grouped by source document, and collection cards">
+</picture>
+<p align="center"><sub>Sample data from the brand kit, not a real company.</sub></p>
+
+> **Pre-alpha, honestly.** Docgrain already ingests a company's folder, discovers its collections,
+> extracts source-linked records, asks people about real conflicts and publishes preview and approved
+> JSON. File versioning, the AI access layer and auth are not built yet. The list below says exactly
+> what works.
 
 ## Why
 
@@ -25,20 +42,22 @@
 
 ## What it does
 
-Four goals. Markers are literal: ✅ works in code today, 🚧 in progress, 🗺 planned.
+Markers are literal: ✅ works in code today, 🚧 in progress, 🗺 planned.
 
-1. **One model for every format.** ✅ Six formats are normalized into a single canonical model, and
-   every fact keeps its evidence (page, cell, box). A person reviews it next to the source; each edit is
-   an immutable revision. ✅ Output is published as canonical JSON, Markdown, `ai.json`, chunks and ZIP.
-   🚧 Tables flattened by some PDFs are not yet extracted as real tables.
-2. **Versions without reprocessing.** 🗺 Upload a new file version and add only what changed as a new
-   revision; old revisions stay.
-3. **Collections as one shared data pool.** 🗺 Typed lists (rooms, products, services, policies) feed
-   AI, mobile apps and websites from the same accepted data.
-4. **Model-agnostic, fast answers.** ✅ A compact AI context (`context.md`) is published with every
-   revision: one workspace went from ~514k to ~128k characters with no table cell lost. 🗺 Access for any
-   OpenAI-compatible model (context packs + function-calling tools); embeddings optional, off the
-   critical path.
+1. **One model for every format.** ✅ PDF, DOCX, XLSX, TXT, PNG and JPEG are normalized into one canonical
+   model; every fact keeps its evidence (page, cell, box, line). ✅ A whole company folder is ingested in
+   one go into its own workspace, re-runs reuse identical files.
+2. **Collections discovered, not hard-coded.** ✅ An OpenAI-compatible model proposes the company's own
+   collections (rooms, restaurants, services…) from the normalized content, with quotes verified against
+   the source; names are aligned to one vocabulary across companies. ✅ Records are extracted and merged
+   across documents and languages (English first, other languages kept as translations).
+3. **No guessing.** ✅ Every published field cites its source; fields without evidence are rejected.
+   ✅ When documents disagree, Docgrain asks one precise question, options grouped by document
+   ("talimatlar.txt says … / factsheet says …"). Recurring schedules are recognised, so two parties that
+   swapped Saturdays become one question, not 32 dates. ✅ Each answer publishes a new immutable revision.
+4. **Feeds AI and apps.** ✅ Read-only JSON per collection in `preview` and `approved` modes, with ETags,
+   plus a compact Markdown context. 🗺 Tool specs for any OpenAI-compatible model; embeddings optional.
+5. **Versions without reprocessing.** 🗺 Upload a new file version and carry accepted answers forward.
 
 Docgrain is not a chatbot. It produces packs, APIs and tool specs that your own assistant uses. The
 core is domain-neutral; industry schemas live outside it.
@@ -46,13 +65,16 @@ core is domain-neutral; industry schemas live outside it.
 ## How it works
 
 ```text
-PDF / DOCX / XLSX / TXT / PNG / JPEG
-        │  upload + validate
+company folder (PDF / DOCX / XLSX / TXT / PNG / JPEG)
+        │  ingest-folder: one workspace per company
         ▼
-   canonical model  ◄── human review (next to the source, every edit = a new revision)
-        │
-        ├─► publish: JSON / Markdown / ZIP            ✅ today
-        └─► collections → API / AI access             🗺 not yet
+   canonical model, every fact with evidence
+        │  discover collections → extract records → match and merge
+        ▼
+   merge revision ── questions for real conflicts ◄── people answer (Sorular)
+        │                                                │ new immutable revision
+        ▼                                                ▼
+   publish: preview / approved JSON + context.md  ──►  AI, apps, website
 ```
 
 ## Quick start
@@ -130,12 +152,13 @@ eval output (`data/`) are never committed; this repository is public.
 ## Built by an AI team
 
 Docgrain is developed by a small team of AI agents with a human product owner. **Claude Code is the
-tech lead.** Codex agents named after Pokémon (Charizard, Alakazam, Porygon, Jigglypuff, Bulbasaur)
-each take one work package in their own git worktree and branch; **Chatot**, a Claude scribe, writes
-docs. Every change is reviewed, re-tested and measured by the lead before it merges. Text that looks
-like instructions inside source documents is treated as data, never as a command. Rules:
-[`AGENTS.md`](AGENTS.md); work packages: [`docs/plan/wp/`](docs/plan/wp/); tooling:
-[`scripts/team/`](scripts/team/).
+tech lead**: it plans work packages, reviews every diff, re-runs the tests and measures on real data
+before anything merges. Engineers named after Pokémon (Charizard, Alakazam, Porygon, Jigglypuff,
+Bulbasaur) run on Codex or Gemini, each in its own git worktree and branch. **Smeargle**, a Claude
+designer, owns the brand and screens ([brand kit](docs/brand/BRAND.md)); **Chatot**, a Claude scribe,
+writes docs. The web console is Next.js, Tailwind CSS and shadcn/ui. Text that looks like instructions
+inside source documents is treated as data, never as a command. Rules: [`AGENTS.md`](AGENTS.md); work
+packages: [`docs/plan/wp/`](docs/plan/wp/); tooling: [`scripts/team/`](scripts/team/).
 
 ## Roadmap
 
