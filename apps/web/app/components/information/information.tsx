@@ -11,6 +11,7 @@ import type { CollectionSummary, LoadState } from "../workspace-review";
 type Evidence = { document_id: string; document_name?: string; locator: string; quote: string };
 type FieldMeta = {
   lang?: string; review_state?: string; evidence?: Evidence[];
+  schedule?: { label_tr: string };
   i18n?: Record<string, Evidence[]>; i18n_review_state?: Record<string, string>;
 };
 type RecordRow = {
@@ -101,7 +102,7 @@ export function InformationView({ apiUrl, workspaceId, initialCollection, summar
   }, [base, mode, refreshKey]);
 
   const labelFor = (key: string) => summaries.find(item => item.key === key)?.label || getCollectionLabel(key);
-  const questionFor = (field: string, lang?: string) => questions.find(item => item.collection === selectedCollection && item.record_id === selectedRecord?.id && item.field === field && (!lang || item.lang === lang));
+  const questionFor = (field: string, lang?: string) => questions.find(item => item.collection === selectedCollection && (item.record_id === selectedRecord?.id || item.record_ids?.includes(selectedRecord?.id ?? "")) && item.field === field && (!lang || item.lang === lang));
   const questionButton = (question?: Question) => question && <button className="fieldQuestion" onClick={() => onQuestion(question)} aria-label={`${question.field_label}: açık soruyu cevapla`} title="Bu bilgi için bir soru var"><span className="conflictDot" aria-hidden="true" /></button>;
   const retry = () => setRefreshKey(value => value + 1);
   const result = results[selectedCollection];
@@ -121,7 +122,7 @@ export function InformationView({ apiUrl, workspaceId, initialCollection, summar
         <div className="collectionToolbar"><label className="switch"><input type="checkbox" role="switch" checked={showLanguages} onChange={event => setShowLanguages(event.target.checked)} />Diğer dilleri göster</label>{questionState === "loading" && <span className="collectionWarning" role="status">Açık sorular yükleniyor…</span>}</div>
         <section className="card"><dl className="recordFields">{visibleFields(selectedRecord).map(field => {
           const meta = selectedRecord._meta?.fields?.[field];
-          return <div className="recordField" key={field}><dt>{getFieldLabel(field)}{questionButton(questionFor(field))}{developerMode && <div><Ep>{field}</Ep></div>}</dt><dd>{valueText(selectedRecord[field])}<ReviewBadge state={meta?.review_state} /><EvidenceView value={selectedRecord[field]} evidence={meta?.evidence} developerMode={developerMode} documentNames={documentNames} />
+          return <div className="recordField" key={field}><dt>{getFieldLabel(field)}{questionButton(questionFor(field))}{developerMode && <div><Ep>{field}</Ep></div>}</dt><dd>{valueText(selectedRecord[field])}{meta?.schedule && <p>{meta.schedule.label_tr}</p>}<ReviewBadge state={meta?.review_state} /><EvidenceView value={selectedRecord[field]} evidence={meta?.evidence} developerMode={developerMode} documentNames={documentNames} />
             {showLanguages && Object.entries(selectedRecord.i18n ?? {}).filter(([, fields]) => fields[field] !== undefined).map(([lang, fields]) => <div className="recordTranslation" key={lang}><span>{lang}</span>{valueText(fields[field])}<ReviewBadge state={meta?.i18n_review_state?.[lang]} />{questionButton(questionFor(field, lang))}<EvidenceView value={fields[field]} evidence={meta?.i18n?.[lang]} developerMode={developerMode} documentNames={documentNames} /></div>)}
           </dd></div>;
         })}</dl>{developerMode && <details className="recordDeveloper"><summary>Geliştirici: Ham JSON</summary><pre>{JSON.stringify(selectedRecord, null, 2)}</pre></details>}</section>

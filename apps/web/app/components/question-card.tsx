@@ -4,11 +4,13 @@ import { Icon } from "./console-ui";
 export type QuestionOption = {
   candidate_id: string; value: unknown; display: string; quote: string | null;
   document_id: string | null; document_name: string; locator: string | null;
+  summary_tr?: string; evidence?: { quote: string; locator: string }[];
 };
 export type Question = {
   id: string; kind: string; collection: string; collection_label: string;
   record_id: string; record_title: string; field: string; field_label: string;
   lang: string | null; allow_all?: boolean; options: QuestionOption[];
+  records?: string[]; record_ids?: string[]; period_label_tr?: string; question_tr?: string;
 };
 export type QuestionAnswer = { candidate_id: string } | { document_id: string } | { value: unknown; note: string } | { skip: true } | { all: true };
 export function groupByDocument(options: QuestionOption[]) {
@@ -35,6 +37,7 @@ export function sourceName(name: string): string {
     ? "Kaynak belge" : display;
 }
 function optionDisplay(option: QuestionOption): string {
+  if (option.summary_tr) return option.summary_tr;
   if (typeof option.value === "boolean") return option.value ? "Evet" : "Hayır";
   if (Array.isArray(option.value)) return option.value.map(value => typeof value === "object" ? JSON.stringify(value) : String(value)).join(", ");
   return option.display || (typeof option.value === "object" ? JSON.stringify(option.value) : String(option.value ?? "—"));
@@ -72,6 +75,7 @@ export function QuestionCard({ question, onAnswer, currentIndex = 1, totalCount,
   const selection = saved ?? (busy && notice === "Kaydedildi" ? attempt : null);
   const note = notice || (saved && "skip" in saved ? "Bu soruyu sonraya bıraktınız." : saved ? "Kaydedildi" : "");
   const groups = groupByDocument(question.options);
+  const schedule = question.kind === "schedule_swap" || question.kind === "schedule_conflict";
   const disabled = submitting || busy || readOnly || saved !== null;
   async function submit(answer: QuestionAnswer) {
     if (disabled) return;
@@ -90,8 +94,9 @@ export function QuestionCard({ question, onAnswer, currentIndex = 1, totalCount,
   }
   return <article className="card questionCard" aria-labelledby={titleId} aria-busy={submitting || busy}>
     <div className="questionIntro">
-      <p className="conflictLine"><span className="conflictDot" aria-hidden="true" />{question.kind === "conflict" ? "Kaynaklar farklı söylüyor" : "İnceleme bekliyor"}<span className="muted">· {question.collection_label}</span></p>
-      <h2 id={titleId} ref={heading} tabIndex={-1}>{question.record_title} için {question.field_label} hangisi?</h2>
+      <p className="conflictLine"><span className="conflictDot" aria-hidden="true" />{question.kind === "conflict" || schedule ? "Kaynaklar farklı söylüyor" : "İnceleme bekliyor"}<span className="muted">· {question.collection_label}</span></p>
+      <h2 id={titleId} ref={heading} tabIndex={-1}>{question.question_tr || `${question.record_title} için ${question.field_label} hangisi?`}</h2>
+      {schedule && <p className="sub">{question.records?.join(" ve ")} · {question.period_label_tr}</p>}
       <p className="sub">Güncel belgeyi seçin{question.allow_all ? '; tüm değerler geçerliyse “Hepsi doğru” deyin.' : "; koleksiyonunuz güncellensin."}</p>
     </div>
     <div className="questionOptions">
@@ -102,7 +107,7 @@ export function QuestionCard({ question, onAnswer, currentIndex = 1, totalCount,
           <p className="documentSays"><Icon name="doc" /><b>{group.name}</b> diyor ki</p>
           <div className="questionValues">{values.map(option => <strong className="questionValue" key={option.candidate_id}>{optionDisplay(option)}</strong>)}</div>
           <div className="questionEvidence">{group.options.map((option, index) => <div key={`${option.candidate_id}:${index}`}>
-            {option.quote ? <SourceQuote quote={option.quote} values={[option.value]} /> : <p className="muted">Sizin düzeltmeniz</p>}
+            {option.evidence ? <details><summary>Kaynakta göster</summary>{option.evidence.map((item, citation) => <div key={citation}><SourceQuote quote={item.quote} values={[option.value]} /><p className="questionSource">{item.locator}</p></div>)}</details> : option.quote ? <SourceQuote quote={option.quote} values={[option.value]} /> : <p className="muted">Sizin düzeltmeniz</p>}
             {option.locator && <p className="questionSource">{option.locator}</p>}
           </div>)}</div>
           <button className="btn" disabled={disabled} onClick={() => void submit(group.documentId ? { document_id: group.documentId } : { candidate_id: group.options[0].candidate_id })} aria-label={`${group.name}: ${group.documentId ? "Bu belge güncel" : "Bu düzeltme doğru"}`}>{chosen ? "Seçildi" : group.documentId ? "Bu belge güncel" : "Bu düzeltme doğru"}</button>
@@ -113,7 +118,7 @@ export function QuestionCard({ question, onAnswer, currentIndex = 1, totalCount,
     <footer className="questionFooter">
       <div className="questionActions">
         {question.allow_all === true && <button className="btn" disabled={disabled} onClick={() => void submit({ all: true })}>Hepsi doğru</button>}
-        <button className="textButton" disabled={disabled} aria-expanded={editing} aria-controls={inputId} onClick={() => setEditing(!editing)}>{groups.length === 2 ? "İkisi de yanlış, düzelt" : groups.length > 2 ? "Hiçbiri doğru değil, düzelt" : "Doğru değil, düzelt"}</button>
+        {!schedule && <button className="textButton" disabled={disabled} aria-expanded={editing} aria-controls={inputId} onClick={() => setEditing(!editing)}>{groups.length === 2 ? "İkisi de yanlış, düzelt" : groups.length > 2 ? "Hiçbiri doğru değil, düzelt" : "Doğru değil, düzelt"}</button>}
         <button className="textButton muted" disabled={disabled} onClick={() => void submit({ skip: true })}>Sonra sor</button>
         <span className="questionCounter">{currentIndex} / {totalCount}</span>
       </div>

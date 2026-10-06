@@ -7,6 +7,7 @@ from typing import get_args, get_origin
 
 from .extractor import normalize_quote
 from .merge_models import FactCandidate, VersionedEvidence
+from .schedule import document_dates, same_recurrence
 
 
 def list_field(runtime, kind, field):
@@ -54,6 +55,9 @@ def _price_variant(candidate):
 
 
 def multiple_values(runtime, record, field, merged, lang, candidates):
+    schedules = document_dates(field, candidates)
+    if schedules and len(schedules) > 1 and lang not in merged.multi_value_languages:
+        return same_recurrence(schedules)
     if lang in merged.multi_value_languages or list_field(runtime, record.type, field):
         return True
     if len(candidates) < 2 or field == runtime.identities[record.type]:

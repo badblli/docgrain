@@ -224,7 +224,7 @@ class RecordsRepository:
             items = questions(source)
             skipped = state["skipped"].get(source.id, [])
             ranks = {key: rank for rank, key in enumerate(skipped)}
-            items.sort(key=lambda q: (q["kind"] != "conflict", q["id"] in ranks,
+            items.sort(key=lambda q: (q["kind"] == "needs_review", q["id"] in ranks,
                                       ranks.get(q["id"], -1)))
             page = items[offset:offset + limit]
             # Remember the revision served with each stable ID for the body-only write contract.
