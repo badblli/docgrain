@@ -224,10 +224,36 @@ def main(argv=None):
     rescoring = commands.add_parser("rescore")
     rescoring.add_argument("run_dir")
     rescoring.add_argument("--questions", required=True)
+    # Register offline commands without importing the optional records package.
+    stability_parser = commands.add_parser("stability", help="İki yerel işlemenin kararlılığını ölç")
+    stability_parser.add_argument("--runs", nargs=2, required=True)
+    stability_parser.add_argument("--out", required=True)
+    support_parser = commands.add_parser("support", help="Onaylı alanların kaynaklarını denetle")
+    support_parser.add_argument("--revision", required=True)
+    support_parser.add_argument("--sources", required=True)
+    support_parser.add_argument("--out", help="JSON rapor yolu; belirtilmezse ekrana yazılır")
+    companies_parser = commands.add_parser("companies", help="Şirketlerin bilgi listelerini karşılaştır")
+    companies_parser.add_argument("--workspaces", nargs="+", required=True)
+    companies_parser.add_argument("--bundles", nargs="+", help="Yükleme raporları veya rapor klasörleri")
+    companies_parser.add_argument("--out", required=True, help="Markdown raporu; yanında JSON da yazılır")
     args = parser.parse_args(argv)
     if args.command == "run" and not args.dry_run and not args.out:
         parser.error("run requires --out unless --dry-run")
     try:
+        if args.command in {"stability", "support", "companies"}:
+            try:
+                from .consistency import run_companies, run_stability, run_support
+            except ImportError:
+                print("Hata: Yerel ölçüm için docgrain-records paketi kurulmalı.", file=sys.stderr)
+                return 1
+            try:
+                {"stability": run_stability, "support": run_support,
+                 "companies": run_companies}[args.command](args)
+            except (ValueError, OSError, KeyError, TypeError, AttributeError):
+                # Source bodies and Pydantic validation inputs must never reach stderr.
+                print("Hata: Yerel ölçüm girdileri eksik, belirsiz veya birbiriyle uyumsuz.", file=sys.stderr)
+                return 1
+            return 0
         {"run": run, "tables": tables, "compare": compare, "rescore": rescore}[args.command](args)
     except (ValueError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
