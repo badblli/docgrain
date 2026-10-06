@@ -64,7 +64,8 @@ def test_summary_counts_published_fields_and_questions(setup):
     assert result["accepted_ratio"] == pytest.approx(3 / 7)
     rooms = next(c for c in result["collections"] if c["key"] == "rooms")
     assert rooms == {"key": "rooms", "label": "rooms", "records": 2,
-                     "conflicts": 1, "needs_review": 1}
+                     "conflicts": 1, "needs_review": 1,
+                     "accepted_records": 0, "pending_records": 1}
     assert next(c for c in result["collections"] if c["key"] == "outlets")["records"] == 0
     assert result["updated_at"]
 
@@ -81,9 +82,9 @@ def test_questions_exact_contract_order_pagination_and_stability(setup):
     assert conflict["field"] == "view" and conflict["lang"] == "en"
     assert conflict["options"] == [
         {"candidate_id": "view-a", "value": "Garden", "display": "Garden", "quote": "Garden",
-         "document_name": "doc-example", "locator": "s. 1"},
+         "document_id": "doc-example", "document_name": "doc-example", "locator": "s. 1"},
         {"candidate_id": "view-b", "value": "Sea", "display": "Sea", "quote": "Sea",
-         "document_name": "doc-example", "locator": "s. 1"},
+         "document_id": "doc-example", "document_name": "doc-example", "locator": "s. 1"},
     ]
     assert pending["options"][0]["value"] == ["double"]
     assert client.get(BASE + "/questions?limit=1&offset=1").json() == {
@@ -178,6 +179,7 @@ def test_skip_only_reorders_within_kind_and_survives_restart_and_answer(setup):
 
 
 @pytest.mark.parametrize("body", [{"skip": True}, {"all": True}, {"candidate_id": "fact-a"},
+                                 {"document_id": "doc-example"},
                                  {"value": ["queen"], "note": "checked"}])
 def test_stale_revision_returns_409_including_skip_and_pinned_answers(setup, body):
     client, store = setup
@@ -220,6 +222,10 @@ def test_concurrent_answers_from_separate_repository_instances_have_one_winner(s
 
 
 @pytest.mark.parametrize("body", [{}, {"skip": False}, {"skip": 1},
+                                 {"document_id": "unknown"}, {"document_id": ""},
+                                 {"document_id": None},
+                                 {"document_id": "doc-example", "all": True},
+                                 {"document_id": "doc-example", "candidate_id": "view-a"},
                                  {"all": False}, {"all": 1}, {"all": "true"},
                                  {"all": True, "candidate_id": "view-a"},
                                  {"candidate_id": "view-a", "skip": True},

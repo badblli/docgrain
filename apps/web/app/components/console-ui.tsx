@@ -63,7 +63,7 @@ export function EmptyState({ title, text }: { title: string; text: string }) {
   return (
     <div className="wrap">
       <section className="card emptyArtifact">
-        <span>◇</span>
+        <span className="emptyStateIcon"><Icon name="doc" /></span>
         <h2>{title}</h2>
         <p>{text}</p>
       </section>

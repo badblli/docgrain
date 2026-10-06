@@ -3,6 +3,7 @@ import type { Question, QuestionAnswer } from "./question-card";
 
 export type CollectionSummary = {
   key: string; label: string; records: number; conflicts: number; needs_review: number;
+  accepted_records?: number; pending_records?: number;
 };
 export type SummaryData = {
   workspace_id: string; revision_id: string | null; documents: number; records: number;
@@ -44,6 +45,9 @@ export function useWorkspaceReview(apiUrl: string, workspaceId: string, refreshK
   const [total, setTotal] = useState(0);
   const [deferred, setDeferred] = useState<string[]>([]);
   const [answered, setAnswered] = useState(0);
+  const [answeredQuestions, setAnsweredQuestions] = useState<Question[]>([]);
+  const [questionAnswers, setQuestionAnswers] = useState<Record<string, QuestionAnswer>>({});
+  const questionOrder = useRef<string[]>([]);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const request = useRef<AbortController | null>(null);
@@ -85,6 +89,7 @@ export function useWorkspaceReview(apiUrl: string, workspaceId: string, refreshK
       const data = await readQuestions(base, summaryData.revision_id, controller.signal);
       if (active()) {
         questionsRevision.current = summaryData.revision_id;
+        questionOrder.current = [...questionOrder.current, ...data.items.map(item => item.id).filter(id => !questionOrder.current.includes(id))];
         setQuestions(data.items); setTotal(data.total); setQuestionState("ready");
       }
     } catch (error) {
@@ -97,13 +102,14 @@ export function useWorkspaceReview(apiUrl: string, workspaceId: string, refreshK
     scope.current += 1;
     saving.current = false; setBusy(false);
     setSummaryState("loading"); setQuestionState("loading"); setNotice("");
-    setSummary(null); setQuestions([]); setTotal(0); setDeferred([]); setAnswered(0);
+    setSummary(null); setQuestions([]); setTotal(0); setDeferred([]); setAnswered(0); setAnsweredQuestions([]);
+    setQuestionAnswers({}); questionOrder.current = [];
     void reload();
     return () => { mounted.current = false; scope.current += 1; request.current?.abort(); };
   }, [reload, refreshKey]);
 
   async function answer(question: Question, body: QuestionAnswer) {
-    if (saving.current) return;
+    if (saving.current) return false;
     const revisionId = questionsRevision.current;
     if (!revisionId) throw new Error("Sorular güncelleniyor. Biraz sonra tekrar deneyin.");
     saving.current = true;
@@ -114,27 +120,30 @@ export function useWorkspaceReview(apiUrl: string, workspaceId: string, refreshK
       const response = await fetch(`${base}/questions/${encodeURIComponent(question.id)}/answer?revision_id=${encodeURIComponent(revisionId)}`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
       });
-      if (!active()) return;
+      if (!active()) return false;
       if (response.status === 409) {
         setNotice("Bu soru başka biri tarafından cevaplandı");
         await reload();
-        return;
+        return false;
       }
       if (!response.ok) throw new Error("Cevap kaydedilemedi. Bağlantıyı kontrol edip tekrar deneyin.");
       const result: { revision_id: string; remaining: number } = await response.json();
-      if (!active()) return;
+      if (!active()) return false;
       if (!Number.isInteger(result.remaining) || result.remaining < 0) throw new Error("Cevap doğrulanamadı.");
       if ("skip" in body) {
         setDeferred(previous => [...previous.filter(id => id !== question.id), question.id]);
         setNotice("Bu soruyu sonraya bıraktınız.");
       } else {
         setAnswered(previous => previous + 1);
+        setAnsweredQuestions(previous => [...previous.filter(item => item.id !== question.id), question]);
+        setQuestionAnswers(previous => ({ ...previous, [question.id]: body }));
         setTotal(result.remaining);
         setDeferred(previous => previous.filter(id => id !== question.id));
         setNotice("Kaydedildi");
       }
       await new Promise(resolve => setTimeout(resolve, 450));
       if (active()) await reload();
+      return active();
     } catch {
       if (active()) throw new Error("Cevap kaydedilemedi. Bağlantıyı kontrol edip tekrar deneyin.");
     } finally {
@@ -142,6 +151,6 @@ export function useWorkspaceReview(apiUrl: string, workspaceId: string, refreshK
     }
   }
   function revisit() { setDeferred([]); setNotice(""); }
-  return { summary, summaryState, questions, questionState, total, answered, deferred, notice, busy, reload, answer, revisit };
+  return { summary, summaryState, questions, questionState, total, answered, answeredQuestions, questionAnswers, questionOrder: questionOrder.current, deferred, notice, busy, reload, answer, revisit };
 }
 export type WorkspaceReview = ReturnType<typeof useWorkspaceReview>;

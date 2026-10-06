@@ -10,16 +10,21 @@ export function Sidebar({ screen, nav, docs, jobs, questionCount, workspace, wor
   const choices = workspaces.length ? workspaces : [{ id: workspace, documents: docs }];
   return <aside className="rail">
     <button className="brand" onClick={() => nav("summary")} aria-label="Docgrain özetini aç">
-      <span className="brandMark" aria-hidden="true"><Icon name="doc" /></span>
-      <span><b>Docgrain</b><small>Şirketinizin ortak hafızası</small></span>
+      {/* The SVG includes its own OS dark-theme palette. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/brand/logo.svg" alt="Docgrain" width="111" height="22" />
     </button>
     <div className="companySection">
       <label className="navlbl" htmlFor="company-picker">Şirket</label>
       <div className="companySelectWrap">
+        <span className="companyAvatar" aria-hidden="true">{formatWorkspaceName(workspace).charAt(0)}</span>
+        <div className="companyChoice">
         <select id="company-picker" className="companySelect" value={workspace} disabled={busy} onChange={event => onWorkspaceChange(event.target.value)}>
-          {choices.map(item => <option key={item.id} value={item.id}>{formatWorkspaceName(item.id)} ({item.documents})</option>)}
+          {choices.map(item => <option key={item.id} value={item.id}>{formatWorkspaceName(item.id)}</option>)}
         </select>
-        <span className="companySelectArrow" aria-hidden="true">⌄</span>
+        <small>{choices.find(item => item.id === workspace)?.documents ?? docs} belge</small>
+        </div>
+        <span className="companySelectArrow" aria-hidden="true">⇅</span>
       </div>
     </div>
     <nav className="primaryNav" aria-label="Ana menü">
@@ -34,6 +39,6 @@ export function Sidebar({ screen, nav, docs, jobs, questionCount, workspace, wor
       <button className="nav" aria-current={screen === "providers" ? "page" : undefined} onClick={() => nav("providers")}><Icon name="grid" />Sağlayıcılar</button>
       <button className="nav" aria-current={screen === "contract" ? "page" : undefined} onClick={() => nav("contract")}><Icon name="book" />Veri sözleşmesi</button>
     </nav>}
-    <div className="railBottom"><label className="switch developerSwitch"><input type="checkbox" role="switch" checked={developerMode} onChange={toggleDeveloperMode} />Geliştirici modu</label><p>Belgeden bilgiye.<br />Kaynağı her zaman yanında.</p></div>
+    <div className="railBottom"><label className="switch developerSwitch"><input type="checkbox" role="switch" checked={developerMode} onChange={toggleDeveloperMode} />Geliştirici modu</label><p>Belgeden bilgiye. Kaynağı her zaman yanında.</p></div>
   </aside>;
 }
