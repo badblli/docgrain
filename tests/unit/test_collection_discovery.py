@@ -138,7 +138,9 @@ def test_deterministic_signals_cover_non_hotel_structures_and_cross_document_uni
     docs = [document(), document("gym", GYM)]
     signals = detect_signals(docs)
     assert signals == detect_signals(list(reversed(docs)))
-    assert {signal["kind"] for signal in signals} == {"table", "list", "fields", "heading", "measure"}
+    assert {signal["kind"] for signal in signals} == {
+        "table", "list", "fields", "label_value", "heading", "measure", "section_text",
+    }
     table = next(signal for signal in signals if signal["kind"] == "table")
     assert table["pattern"] == "service | price" and table["count"] == 2
     assert [sample["quote"] for sample in table["samples"]] == [
@@ -179,7 +181,7 @@ def test_model_proposes_clinic_and_gym_with_strict_compatible_transport():
     chat = DiscoveryClient("https://model.example/v1", "fake", "fake-key",
                            transport=httpx.MockTransport(handler))
     try:
-        result = discover(docs, "workspace-example", chat)
+        result = discover(docs, "workspace-example", chat, max_rounds=1)
     finally:
         chat.close()
     assert len(calls) == 1 and not result.rejected
@@ -216,7 +218,7 @@ Duration: 30 minutes
 
 def test_single_items_are_not_repeated_structural_signals():
     signals = detect_signals([document(context="[§1 p.1]\n- A single item\nName: Solo\n")])
-    assert signals == []
+    assert [signal["kind"] for signal in signals] == ["section_text"]
 
 
 @pytest.mark.parametrize(("change", "reason"), [
@@ -380,6 +382,21 @@ def test_rejected_fields_are_removed_from_accepted_schema(tmp_path):
     assert [v.key for v in accepted.collections[0].examples[0].values] == ["name"]
 
 
+def test_accept_recomputes_coverage_after_a_collection_is_rejected(tmp_path):
+    second = proposal(key="appointments")
+    for item in second["examples"][0]["values"]:
+        item["evidence"][0]["locator"] = "§2"
+    schema = verify([proposal(), second])
+    assert schema.coverage == 1
+    write_proposal(tmp_path, schema, [document()])
+    path = tmp_path / "schema.proposed.json"
+    review(schema, path)
+    schema.collections[0].review_state = "rejected"
+    path.write_text(schema.model_dump_json(), encoding="utf-8")
+    accepted = accept_schema(path, tmp_path)
+    assert 0 < accepted.coverage < 1 and accepted.uncovered == ["Clinic prices"]
+
+
 def test_runtime_contract_comes_from_workspace_fields_without_hospitality_defaults(tmp_path):
     schema = verify([proposal()])
     with pytest.raises(ValueError, match="accepted workspace"):
@@ -453,7 +470,8 @@ def test_cli_default_and_dry_run_never_contact_model(tmp_path, monkeypatch, caps
                  "--model", "fake", "--api-key-env", "NONEXISTENT_TEST_KEY"]) == 0
     assert not out.exists()
     assert main(args) == 0
-    assert json.loads((out / "schema.proposed.json").read_text(encoding="utf-8"))["collections"] == []
+    output = json.loads((out / "schema.proposed.json").read_text(encoding="utf-8"))
+    assert output["collections"] == [] and output["coverage"] == 0 and output["uncovered"]
     assert len(json.loads((out / "discovery.signals.json").read_text(encoding="utf-8"))) > 0
     text = capsys.readouterr().out
     assert "Consultation" not in text and "Yoga" not in text
@@ -477,7 +495,7 @@ def test_cli_real_path_with_fake_model_and_accept_command(tmp_path, monkeypatch,
             "--api-key-env", "TEST_DISCOVERY_KEY"]
     assert main([*args, "--max-prompt-chars", "1"]) == 1
     assert not calls and not out.exists()
-    assert main(args) == 0 and calls == ["/v1/chat/completions"]
+    assert main(args) == 0 and calls == ["/v1/chat/completions"] * 3
     path = out / "schema.proposed.json"
     schema = WorkspaceSchema.model_validate_json(path.read_text(encoding="utf-8"))
     review(schema, path)

@@ -109,6 +109,8 @@ class WorkspaceSchema(StrictModel):
     sources: list[DiscoverySource]
     collections: list[Collection]
     rejected: list[RejectedExample] = Field(default_factory=list)
+    coverage: float = Field(default=0, ge=0, le=1)
+    uncovered: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def unique_keys(self):
