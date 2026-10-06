@@ -1,106 +1,37 @@
+import { ArrowRight, BedDouble, BookOpen, Check, Clock3, FileText, HelpCircle, LayoutGrid, NotebookText, Sun, Upload, Utensils, type LucideIcon } from "lucide-react";
+import { Card } from "@/components/ui/card";
 import { useDeveloperMode } from "./developer-mode";
 
-export function Icon({ name }: { name: string }) {
-  const p: Record<string, React.ReactNode> = {
-    summary: <><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M8 9h8M8 13h3M8 16h6" /></>,
-    question: <><path d="M9 8a3 3 0 0 1 6 0c0 2-3 2-3 4M12 16h.01" /><circle cx="12" cy="12" r="9" /></>,
-    check: <path d="m5 12 4 4L19 6" />,
-    arrow: <path d="M5 12h14m-5-5 5 5-5 5" />,
-    rooms: <><path d="M3 18v-8m18 8v-6H3m2-2V6h14v6M7 9h3m4 0h3" /></>,
-    outlets: <><path d="M7 3v7m-3-7v5a3 3 0 0 0 6 0V3M7 11v10M20 3c-4 1-5 6-5 10h5V3Zm0 10v8" /></>,
-    activities: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1 1m12 12 1 1M5 19l1-1M18 6l1-1" /></>,
-    doc: (
-      <>
-        <path d="M6 2.75h8l4 4V21.25H6z" />
-        <path d="M14 2.75v4h4M9 11h6M9 15h6" />
-      </>
-    ),
-    clock: (
-      <>
-        <circle cx="12" cy="12" r="8.5" />
-        <path d="M12 7.5V12l3 2" />
-      </>
-    ),
-    grid: (
-      <>
-        <rect x="4" y="4" width="6" height="6" />
-        <rect x="14" y="4" width="6" height="6" />
-        <rect x="4" y="14" width="6" height="6" />
-        <rect x="14" y="14" width="6" height="6" />
-      </>
-    ),
-    book: (
-      <>
-        <path d="M5 4h6a3 3 0 0 1 3 3v13H8a3 3 0 0 0-3 1z" />
-        <path d="M19 4h-2a3 3 0 0 0-3 3v13h3a3 3 0 0 1 2 1z" />
-      </>
-    ),
-    upload: (
-      <>
-        <path d="M12 16V4M7.5 8.5 12 4l4.5 4.5" />
-        <path d="M4 14v6h16v-6" />
-      </>
-    ),
-  };
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      aria-hidden
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      {p[name]}
-    </svg>
-  );
+const icons: Record<string, LucideIcon> = {
+  summary: NotebookText, question: HelpCircle, check: Check, arrow: ArrowRight,
+  rooms: BedDouble, outlets: Utensils, activities: Sun, doc: FileText,
+  clock: Clock3, grid: LayoutGrid, book: BookOpen, upload: Upload,
+};
+export function Icon({ name, className = "size-4 shrink-0" }: { name: string; className?: string }) {
+  const Component = icons[name] ?? FileText;
+  return <Component className={className} strokeWidth={1.6} aria-hidden="true" />;
 }
 export function Ep({ children }: { children: React.ReactNode }) {
-  return useDeveloperMode() ? <code className="ep">{children}</code> : null;
+  return useDeveloperMode() ? <code className="max-w-full overflow-x-auto rounded-sm border border-line bg-sheet px-2 py-1 font-mono text-2xs text-muted">{children}</code> : null;
 }
 export function EmptyState({ title, text }: { title: string; text: string }) {
-  return (
-    <div className="wrap">
-      <section className="card emptyArtifact">
-        <span className="emptyStateIcon"><Icon name="doc" /></span>
-        <h2>{title}</h2>
-        <p>{text}</p>
-      </section>
-    </div>
-  );
+  return <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6 px-4 py-6 md:px-6 xl:px-10">
+    <Card className="items-center gap-3 border border-dashed border-line-strong p-10 text-center ring-0">
+      <span className="grid size-9 place-items-center rounded-full bg-sheet text-muted"><Icon name="doc" className="size-5" /></span>
+      <h2 className="text-md font-semibold">{title}</h2>
+      <p className="max-w-[48ch] text-sm text-muted">{text}</p>
+    </Card>
+  </div>;
 }
-export function Head({
-  section = "Çalışma alanı",
-  title,
-  sub,
-  endpoint,
-  children,
-}: {
-  section?: string;
-  title: string;
-  sub: string;
-  endpoint: string;
-  children?: React.ReactNode;
+export function Head({ section = "Çalışma alanı", title, sub, endpoint, children }: {
+  section?: string; title: string; sub: string; endpoint: string; children?: React.ReactNode;
 }) {
-  return (
-    <header className="head">
-      <div className="crumb">
-        <span>{section}</span>
-        <b>›</b>
-        <span>{title}</span>
-      </div>
-      <div className="h1row">
-        <div>
-          <h1>{title}</h1>
-          <p className="sub">{sub}</p>
-        </div>
-        <div className="headact">
-          {children}
-          {endpoint && <Ep>{endpoint}</Ep>}
-        </div>
-      </div>
-    </header>
-  );
+  return <header className="mx-auto w-full max-w-[1200px] px-4 pt-6 md:px-6 md:pt-10 xl:px-10">
+    <span className="sr-only">{section}</span>
+    <div className="flex flex-wrap items-start gap-3">
+      <div className="min-w-0 flex-1"><h1 className="text-2xl font-semibold tracking-[-0.035em] text-balance wrap-anywhere">{title}</h1>
+        <p className="mt-1 max-w-[74ch] text-base text-muted wrap-anywhere">{sub}</p></div>
+      {(children || endpoint) && <div className="flex max-w-full flex-wrap items-center gap-2">{children}{endpoint && <Ep>{endpoint}</Ep>}</div>}
+    </div>
+  </header>;
 }
-

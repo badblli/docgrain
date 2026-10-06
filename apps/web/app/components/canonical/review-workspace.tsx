@@ -1,11 +1,25 @@
 "use client";
 
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
+
+
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
-import "./review-workspace.css";
 import { useDeveloperMode } from "../developer-mode";
 import { RevisionChat } from "./revision-chat";
 import { EvidenceView, type Cell, type Evidence, type Locator, type Node, type Snapshot } from "./inspector";
 import { LocalVisualProposal, type LocalVisualProposalData } from "./local-visual-proposal";
+
+
+const documentProse = "font-normal text-md leading-[1.75] font-serif whitespace-pre-wrap wrap-anywhere [&_mark]:bg-warn-soft [&_mark]:text-inherit [&_mark]:rounded-xs max-[640px]:text-base [&_mark]:py-0 [&_mark]:px-1 m-0";
+const sourceAction = "h-auto min-h-7 whitespace-normal bg-transparent border-0 text-xs font-semibold text-accent [text-decoration:underline] [text-underline-offset:3px] [&:disabled]:opacity-[.45] py-1 px-0";
+const reviewAction = "h-auto min-h-7 whitespace-normal inline-flex items-center justify-center border border-solid border-line rounded-sm bg-paper text-ink text-xs font-semibold no-underline cursor-pointer motion-safe:transition-colors motion-safe:duration-150 [&:hover:not(:disabled)]:border-accent [&:hover:not(:disabled)]:bg-accent-soft [&:disabled]:opacity-[.45] [&:disabled]:cursor-default gap-1 py-2 px-3";
+const loadingWorkspace = "text-ink min-w-0 pt-6 pb-12 flex flex-col items-start [&_:focus-visible]:[outline:2px_solid_var(--accent)] [&_:focus-visible]:[outline-offset:2px] max-[1000px]:pt-4 max-[1000px]:pb-8 px-8 gap-3 max-[1000px]:px-4";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -264,11 +278,11 @@ function Highlight({ text, query }: { text: string; query: string }) {
 function AccessChip({ editable, reason }: { editable: boolean; reason: string }) {
   const developerMode = useDeveloperMode();
   if (editable && !developerMode) return null;
-  return editable ? <span className="rw-chip rw-chip-edit">Düzenlenebilir</span>
-    : <span className="rw-chip rw-chip-lock" title={reason}>Salt okunur · {reason}</span>;
+  return editable ? <span className="inline-flex items-center rounded-pill font-semibold text-2xs leading-[1.5] font-sans bg-accent-soft text-accent py-1 px-2">Düzenlenebilir</span>
+    : <span className="inline-flex items-center rounded-pill font-semibold text-2xs leading-[1.5] font-sans bg-sheet text-faint py-1 px-2" title={reason}>Salt okunur · {reason}</span>;
 }
 function Original({ value }: { value: Scalar }) {
-  return <div className="rw-original"><span>Orijinal değer</span><p>{formatScalar(value)}</p></div>;
+  return <div className="mt-2 bg-warn-soft border-l-[3px] border-solid border-l-warn rounded-xs [&_span]:block [&_span]:font-bold [&_span]:text-2xs [&_span]:font-mono [&_span]:tracking-[.1em] [&_span]:uppercase [&_span]:text-warn [&_p]:mt-1 [&_p]:mb-0 [&_p]:font-normal [&_p]:text-sm [&_p]:leading-[1.6] [&_p]:font-serif [&_p]:line-through [&_p]:[text-decoration-color:var(--warn-line)] [&_p]:whitespace-pre-wrap [&_p]:wrap-anywhere py-2 px-3 [&_p]:mx-0"><span>Orijinal değer</span><p>{formatScalar(value)}</p></div>;
 }
 function ScalarInput({ field, label, multiline, onFocus }: {
   field: ReviewField; label: string; multiline?: boolean; onFocus?: () => void;
@@ -278,16 +292,17 @@ function ScalarInput({ field, label, multiline, onFocus }: {
   if (!st) return null;
   const common = { "aria-label": label, "aria-invalid": st.error ? true : undefined, disabled: c.locked, onFocus };
   if (typeof field.value === "boolean") {
-    return <select {...common} className="rw-input" value={String(st.raw)} onChange={(e) => c.setDraft(field, e.target.value === "true")}>
-      <option value="true">Doğru</option><option value="false">Yanlış</option>
-    </select>;
+    return <Select disabled={c.locked} value={String(st.raw)} onValueChange={value => c.setDraft(field, value === "true")}>
+      <SelectTrigger {...common} className="w-full bg-paper text-sm"><SelectValue>{st.raw === true || st.raw === "true" ? "Doğru" : "Yanlış"}</SelectValue></SelectTrigger>
+      <SelectContent><SelectItem value="true">Doğru</SelectItem><SelectItem value="false">Yanlış</SelectItem></SelectContent>
+    </Select>;
   }
   const text = String(st.raw);
   if (multiline) {
-    return <textarea {...common} placeholder={field.kind === "description" ? "Anlamı henüz açıklanmadı. Kaynak görselde gördüğünüz bilgiyi yazın…" : undefined} className="rw-input rw-textarea" value={text} rows={Math.min(16, Math.max(3, text.split("\n").length + 1))}
+    return <Textarea {...common} placeholder={field.kind === "description" ? "Anlamı henüz açıklanmadı. Kaynak görselde gördüğünüz bilgiyi yazın…" : undefined} className="w-full border border-solid border-line rounded-sm bg-paper text-ink [&:focus]:border-accent [&:focus]:[box-shadow:0_0_0_3px_var(--accent-soft)] [&:focus]:[outline:none] [&[aria-invalid='true']]:border-danger [&[aria-invalid='true']]:bg-danger-soft [&:disabled]:opacity-[.6] font-normal text-base leading-[1.65] font-serif resize-y p-2" value={text} rows={Math.min(16, Math.max(3, text.split("\n").length + 1))}
       onChange={(e) => c.setDraft(field, e.target.value)} />;
   }
-  return <input {...common} className="rw-input" value={text} inputMode={typeof field.value === "number" ? "decimal" : undefined}
+  return <Input {...common} className="w-full border border-solid border-line rounded-sm bg-paper text-ink text-sm [&:focus]:border-accent [&:focus]:[box-shadow:0_0_0_3px_var(--accent-soft)] [&:focus]:[outline:none] [&[aria-invalid='true']]:border-danger [&[aria-invalid='true']]:bg-danger-soft [&:disabled]:opacity-[.6] p-2" value={text} inputMode={typeof field.value === "number" ? "decimal" : undefined}
     onChange={(e) => c.setDraft(field, e.target.value)} />;
 }
 
@@ -298,22 +313,22 @@ function TextBlock({ node, field, compact }: { node: Node; field: ReviewField | 
   const text = st ? (typeof st.raw === "boolean" ? formatScalar(st.raw) : st.raw) : node.text ?? "";
   const selected = c.selection?.nodeId === node.id;
   const target: Selection = { nodeId: node.id, fieldId: field?.field_id };
-  return <article id={`rw-node-${node.id}`} className={`rw-block${compact ? " rw-block-compact" : ""}${selected ? " is-selected" : ""}${st?.changed ? " is-changed" : ""}`}
+  return <article id={`rw-node-${node.id}`} className={cn(`relative pt-3 pr-4 pb-2 pl-5 bg-paper border border-solid border-line2 rounded-xs motion-safe:transition-colors motion-safe:duration-150 [&::before]:content-[''] [&::before]:absolute [&::before]:left-0 [&::before]:top-2 [&::before]:bottom-2 [&::before]:w-[3px] [&::before]:rounded-xs [&::before]:bg-transparent [&:hover]:border-line${compact ? " pt-2 pb-1 px-3 my-1 mx-0" : ""}${selected ? " border-accent-line [box-shadow:0_0_0_3px_var(--accent-soft)] [&::before]:bg-accent" : ""}${st?.changed ? " [&::before]:bg-warn" : ""}`)}
     onClick={() => c.select(target)}>
-    <div className="rw-block-meta">
-      {st ? <AccessChip editable={st.editable} reason={st.reason} /> : <span className="rw-chip rw-chip-lock">Salt okunur · bu içerik için düzenleme alanı yok</span>}
-      {st?.changed && <span className="rw-chip rw-chip-draft">Taslakta değişti</span>}
+    <div className="flex flex-wrap mb-2 [&:empty]:hidden gap-1">
+      {st ? <AccessChip editable={st.editable} reason={st.reason} /> : <span className="inline-flex items-center rounded-pill font-semibold text-2xs leading-[1.5] font-sans bg-sheet text-faint py-1 px-2">Salt okunur · bu içerik için düzenleme alanı yok</span>}
+      {st?.changed && <span className="inline-flex items-center rounded-pill font-semibold text-2xs leading-[1.5] font-sans bg-warn-soft text-warn py-1 px-2">Taslakta değişti</span>}
     </div>
     {editing && st?.editable && field ? <ScalarInput field={field} label={field.label} multiline onFocus={() => c.select(target)} />
-      : <p className="rw-prose">{text ? <Highlight text={text} query={c.query} /> : <span className="rw-empty-value">(boş)</span>}</p>}
+      : <p className={documentProse}>{text ? <Highlight text={text} query={c.query} /> : <span className="text-faint italic">(boş)</span>}</p>}
     {st?.changed && field && <Original value={field.value} />}
-    {st?.error && <p className="rw-error" role="alert">{st.error}</p>}
-    <div className="rw-block-actions">
-      <button type="button" className="rw-link" onClick={(e) => { e.stopPropagation(); c.select(target, true); }}>Kaynakta göster</button>
-      {st?.editable && field && <button type="button" className="rw-link" aria-pressed={editing} disabled={c.locked}
-        onClick={(e) => { e.stopPropagation(); c.select(target); setEditing(!editing); }}>{editing ? "Düzenlemeyi kapat" : "Düzenle"}</button>}
-      {st?.changed && field && <button type="button" className="rw-link rw-link-warn" disabled={c.locked}
-        onClick={(e) => { e.stopPropagation(); c.revert(field); }}>Geri al</button>}
+    {st?.error && <p className="mt-1 mb-0 text-danger text-xs mx-0" role="alert">{st.error}</p>}
+    <div className="flex flex-wrap gap-y-1 gap-x-4 mt-2">
+      <Button variant="ghost" type="button" className={sourceAction} onClick={(e) => { e.stopPropagation(); c.select(target, true); }}>Kaynakta göster</Button>
+      {st?.editable && field && <Button variant="ghost" type="button" className={sourceAction} aria-pressed={editing} disabled={c.locked}
+        onClick={(e) => { e.stopPropagation(); c.select(target); setEditing(!editing); }}>{editing ? "Düzenlemeyi kapat" : "Düzenle"}</Button>}
+      {st?.changed && field && <Button variant="ghost" type="button" className="h-auto min-h-7 whitespace-normal bg-transparent border-0 text-xs font-semibold [text-decoration:underline] [text-underline-offset:3px] [&:disabled]:opacity-[.45] text-warn py-1 px-0" disabled={c.locked}
+        onClick={(e) => { e.stopPropagation(); c.revert(field); }}>Geri al</Button>}
     </div>
   </article>;
 }
@@ -323,7 +338,7 @@ function ListView({ node }: { node: Node }) {
   const textField = (n: Node) => c.fieldsByNode.get(n.id)?.find((f) => f.kind === "text") ?? null;
   if (!items.length) return <TextBlock node={node} field={textField(node)} />;
   const Tag: "ol" | "ul" = node.ordered ? "ol" : "ul";
-  return <Tag className="rw-list">{items.map((item) => <li key={item.id}>
+  return <Tag className="pl-5 grid gap-1 m-0">{items.map((item) => <li key={item.id}>
     {item.kind === "list" ? <ListView node={item} /> : <TextBlock node={item} field={textField(item)} compact />}
   </li>)}</Tag>;
 }
@@ -340,38 +355,38 @@ function TextPanel({ blocks }: { blocks: ReadBlock[] }) {
   if (needle) {
     const hits = blocks.filter(({ node }) => node.kind !== "section" && ["text_block", "list"].includes(node.kind) && norm(nodeText(node)).includes(needle));
     if (!hits.length) return <Empty title="Eşleşen metin yok" detail="Aramanızı değiştirin; tablolar ve görseller kendi bölümlerinde aranır." />;
-    return <div className="rw-flow">{hits.map(({ node, trail }) => <div key={node.id} className="rw-hit">
-      {trail.length > 0 && <p className="rw-trail">{trail.join(" › ")}</p>}
+    return <div className="flex flex-col gap-2">{hits.map(({ node, trail }) => <div key={node.id} className="rounded-xs bg-warn-soft px-1 text-inherit">
+      {trail.length > 0 && <p className="mt-0 mb-1 text-2xs text-faint mx-0">{trail.join(" › ")}</p>}
       {node.kind === "list" ? <ListView node={node} /> : <TextBlock node={node} field={textField(node)} />}
     </div>)}</div>;
   }
   const visible = blocks.filter(({ node }) => node.kind !== "section" || node.heading || node.title);
   if (!visible.length) return <Empty title="Metin bulunamadı" detail="Bu içerikte okunabilir metin içeriği yok." />;
-  return <div className="rw-flow">{visible.map(({ node, depth }) => {
+  return <div className="flex flex-col gap-2">{visible.map(({ node, depth }) => {
     if (node.kind === "section") {
       const Heading = (`h${Math.min(5, Math.max(3, (node.level ?? depth) + 2))}`) as "h3" | "h4" | "h5";
       const field = textField(node);
       const st = fieldState(c, field);
       return <section key={node.id} id={`rw-node-${node.id}`}>
-        <Heading className="rw-heading">{field ? String(c.drafts[field.field_id] ?? field.value) : node.heading || node.title}</Heading>
+        <Heading className="mt-5 mb-1 font-semibold text-lg leading-[1.25] font-serif text-ink pb-1 border-b border-solid border-b-line [h4&]:text-md [h4&]:border-b-0 [h5&]:text-base [h5&]:border-b-0 mx-0">{field ? String(c.drafts[field.field_id] ?? field.value) : node.heading || node.title}</Heading>
         {field && st?.editable && <details><summary>Başlığı düzenle</summary>
           <ScalarInput field={field} label="Bölüm başlığı" onFocus={() => c.select({ nodeId: node.id, fieldId: field.field_id })} />
-          {st.changed && <><Original value={field.value} /><button type="button" className="rw-link" onClick={() => c.revert(field)}>Geri al</button></>}
+          {st.changed && <><Original value={field.value} /><Button variant="ghost" type="button" className={sourceAction} onClick={() => c.revert(field)}>Geri al</Button></>}
         </details>}
-        <button type="button" className="rw-link" onClick={() => c.select({ nodeId: node.id, fieldId: field?.field_id }, true)}>Başlığı kaynakta göster</button>
+        <Button variant="ghost" type="button" className={sourceAction} onClick={() => c.select({ nodeId: node.id, fieldId: field?.field_id }, true)}>Başlığı kaynakta göster</Button>
       </section>;
     }
     if (node.kind === "list") return <ListView key={node.id} node={node} />;
     if (node.kind === "table") {
       const edits = (c.fieldsByNode.get(node.id) ?? []).filter((f) => c.drafts[f.field_id] !== undefined).length;
-      return <div className="rw-ref" key={node.id}><div><span className="rw-kicker">Tablo</span><strong>{nodeTitle(node, "Adsız tablo")}</strong>
+      return <div className="flex items-center justify-between border border-solid border-line rounded-xs bg-sheet [&_strong]:block [&_strong]:font-semibold [&_strong]:text-base [&_strong]:font-sans [&_small]:text-faint [&_small]:text-2xs [&_>_div]:min-w-0 [&_>_div]:wrap-anywhere gap-3 py-3 px-4" key={node.id}><div><span className="font-bold text-2xs leading-[1.4] font-mono tracking-[.12em] uppercase text-accent">Tablo</span><strong>{nodeTitle(node, "Adsız tablo")}</strong>
         <small>{node.rows?.length ?? 0} satır{edits ? ` · ${edits} hücre taslakta` : ""}</small></div>
-        <button type="button" className="rw-btn" onClick={() => c.openSection("tables", node.id)}>Tabloyu aç</button></div>;
+        <Button variant="ghost" type="button" className={reviewAction} onClick={() => c.openSection("tables", node.id)}>Tabloyu aç</Button></div>;
     }
     if (node.kind === "asset" || node.kind === "chart") {
-      return <div className="rw-ref" key={node.id}><div><span className="rw-kicker">{node.kind === "chart" ? "Grafik" : "Görsel"}</span>
+      return <div className="flex items-center justify-between border border-solid border-line rounded-xs bg-sheet [&_strong]:block [&_strong]:font-semibold [&_strong]:text-base [&_strong]:font-sans [&_small]:text-faint [&_small]:text-2xs [&_>_div]:min-w-0 [&_>_div]:wrap-anywhere gap-3 py-3 px-4" key={node.id}><div><span className="font-bold text-2xs leading-[1.4] font-mono tracking-[.12em] uppercase text-accent">{node.kind === "chart" ? "Grafik" : "Görsel"}</span>
         <strong>{node.description?.trim() ? node.caption || node.description : "Açıklama yok — ekle"}</strong></div>
-        <button type="button" className="rw-btn" onClick={() => c.openSection("visuals", node.id)}>Görseli aç</button></div>;
+        <Button variant="ghost" type="button" className={reviewAction} onClick={() => c.openSection("visuals", node.id)}>Görseli aç</Button></div>;
     }
     return <TextBlock key={node.id} node={node} field={textField(node)} />;
   })}</div>;
@@ -387,16 +402,16 @@ function CellView({ slot, row, col }: { slot: GridSlot; row: number; col: number
   const tableId = slot.field?.node_id ?? "";
   const label = `Satır ${row + 1}, sütun ${col + 1}`;
   const target: Selection | null = slot.field ? { nodeId: tableId, fieldId: slot.field.field_id } : null;
-  return <div className={`rw-cell${hit ? " is-hit" : ""}${active ? " is-active" : ""}${st?.changed ? " is-changed" : ""}${st?.error ? " is-invalid" : ""}`}>
+  return <div className={cn(`relative min-h-8 grid py-1 px-2 gap-1${hit ? " bg-warn-soft" : ""}${active ? " [box-shadow:inset_0_0_0_2px_var(--accent)]" : ""}${st?.changed ? " bg-warn-soft [box-shadow:inset_0_-2px_0_var(--warn)]" : ""}${st?.error ? " bg-danger-soft" : ""}`)}>
     {st?.editable && slot.field ? <ScalarInput field={slot.field} label={label} multiline={typeof slot.field.value === "string" && slot.field.value.includes("\n")}
       onFocus={() => target && c.select(target)} />
-      : <button type="button" className="rw-cell-read" aria-label={`${label}: ${text || "boş"}`} onClick={() => target && c.select(target)}>
-        {text ? <Highlight text={text} query={c.query} /> : <span className="rw-empty-value">·</span>}
-      </button>}
-    {slot.cell.formula && <small className="rw-cell-note">ƒ {slot.cell.formula}</small>}
-    {st && !st.editable && <small className="rw-cell-note rw-cell-lock">Salt okunur</small>}
-    {st?.changed && slot.field && <small className="rw-cell-note rw-cell-orig">Orijinal: {formatScalar(slot.field.value)}</small>}
-    {st?.error && <small className="rw-cell-note rw-error" role="alert">{st.error}</small>}
+      : <Button variant="ghost" type="button" className="h-auto min-h-7 whitespace-normal bg-transparent border-0 text-left text-xs leading-[1.45] whitespace-pre-wrap wrap-anywhere w-full py-1 px-0" aria-label={`${label}: ${text || "boş"}`} onClick={() => target && c.select(target)}>
+        {text ? <Highlight text={text} query={c.query} /> : <span className="text-faint italic">·</span>}
+      </Button>}
+    {slot.cell.formula && <small className="font-normal text-2xs leading-[1.4] font-mono text-faint wrap-anywhere">ƒ {slot.cell.formula}</small>}
+    {st && !st.editable && <small className="font-normal text-2xs leading-[1.4] font-mono text-faint wrap-anywhere">Salt okunur</small>}
+    {st?.changed && slot.field && <small className="font-normal text-2xs leading-[1.4] font-mono wrap-anywhere text-warn line-through">Orijinal: {formatScalar(slot.field.value)}</small>}
+    {st?.error && <small className="font-normal font-mono wrap-anywhere mt-1 mb-0 text-danger text-xs mx-0" role="alert">{st.error}</small>}
   </div>;
 }
 
@@ -417,47 +432,47 @@ function TablesPanel({ blocks, tableId, setTableId, grids }: {
   const columns = Math.max(0, ...grid.rows.map((row) => row.length));
   const selectedField = c.selection?.fieldId ? (c.fieldsByNode.get(current.node.id) ?? []).find((f) => f.field_id === c.selection?.fieldId) : undefined;
   const selectedState = fieldState(c, selectedField ?? null);
-  return <div className="rw-tables">
-    <div className="rw-table-nav" role="group" aria-label="Tablolar">
+  return <div className="grid gap-3">
+    <div className="flex overflow-x-auto pb-1 gap-2" role="group" aria-label="Tablolar">
       {shown.map((t, index) => {
         const edits = (c.fieldsByNode.get(t.node.id) ?? []).filter((f) => c.drafts[f.field_id] !== undefined).length;
-        return <button type="button" key={t.node.id} className="rw-table-pick" aria-pressed={t.node.id === current.node.id} onClick={() => setTableId(t.node.id)}>
-          <span className="rw-kicker">Tablo {index + 1}</span><strong>{nodeTitle(t.node, "Adsız tablo")}</strong>
+        return <Button variant="ghost" type="button" key={t.node.id} className="h-auto min-h-7 whitespace-normal flex-none max-w-60 text-left grid border border-solid border-line rounded-sm bg-paper [&_strong]:font-semibold [&_strong]:text-sm [&_strong]:leading-[1.3] [&_strong]:font-sans [&_strong]:overflow-hidden [&_strong]:text-ellipsis [&_strong]:whitespace-nowrap [&_small]:text-faint [&_small]:text-2xs [&[aria-pressed='true']]:border-accent [&[aria-pressed='true']]:[box-shadow:inset_3px_0_0_var(--accent)] [&[aria-pressed='true']]:bg-accent-soft gap-1 py-2 px-3" aria-pressed={t.node.id === current.node.id} onClick={() => setTableId(t.node.id)}>
+          <span className="font-bold text-2xs leading-[1.4] font-mono tracking-[.12em] uppercase text-accent">Tablo {index + 1}</span><strong>{nodeTitle(t.node, "Adsız tablo")}</strong>
           <small>{t.node.rows?.length ?? 0} × {Math.max(0, ...(t.node.rows ?? []).map((r) => r.length))}{edits ? ` · ${edits} değişiklik` : ""}</small>
-        </button>;
+        </Button>;
       })}
     </div>
-    <section className="rw-table-card" id={`rw-node-${current.node.id}`}>
+    <section className="bg-paper border border-solid border-line rounded-sm grid min-w-0 [&_>_header]:flex [&_>_header]:flex-wrap [&_>_header]:items-end [&_>_header]:justify-between [&_>_header]:gap-y-2 [&_>_header]:gap-x-4 [&_h3]:font-semibold [&_h3]:text-lg [&_h3]:leading-[1.25] [&_h3]:font-sans gap-3 p-4 [&_h3]:m-0" id={`rw-node-${current.node.id}`}>
       <header>
-        <div>{current.trail.length > 0 && <p className="rw-trail">{current.trail.join(" › ")}</p>}
+        <div>{current.trail.length > 0 && <p className="mt-0 mb-1 text-2xs text-faint mx-0">{current.trail.join(" › ")}</p>}
           <h3>{nodeTitle(current.node, "Adsız tablo")}</h3></div>
-        <label className="rw-check"><input type="checkbox" checked={header} onChange={(e) => setHeaderOverride({ ...headerOverride, [current.node.id]: e.target.checked })} />
+        <label className="inline-flex items-start text-xs text-ink2 [&_input]:mt-1 [&_input]:accent-accent gap-2"><input type="checkbox" checked={header} onChange={(e) => setHeaderOverride({ ...headerOverride, [current.node.id]: e.target.checked })} />
           İlk satır sütun başlığı</label>
       </header>
-      <div className="rw-grid-scroll" role="region" aria-label="Tablo içeriği" tabIndex={0}>
-        <table className="rw-grid">
-          <thead>
-            <tr><th className="rw-corner" scope="col"><span className="rw-sr">Satır</span></th>
-              {Array.from({ length: columns }, (_, i) => <th key={i} scope="col" className="rw-colno">Sütun {i + 1}</th>)}</tr>
-            {header && grid.rows[0] && <tr><th className="rw-rowno" scope="row">1</th>
-              {grid.rows[0].map((slot, i) => slot.covered ? null : <th key={i} scope="col" className="rw-headcell" rowSpan={slot.cell.row_span} colSpan={slot.cell.col_span}>
-                <CellView slot={slot} row={0} col={i} /></th>)}</tr>}
-          </thead>
-          <tbody>
-            {grid.rows.map((row, r) => header && r === 0 ? null : <tr key={r}>
-              <th className="rw-rowno" scope="row">{r + 1}</th>
-              {row.map((slot, i) => slot.covered ? null : <td key={i} rowSpan={slot.cell.row_span} colSpan={slot.cell.col_span}><CellView slot={slot} row={r} col={i} /></td>)}
-            </tr>)}
-          </tbody>
-        </table>
+      <div className="max-w-full max-h-[70vh] overflow-auto border border-solid border-line rounded-xs" role="region" aria-label="Tablo içeriği" tabIndex={0}>
+        <Table containerClassName="overflow-visible" className="[&_td]:whitespace-normal [&_mark]:bg-warn-soft [&_mark]:text-inherit [&_mark]:rounded-xs [border-collapse:separate] [border-spacing:0] w-[max-content] min-w-full text-xs [&_th]:border-r [&_th]:border-solid [&_th]:border-r-line2 [&_th]:border-b [&_th]:border-b-line2 [&_th]:align-[top] [&_th]:bg-paper [&_th]:min-w-[110px] [&_td]:border-r [&_td]:border-solid [&_td]:border-r-line2 [&_td]:border-b [&_td]:border-b-line2 [&_td]:align-[top] [&_td]:bg-paper [&_td]:min-w-[110px] [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-[2] [&_thead_th]:bg-sheet [&_tbody_tr:nth-child(even)_td]:bg-paper [&_mark]:py-0 [&_mark]:px-1 [&_th]:p-0 [&_td]:p-0">
+          <TableHeader>
+            <TableRow><TableHead className="sticky left-0 z-[3]! min-w-[34px]! w-[34px]! text-center font-semibold text-2xs font-mono text-faint bg-sheet" scope="col"><span className="absolute w-[1px] h-[1px] overflow-hidden [clip:rect(0_0_0_0)] whitespace-nowrap">Satır</span></TableHead>
+              {Array.from({ length: columns }, (_, i) => <TableHead key={i} scope="col" className="font-semibold text-2xs font-mono tracking-[.06em] uppercase text-faint text-left py-1 px-2">Sütun {i + 1}</TableHead>)}</TableRow>
+            {header && grid.rows[0] && <TableRow><TableHead className="sticky left-0 z-[1] min-w-[34px]! w-[34px]! text-center font-semibold text-2xs font-mono text-faint bg-sheet" scope="row">1</TableHead>
+              {grid.rows[0].map((slot, i) => slot.covered ? null : <TableHead key={i} scope="col" className="bg-sheet font-semibold top-6!" rowSpan={slot.cell.row_span} colSpan={slot.cell.col_span}>
+                <CellView slot={slot} row={0} col={i} /></TableHead>)}</TableRow>}
+          </TableHeader>
+          <TableBody>
+            {grid.rows.map((row, r) => header && r === 0 ? null : <TableRow key={r}>
+              <TableHead className="sticky left-0 z-[1] min-w-[34px]! w-[34px]! text-center font-semibold text-2xs font-mono text-faint bg-sheet" scope="row">{r + 1}</TableHead>
+              {row.map((slot, i) => slot.covered ? null : <TableCell key={i} rowSpan={slot.cell.row_span} colSpan={slot.cell.col_span}><CellView slot={slot} row={r} col={i} /></TableCell>)}
+            </TableRow>)}
+          </TableBody>
+        </Table>
       </div>
-      <p className="rw-note" aria-live="polite">{selectedField && selectedState ? <>
+      <p className="text-faint text-xs leading-[1.55] m-0" aria-live="polite">{selectedField && selectedState ? <>
         <strong>{selectedField.label}</strong> · <AccessChip editable={selectedState.editable} reason={selectedState.reason} /></> :
         "Bir hücre seçtiğinizde kaynak konumu solda gösterilir. Birleşik hücreler tek hücre olarak görünür; formüllü hücreler düzenlenemez."}</p>
-      {grid.loose.length > 0 && <details className="rw-loose">
+      {grid.loose.length > 0 && <details className="[&_summary]:cursor-pointer [&_summary]:text-xs [&_summary]:font-semibold">
         <summary>Hücre listesi · tablo ızgarasıyla eşleştirilemedi ({grid.loose.length})</summary>
-        <p className="rw-note">Bu tablodaki hücreler ızgaraya güvenle yerleştirilemedi; ızgara salt okunur gösteriliyor. Değerleri aşağıdan düzenleyebilirsiniz.</p>
-        <ul className="rw-loose-list">{grid.loose.map((field) => <LooseField key={field.field_id} field={field} />)}</ul>
+        <p className="text-faint text-xs leading-[1.55] m-0">Bu tablodaki hücreler ızgaraya güvenle yerleştirilemedi; ızgara salt okunur gösteriliyor. Değerleri aşağıdan düzenleyebilirsiniz.</p>
+        <ul className="[list-style:none] mt-2 mb-0 grid [&_li]:border [&_li]:border-solid [&_li]:border-line2 [&_li]:rounded-sm [&_label]:grid [&_label]:text-xs [&_label]:font-semibold mx-0 gap-2 [&_li]:py-2 [&_li]:px-3 [&_label]:gap-1 p-0">{grid.loose.map((field) => <LooseField key={field.field_id} field={field} />)}</ul>
       </details>}
     </section>
   </div>;
@@ -466,21 +481,21 @@ function LooseField({ field }: { field: ReviewField }) {
   const c = useCtx();
   const st = fieldState(c, field);
   if (!st) return null;
-  return <li className={st.changed ? "is-changed" : ""}>
+  return <li className={st.changed ? "" : ""}>
     <label><span>{field.label}</span>
       {st.editable ? <ScalarInput field={field} label={field.label} onFocus={() => c.select({ nodeId: field.node_id, fieldId: field.field_id })} />
-        : <span className="rw-prose">{formatScalar(field.value)} <AccessChip editable={false} reason={st.reason} /></span>}
+        : <span className={documentProse}>{formatScalar(field.value)} <AccessChip editable={false} reason={st.reason} /></span>}
     </label>
     {st.changed && <Original value={field.value} />}
-    {st.error && <p className="rw-error" role="alert">{st.error}</p>}
+    {st.error && <p className="mt-1 mb-0 text-danger text-xs mx-0" role="alert">{st.error}</p>}
   </li>;
 }
 
 function ArtifactImage({ src, alt }: { src: string; alt: string }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [src]);
-  return failed ? <div className="rw-img-missing">Görsel dosyası yüklenemedi.</div>
-    : <img className="rw-asset-img" src={src} alt={alt} loading="lazy" onError={() => setFailed(true)} />;
+  return failed ? <div className="text-center border border-dashed border-line rounded-sm text-faint text-xs bg-paper py-6 px-3">Görsel dosyası yüklenemedi.</div>
+    : <img className="w-full max-h-85 object-contain border border-solid border-line bg-paper" src={src} alt={alt} loading="lazy" onError={() => setFailed(true)} />;
 }
 function VisualsPanel({ blocks, snapshot }: { blocks: ReadBlock[]; snapshot: Snapshot }) {
   const c = useCtx();
@@ -493,11 +508,11 @@ function VisualsPanel({ blocks, snapshot }: { blocks: ReadBlock[]; snapshot: Sna
     const field = c.fieldsByNode.get(node.id)?.find((f) => f.kind === "description");
     return norm(`${node.caption ?? ""} ${field ? String(c.drafts[field.field_id] ?? toRaw(field.value)) : node.description ?? ""}`).includes(q);
   });
-  return <div className="rw-visuals">
-    <p className="rw-note rw-note-strong">Dosya türü ve boyutu gibi bilgiler yalnızca dosyayı tanımlar. Bir görselin anlamı, açıklama yazılıp kaynakla kontrol edilene kadar bilinmiyor sayılır.</p>
-    {undetected > 0 && <div className="rw-callout">{undetected} görsel kaynakta tespit edildi ancak dosyası çıkarılamadığı için burada önizlenemiyor{coverage ? ` (toplam ${coverage} görsel)` : ""}.</div>}
+  return <div className="grid gap-3">
+    <p className="text-xs leading-[1.55] text-ink2 bg-paper border border-solid border-line2 rounded-sm py-2 px-3 m-0">Dosya türü ve boyutu gibi bilgiler yalnızca dosyayı tanımlar. Bir görselin anlamı, açıklama yazılıp kaynakla kontrol edilene kadar bilinmiyor sayılır.</p>
+    {undetected > 0 && <div className="border-l-[4px] border-solid border-l-warn bg-warn-soft rounded-xs text-xs py-3 px-4">{undetected} görsel kaynakta tespit edildi ancak dosyası çıkarılamadığı için burada önizlenemiyor{coverage ? ` (toplam ${coverage} görsel)` : ""}.</div>}
     {!assets.length ? <Empty title={q ? "Eşleşen görsel yok" : "Görsel yok"} detail={q ? "Aramanızı değiştirin." : "Bu içerikte görsel veya grafik kaydı bulunmuyor."} />
-      : <div className="rw-asset-grid">{assets.map(({ node }) => {
+      : <div className="grid gap-3">{assets.map(({ node }) => {
         const artifact = snapshot.artifacts.find((item) => item.id === node.artifact_id);
         const field = c.fieldsByNode.get(node.id)?.find((f) => f.kind === "description") ?? null;
         const st = fieldState(c, field);
@@ -506,33 +521,33 @@ function VisualsPanel({ blocks, snapshot }: { blocks: ReadBlock[]; snapshot: Sna
         const uncertaintyText = field ? c.uncertaintyDrafts[field.field_id] ?? uncertainties.join("\n") : uncertainties.join("\n");
         const notesChanged = uncertaintyText !== uncertainties.join("\n");
         const target: Selection = { nodeId: node.id, fieldId: field?.field_id };
-        return <article key={node.id} id={`rw-node-${node.id}`} className={`rw-asset${c.selection?.nodeId === node.id ? " is-selected" : ""}${st?.changed ? " is-changed" : ""}`}
+        return <article key={node.id} id={`rw-node-${node.id}`} className={cn(`relative grid grid-cols-[minmax(150px,_40%)_minmax(0,_1fr)] bg-paper border border-solid border-line2 rounded-xs [&::before]:content-[''] [&::before]:absolute [&::before]:left-0 [&::before]:top-2 [&::before]:bottom-2 [&::before]:w-[3px] [&::before]:bg-transparent [&::before]:rounded-xs max-[640px]:grid-cols-[minmax(0,_1fr)] gap-4 p-3${c.selection?.nodeId === node.id ? " [&::before]:bg-accent border-accent-line [box-shadow:0_0_0_3px_var(--accent-soft)]" : ""}${st?.changed ? " [&::before]:bg-warn" : ""}`)}
           onClick={() => c.select(target)}>
-          <div className="rw-asset-media">
+          <div className="min-w-0">
             {artifact && artifact.mime_type.startsWith("image/") ?
               <ArtifactImage src={`${API}/v1/knowledge/revisions/${encodeURIComponent(snapshot.knowledge_revision.id)}/artifacts/${encodeURIComponent(artifact.id)}`}
                 alt={node.caption || node.description || "Belgeden çıkarılan görsel"} />
-              : <div className="rw-img-missing">{artifact ? "Bu dosya türü önizlenemiyor." : "Bu görsel için dosya çıkarılamadı."}</div>}
+              : <div className="text-center border border-dashed border-line rounded-sm text-faint text-xs bg-paper py-6 px-3">{artifact ? "Bu dosya türü önizlenemiyor." : "Bu görsel için dosya çıkarılamadı."}</div>}
           </div>
-          <div className="rw-asset-body">
-            <span className="rw-kicker">{node.kind === "chart" ? "Grafik" : "Görsel"}</span>
+          <div className="grid [align-content:start] min-w-0 [&_h3]:font-semibold [&_h3]:text-md [&_h3]:leading-[1.3] [&_h3]:font-sans gap-1 [&_h3]:m-0">
+            <span className="font-bold text-2xs leading-[1.4] font-mono tracking-[.12em] uppercase text-accent">{node.kind === "chart" ? "Grafik" : "Görsel"}</span>
             <h3>{description.trim() ? node.caption || description.split(".")[0] : "Açıklama yok — ekle"}</h3>
-            {developerMode && artifact && <p className="rw-meta">Dosya bilgisi: {artifact.mime_type} · {artifact.byte_size.toLocaleString("tr-TR")} bayt. Bu bilgi görselin anlamını doğrulamaz.</p>}
-            <div className="rw-block-meta">{st ? <AccessChip editable={st.editable} reason={st.reason} /> : <span className="rw-chip rw-chip-lock">Salt okunur · açıklama alanı yok</span>}
-              {(st?.changed || notesChanged) && <span className="rw-chip rw-chip-draft">Taslakta değişti</span>}</div>
+            {developerMode && artifact && <p className="text-faint text-2xs my-1 mx-0">Dosya bilgisi: {artifact.mime_type} · {artifact.byte_size.toLocaleString("tr-TR")} bayt. Bu bilgi görselin anlamını doğrulamaz.</p>}
+            <div className="flex flex-wrap mb-2 [&:empty]:hidden gap-1">{st ? <AccessChip editable={st.editable} reason={st.reason} /> : <span className="inline-flex items-center rounded-pill font-semibold text-2xs leading-[1.5] font-sans bg-sheet text-faint py-1 px-2">Salt okunur · açıklama alanı yok</span>}
+              {(st?.changed || notesChanged) && <span className="inline-flex items-center rounded-pill font-semibold text-2xs leading-[1.5] font-sans bg-warn-soft text-warn py-1 px-2">Taslakta değişti</span>}</div>
             {st?.editable && field ? <ScalarInput field={field} label={`${field.label} (görsel açıklaması)`} multiline onFocus={() => c.select(target)} />
-              : <p className="rw-prose">{description ? <Highlight text={description} query={c.query} /> : <span className="rw-unknown">Anlamı bilinmiyor · açıklama yok</span>}</p>}
+              : <p className={documentProse}>{description ? <Highlight text={description} query={c.query} /> : <span className="text-faint italic">Anlamı bilinmiyor · açıklama yok</span>}</p>}
             {st?.changed && field && <Original value={field.value} />}
-            {st?.error && <p className="rw-error" role="alert">{st.error}</p>}
-            {uncertainties.length > 0 && <div className="rw-note rw-note-warn"><strong>Görselde belirsiz kalan bilgiler</strong><ul>{uncertainties.map((item, i) => <li key={i}>{item}</li>)}</ul></div>}
+            {st?.error && <p className="mt-1 mb-0 text-danger text-xs mx-0" role="alert">{st.error}</p>}
+            {uncertainties.length > 0 && <div className="text-xs leading-[1.55] text-warn m-0"><strong>Görselde belirsiz kalan bilgiler</strong><ul>{uncertainties.map((item, i) => <li key={i}>{item}</li>)}</ul></div>}
             {st?.editable && field && <details><summary>Belirsizlik notlarını düzenle</summary>
-              <label><span className="rw-note">Her satır bir not (en fazla 20). Yalnız kaynakta doğruladığınız belirsizlikleri kaldırın.</span>
-                <textarea className="rw-textarea" aria-label="Görsel belirsizlik notları" rows={3} value={uncertaintyText} disabled={c.locked}
+              <label><span className="text-faint text-xs leading-[1.55] m-0">Her satır bir not (en fazla 20). Yalnız kaynakta doğruladığınız belirsizlikleri kaldırın.</span>
+                <Textarea className="font-normal text-base leading-[1.65] font-serif resize-y" aria-label="Görsel belirsizlik notları" rows={3} value={uncertaintyText} disabled={c.locked}
                   onChange={(e) => c.setUncertaintyDraft(field, e.target.value)} onFocus={() => c.select(target)} /></label>
             </details>}
-            <div className="rw-block-actions">
-              <button type="button" className="rw-link" onClick={(e) => { e.stopPropagation(); c.select(target, true); }}>Kaynakta göster</button>
-              {(st?.changed || notesChanged) && field && <button type="button" className="rw-link rw-link-warn" disabled={c.locked} onClick={(e) => { e.stopPropagation(); c.revert(field); }}>Geri al</button>}
+            <div className="flex flex-wrap gap-y-1 gap-x-4 mt-2">
+              <Button variant="ghost" type="button" className={sourceAction} onClick={(e) => { e.stopPropagation(); c.select(target, true); }}>Kaynakta göster</Button>
+              {(st?.changed || notesChanged) && field && <Button variant="ghost" type="button" className="h-auto min-h-7 whitespace-normal bg-transparent border-0 text-xs font-semibold [text-decoration:underline] [text-underline-offset:3px] [&:disabled]:opacity-[.45] text-warn py-1 px-0" disabled={c.locked} onClick={(e) => { e.stopPropagation(); c.revert(field); }}>Geri al</Button>}
             </div>
             {developerMode && artifact && artifact.mime_type.startsWith("image/") && field && typeof field.value !== "boolean" &&
               <LocalVisualProposal revisionId={snapshot.knowledge_revision.id} snapshotSha256={c.snapshotSha256} nodeId={node.id} mode={c.mode}
@@ -579,12 +594,12 @@ function computeGaps(ws: Workspace, fieldsByNode: Map<string, ReviewField[]>, bl
 function GapsPanel({ gaps }: { gaps: Gap[] }) {
   const developerMode = useDeveloperMode();
   const c = useCtx();
-  return <div className="rw-gaps">
-    <p className="rw-note rw-note-strong">Bu liste kayıtlı eksikleri gösterir. Listenin boş olması, kaynaktaki bütün anlamın doğru çıkarıldığı anlamına gelmez.</p>
+  return <div className="grid gap-3">
+    <p className="text-xs leading-[1.55] text-ink2 bg-paper border border-solid border-line2 rounded-sm py-2 px-3 m-0">Bu liste kayıtlı eksikleri gösterir. Listenin boş olması, kaynaktaki bütün anlamın doğru çıkarıldığı anlamına gelmez.</p>
     {!gaps.length ? <Empty title="Kayıtlı eksik yok" detail="Sistem bu içerik için eksik kaydı üretmedi; yine de içeriği kaynakla karşılaştırın." /> :
-      <ul className="rw-gap-list">{gaps.map((gap) => <li key={gap.key} className="rw-gap">
+      <ul className="[list-style:none] grid gap-2 m-0 p-0">{gaps.map((gap) => <li key={gap.key} className="flex justify-between items-start bg-paper border border-solid border-line2 border-l-[3px] border-l-warn rounded-xs [&_strong]:text-sm [&_p]:mt-1 [&_p]:mb-0 [&_p]:text-ink2 [&_p]:text-xs gap-3 py-3 px-4 [&_p]:mx-0">
         <div><strong>{developerMode || gap.nodeId ? gap.title : "İnceleme gerekiyor"}{gap.count > 1 ? ` · ${gap.count} kayıt` : ""}</strong>{gap.detail && <p>{developerMode || gap.nodeId ? gap.detail : "Bu bölümdeki bilgileri özgün dosyayla karşılaştırın."}</p>}</div>
-        {gap.nodeId && <button type="button" className="rw-btn" onClick={() => c.openSection("visuals", gap.nodeId)}>Öğeye git</button>}
+        {gap.nodeId && <Button variant="ghost" type="button" className={reviewAction} onClick={() => c.openSection("visuals", gap.nodeId)}>Öğeye git</Button>}
       </li>)}</ul>}
   </div>;
 }
@@ -593,30 +608,30 @@ function HistoryPanel({ ws, numbers, displayed, locked, onView }: {
   ws: Workspace; numbers: Map<string, number>; displayed: string; locked: boolean; onView: (id: string) => void;
 }) {
   const entries = [...ws.history].sort((a, b) => (numbers.get(b.revision_id) ?? 0) - (numbers.get(a.revision_id) ?? 0));
-  return <div className="rw-history">
-    <p className="rw-note rw-note-strong"><b>Düzenleme geçmişi</b> bu belgenin içeriğinde yapılan incelemeleri gösterir. Dosya sürümleri yüklenen dosyanın geçmişini gösterir; bir düzenleme kaydetmek kaynak dosyayı değiştirmez.
+  return <div className="grid gap-3">
+    <p className="text-xs leading-[1.55] text-ink2 bg-paper border border-solid border-line2 rounded-sm py-2 px-3 m-0"><b>Düzenleme geçmişi</b> bu belgenin içeriğinde yapılan incelemeleri gösterir. Dosya sürümleri yüklenen dosyanın geçmişini gösterir; bir düzenleme kaydetmek kaynak dosyayı değiştirmez.
       Eski düzenlemeler yalnızca görüntülenir; geri yükleme veya onaylama burada yoktur.</p>
-    <ol className="rw-history-list">{entries.map((entry) => {
+    <ol className="[list-style:none] grid gap-2 m-0 p-0">{entries.map((entry) => {
       const isLatest = entry.revision_id === ws.latest_revision_id, shown = entry.revision_id === displayed;
-      return <li key={entry.revision_id} className={`rw-rev${shown ? " is-shown" : ""}`}>
-        <div className="rw-rev-head">
+      return <li key={entry.revision_id} className={cn(`relative pr-4 pl-5 bg-paper border border-solid border-line2 rounded-xs [&::before]:content-[''] [&::before]:absolute [&::before]:left-[9px] [&::before]:top-[18px] [&::before]:w-[7px] [&::before]:h-[7px] [&::before]:rounded-pill [&::before]:bg-line py-3${shown ? " border-accent-line [&::before]:bg-accent" : ""}`)}>
+        <div className="flex flex-wrap items-center gap-2">
           <strong>Düzenleme {numbers.get(entry.revision_id)}</strong>
-          {isLatest && <span className="rw-chip rw-chip-edit">Güncel</span>}
-          {entry.revision_id === ws.approved_revision_id && <span className="rw-chip rw-chip-ok">Onaylı sürüm</span>}
-          {shown && <span className="rw-chip rw-chip-draft">Görüntüleniyor</span>}
+          {isLatest && <span className="inline-flex items-center rounded-pill font-semibold text-2xs leading-[1.5] font-sans bg-accent-soft text-accent py-1 px-2">Güncel</span>}
+          {entry.revision_id === ws.approved_revision_id && <span className="inline-flex items-center rounded-pill font-semibold text-2xs leading-[1.5] font-sans bg-ok-soft text-ok py-1 px-2">Onaylı sürüm</span>}
+          {shown && <span className="inline-flex items-center rounded-pill font-semibold text-2xs leading-[1.5] font-sans bg-warn-soft text-warn py-1 px-2">Görüntüleniyor</span>}
         </div>
-        <p className="rw-meta">{entry.kind === "manual_review" ? "Manuel inceleme" : "İlk çıkarım"} · {dateText(entry.created_at)}</p>
-        <p className="rw-meta">İnceleyen: {entry.reviewer_id || "kayıtlı değil"}</p>
-        {entry.reason && <p className="rw-prose">{entry.reason}</p>}
-        {!shown && <button type="button" className="rw-btn" disabled={locked} onClick={() => onView(entry.revision_id)}>
-          {isLatest ? "Güncel içeriği göster" : "Bu içeriği görüntüle"}</button>}
+        <p className="text-faint text-2xs my-1 mx-0">{entry.kind === "manual_review" ? "Manuel inceleme" : "İlk çıkarım"} · {dateText(entry.created_at)}</p>
+        <p className="text-faint text-2xs my-1 mx-0">İnceleyen: {entry.reviewer_id || "kayıtlı değil"}</p>
+        {entry.reason && <p className={documentProse}>{entry.reason}</p>}
+        {!shown && <Button variant="ghost" type="button" className="h-auto min-h-7 whitespace-normal inline-flex items-center justify-center border border-solid border-line rounded-sm bg-paper text-ink text-xs font-semibold no-underline cursor-pointer motion-safe:transition-colors motion-safe:duration-150 [&:hover:not(:disabled)]:border-accent [&:hover:not(:disabled)]:bg-accent-soft [&:disabled]:opacity-[.45] [&:disabled]:cursor-default mt-2 gap-1 py-2 px-3" disabled={locked} onClick={() => onView(entry.revision_id)}>
+          {isLatest ? "Güncel içeriği göster" : "Bu içeriği görüntüle"}</Button>}
       </li>;
     })}</ol>
   </div>;
 }
 
 function Empty({ title, detail }: { title: string; detail: string }) {
-  return <div className="rw-empty"><strong>{title}</strong><p>{detail}</p></div>;
+  return <div className="border border-dashed border-line rounded-lg bg-paper [&_strong]:font-semibold [&_strong]:text-md [&_strong]:font-sans [&_p]:mt-1 [&_p]:mb-0 [&_p]:text-faint [&_p]:text-xs [&_p]:max-w-[62ch] py-8 px-6 [&_p]:mx-0"><strong>{title}</strong><p>{detail}</p></div>;
 }
 
 function SourcePanel({ ws, evidences, activeId, setActiveId, page, setPage, hasSelection, panelRef }: {
@@ -631,38 +646,38 @@ function SourcePanel({ ws, evidences, activeId, setActiveId, page, setPage, hasS
   const current = pages[index];
   const boxes = evidences.filter((e): e is Evidence & { locator: Extract<Locator, { kind: "pdf_page" }> } =>
     e.locator.kind === "pdf_page" && !!e.locator.bbox && e.locator.page_number === current?.page_number);
-  return <aside className="rw-source" ref={panelRef} aria-label="Kaynak belge">
-    <header className="rw-source-head">
-      <span className="rw-kicker">Kaynak</span>
+  return <aside className="sticky top-[140px] max-h-[calc(100vh_-_156px)] overflow-auto bg-sheet border border-solid border-line rounded-xs shadow-none flex flex-col max-[1000px]:static max-[1000px]:max-h-[none] gap-3 p-4" ref={panelRef} aria-label="Kaynak belge">
+    <header className="grid [justify-items:start] [&_h2]:mt-0 [&_h2]:mb-1 [&_h2]:font-semibold [&_h2]:text-md [&_h2]:leading-[1.3] [&_h2]:font-sans [&_h2]:wrap-anywhere gap-1 [&_h2]:mx-0">
+      <span className="font-bold text-2xs leading-[1.4] font-mono tracking-[.12em] uppercase text-accent">Kaynak</span>
       <h2>{ws.source.filename}</h2>
-      <a className="rw-btn" href={absolute(ws.source.download_url)} download>Orijinali indir</a>
+      <a className="inline-flex items-center justify-center border border-solid border-line rounded-sm bg-paper text-ink text-xs font-semibold no-underline cursor-pointer motion-safe:transition-colors motion-safe:duration-150 [&:hover:not(:disabled)]:border-accent [&:hover:not(:disabled)]:bg-accent-soft [&:disabled]:opacity-[.45] [&:disabled]:cursor-default gap-1 py-2 px-3" href={absolute(ws.source.download_url)} download>Orijinali indir</a>
     </header>
-    {evidences.length > 0 && <div className="rw-evidence-chips" role="group" aria-label="Seçili içeriğin kaynak konumları">
-      {evidences.map((e) => <button type="button" key={e.id} aria-pressed={e.id === active?.id} onClick={() => setActiveId(e.id)}>{locatorLabel(e.locator)}</button>)}
+    {evidences.length > 0 && <div className="flex flex-wrap [&_button]:border [&_button]:border-solid [&_button]:border-line [&_button]:bg-paper [&_button]:rounded-pill [&_button]:text-2xs [&_button[aria-pressed='true']]:bg-accent [&_button[aria-pressed='true']]:border-accent [&_button[aria-pressed='true']]:text-on-accent gap-1 [&_button]:py-1 [&_button]:px-3" role="group" aria-label="Seçili içeriğin kaynak konumları">
+      {evidences.map((e) => <Button variant="ghost" type="button" key={e.id} aria-pressed={e.id === active?.id} onClick={() => setActiveId(e.id)}>{locatorLabel(e.locator)}</Button>)}
     </div>}
-    {!hasSelection && <p className="rw-note">Sağdaki bir metne, hücreye veya görsele tıklayın; kaynaktaki konumu burada görünür.</p>}
-    {hasSelection && evidences.length === 0 && <p className="rw-note rw-note-warn">Seçili içerik için kaynak konumu kaydedilmemiş.</p>}
-    {pages.length > 0 && current ? <div className="rw-pager-wrap">
-      <div className="rw-pager">
-        <button type="button" className="rw-btn" disabled={index === 0} onClick={() => setPage(pages[index - 1].page_number)}>← Önceki</button>
+    {!hasSelection && <p className="text-faint text-xs leading-[1.55] m-0">Sağdaki bir metne, hücreye veya görsele tıklayın; kaynaktaki konumu burada görünür.</p>}
+    {hasSelection && evidences.length === 0 && <p className="text-xs leading-[1.55] text-warn m-0">Seçili içerik için kaynak konumu kaydedilmemiş.</p>}
+    {pages.length > 0 && current ? <div className="grid gap-2">
+      <div className="flex items-center justify-between text-xs font-semibold gap-2">
+        <Button variant="ghost" type="button" className={reviewAction} disabled={index === 0} onClick={() => setPage(pages[index - 1].page_number)}>← Önceki</Button>
         <span aria-live="polite">Sayfa {current.page_number} / {pages.length}</span>
-        <button type="button" className="rw-btn" disabled={index >= pages.length - 1} onClick={() => setPage(pages[index + 1].page_number)}>Sonraki →</button>
+        <Button variant="ghost" type="button" className={reviewAction} disabled={index >= pages.length - 1} onClick={() => setPage(pages[index + 1].page_number)}>Sonraki →</Button>
       </div>
-      {failed === current.render_url ? <div className="rw-img-missing">Sayfa görüntüsü yüklenemedi. Orijinali indirerek kontrol edin.</div> :
-        <div className="rw-page">
+      {failed === current.render_url ? <div className="text-center border border-dashed border-line rounded-sm text-faint text-xs bg-paper py-6 px-3">Sayfa görüntüsü yüklenemedi. Orijinali indirerek kontrol edin.</div> :
+        <div className="relative leading-0 bg-paper border border-solid border-line shadow-none [&_img]:w-full [&_img]:h-auto [&_img]:block">
           <img src={absolute(current.render_url)} alt={`Kaynak belge, sayfa ${current.page_number}`} onError={() => setFailed(current.render_url)} />
-          {boxes.map((e) => <span key={e.id} className={`rw-bbox${e.id === active?.id ? " is-active" : ""}`} aria-hidden style={{
+          {boxes.map((e) => <span key={e.id} className={cn(`absolute border-[2px] border-solid border-accent bg-accent-soft rounded-xs pointer-events-none${e.id === active?.id ? " border-warn bg-warn-soft [box-shadow:0_0_0_1px_var(--warn-line)]" : ""}`)} aria-hidden style={{
             left: `${e.locator.bbox!.x * 100}%`, top: `${e.locator.bbox!.y * 100}%`,
             width: `${e.locator.bbox!.width * 100}%`, height: `${e.locator.bbox!.height * 100}%`,
           }} />)}
         </div>}
-      {active?.locator.kind === "pdf_page" && !active.locator.bbox && <p className="rw-note">Bu kayıt için sayfadaki bölge bilinmiyor; yalnızca sayfa gösteriliyor.</p>}
+      {active?.locator.kind === "pdf_page" && !active.locator.bbox && <p className="text-faint text-xs leading-[1.55] m-0">Bu kayıt için sayfadaki bölge bilinmiyor; yalnızca sayfa gösteriliyor.</p>}
     </div> : active?.locator.kind === "image_region" ? null :
-      <div className="rw-nopages">
+      <div className="bg-paper border border-dashed border-line rounded-sm text-xs [&_p]:mt-1 [&_p]:mb-0 [&_p]:text-faint py-3 px-4 [&_p]:mx-0">
         <strong>{active ? locatorLabel(active.locator) : "Konum seçilmedi"}</strong>
         <p>Bu kaynak biçimi için sayfa görüntüsü üretilmiyor. Konumu orijinal dosyada açarak kontrol edin; yukarıdaki bağlantı doğrulanmış özgün dosyayı indirir.</p>
       </div>}
-    {active && (developerMode || active.locator.kind === "image_region") && <details className="rw-trace" open={active.locator.kind === "image_region"}>
+    {active && (developerMode || active.locator.kind === "image_region") && <details className="[&_summary]:cursor-pointer [&_summary]:text-xs [&_summary]:font-semibold [&_summary]:text-ink2" open={active.locator.kind === "image_region"}>
       <summary>{developerMode ? "Kaynak izi ayrıntıları" : "Kaynak görseli"}</summary>
       <EvidenceView key={active.id} evidence={active} snapshot={ws.snapshot} versionId={ws.source.document_version_id ?? undefined} />
     </details>}
@@ -993,14 +1008,14 @@ export function ReviewWorkspace({ documentId, onSaved, mode, onDirtyChange, view
   } : null;
 
   if (mode === "demo") {
-    return <div className="rw-wrap"><Empty title="Örnek belgelerde inceleme kapalı" detail="Örnek belgeler gösterilir; belge içeriği üretilmez ve değişiklik kaydedilemez. Bağlantı kurulduğunda burada kaynak ve içerik yan yana görünür." /></div>;
+    return <div className={loadingWorkspace}><Empty title="Örnek belgelerde inceleme kapalı" detail="Örnek belgeler gösterilir; belge içeriği üretilmez ve değişiklik kaydedilemez. Bağlantı kurulduğunda burada kaynak ve içerik yan yana görünür." /></div>;
   }
-  if (mode === null) return <div className="rw-wrap"><Empty title="Bağlanıyor…" detail="Çalışma modu doğrulandığında belge incelemesi açılır." /></div>;
+  if (mode === null) return <div className={loadingWorkspace}><Empty title="Bağlanıyor…" detail="Çalışma modu doğrulandığında belge incelemesi açılır." /></div>;
   if (!ws || !index || !ctx) {
-    return <div className="rw-wrap" aria-busy={load.status === "loading"}>
+    return <div className={loadingWorkspace} aria-busy={load.status === "loading"}>
       {load.status === "error" ? <div role="alert"><Empty title="İnceleme açılamadı" detail={developerMode ? load.message : "Belge içeriği alınamadı. Bir süre sonra tekrar deneyin."} />
-        <button type="button" className="rw-btn" onClick={() => setReloadTick((t) => t + 1)}>Tekrar dene</button></div>
-        : <div className="rw-skeleton" role="status"><span /><span /><span /><p>Belge ve kaynak yükleniyor…</p></div>}
+        <Button variant="ghost" type="button" className={reviewAction} onClick={() => setReloadTick((t) => t + 1)}>Tekrar dene</Button></div>
+        : <div className="grid w-full gap-3" role="status"><Skeleton className="h-[74px] w-full rounded-lg bg-sheet" /><Skeleton className="h-[74px] w-full rounded-lg bg-sheet" /><Skeleton className="h-[74px] w-full rounded-lg bg-sheet" /><p className="text-faint">Belge ve kaynak yükleniyor…</p></div>}
     </div>;
   }
 
@@ -1017,44 +1032,44 @@ export function ReviewWorkspace({ documentId, onSaved, mode, onDirtyChange, view
   const currentEntry = ws.history.find((entry) => entry.revision_id === displayedRevision);
 
   return <RwContext.Provider value={ctx}>
-    <div className="rw" aria-busy={load.status === "loading"}>
-      <header className="rw-top">
-        <div className="rw-title">
-          <span className="rw-kicker">Belgeyi incele</span>
+    <div className="text-ink min-w-0 bg-ground min-h-[70vh] pt-0 pb-6 [&_button]:font-sans [&_input]:font-sans [&_textarea]:font-sans [&_select]:font-sans [&_:focus-visible]:[outline:2px_solid_var(--accent)] [&_:focus-visible]:[outline-offset:2px] px-0" aria-busy={load.status === "loading"}>
+      <header className="sticky top-0 z-[20] grid grid-cols-[minmax(0,_1fr)_minmax(220px,_340px)] gap-y-1 gap-x-6 pt-3 pb-0 bg-[color-mix(in_srgb,_var(--ground)_94%,_transparent)] [backdrop-filter:blur(8px)] border-b border-solid border-b-line max-[1000px]:grid-cols-[minmax(0,_1fr)] max-[1000px]:pt-3 max-[1000px]:pb-0 max-[1000px]:static px-8 max-[1000px]:px-4">
+        <div className="[&_h2]:font-semibold [&_h2]:text-[clamp(var(--text-lg),_2.2vw,_var(--text-2xl))] [&_h2]:leading-[1.15] [&_h2]:font-sans [&_h2]:wrap-anywhere [&_p]:text-ink2 [&_p]:text-xs [&_p]:flex [&_p]:flex-wrap [&_p]:gap-y-1 [&_p]:gap-x-2 [&_p]:items-center [&_h2]:my-1 [&_h2]:mx-0 [&_p]:m-0">
+          <span className="font-bold text-2xs leading-[1.4] font-mono tracking-[.12em] uppercase text-accent">Belgeyi incele</span>
           <h2>{ws.source.filename}</h2>
           <p>Düzenleme {revNumber ?? "—"}{currentEntry ? ` · ${dateText(currentEntry.created_at)}` : ""}
-            {viewLatest ? <span className="rw-chip rw-chip-edit">Güncel</span> : <span className="rw-chip rw-chip-lock">Eski düzenleme · salt okunur</span>}</p>
+            {viewLatest ? <span className="inline-flex items-center rounded-pill font-semibold text-2xs leading-[1.5] font-sans bg-accent-soft text-accent py-1 px-2">Güncel</span> : <span className="inline-flex items-center rounded-pill font-semibold text-2xs leading-[1.5] font-sans bg-sheet text-faint py-1 px-2">Eski düzenleme · salt okunur</span>}</p>
         </div>
-        {view !== "history" && <label className="rw-search"><span className="rw-sr">Belgede ara</span>
-          <input type="search" value={query} placeholder="Metin, hücre veya açıklama ara…" onChange={(e) => setQuery(e.target.value)} /></label>}
-        {view !== "history" && <nav className="rw-nav" aria-label="Belge bölümleri">
+        {view !== "history" && <label className="self-center [&_input]:w-full [&_input]:border [&_input]:border-solid [&_input]:border-line [&_input]:rounded-pill [&_input]:bg-paper [&_input]:text-sm [&_input:focus]:border-accent [&_input:focus]:[box-shadow:0_0_0_3px_var(--accent-soft)] [&_input:focus]:[outline:none] [&_input]:py-2 [&_input]:px-3"><span className="absolute w-[1px] h-[1px] overflow-hidden [clip:rect(0_0_0_0)] whitespace-nowrap">Belgede ara</span>
+          <Input type="search" value={query} placeholder="Metin, hücre veya açıklama ara…" onChange={(e) => setQuery(e.target.value)} /></label>}
+        {view !== "history" && <nav className="col-[1_/_-1] overflow-x-auto [scrollbar-width:none] [&_[role='tablist']]:flex [&_[role='tablist']]:min-w-[max-content] [&_button]:relative [&_button]:bg-transparent [&_button]:border-0 [&_button]:text-sm [&_button]:font-semibold [&_button]:text-ink2 [&_button]:inline-flex [&_button]:items-center [&_button_i]:font-semibold [&_button_i]:text-2xs [&_button_i]:font-mono [&_button_i]:not-italic [&_button_i]:rounded-pill [&_button_i]:bg-line2 [&_button_i]:text-faint [&_button::after]:content-[''] [&_button::after]:absolute [&_button::after]:left-[10px] [&_button::after]:right-[10px] [&_button::after]:bottom-[-1px] [&_button::after]:h-[3px] [&_button::after]:rounded-[var(--radius-xs)_var(--radius-xs)_0_0] [&_button::after]:bg-accent [&_button::after]:[transform:scaleX(0)] [&_button::after]:motion-safe:transition-colors [&_button::after]:motion-safe:duration-150 [&_button[aria-selected='true']]:text-accent [&_button[aria-selected='true']_i]:bg-accent-soft [&_button[aria-selected='true']_i]:text-accent [&_button[aria-selected='true']::after]:[transform:scaleX(1)] [&_button:hover]:text-ink max-[1000px]:sticky max-[1000px]:top-0 max-[1000px]:z-[20] max-[1000px]:bg-ground motion-reduce:[&_button::after]:transition-none [&_[role='tablist']]:gap-1 [&_button]:gap-2 [&_button]:p-3 [&_button_i]:p-1" aria-label="Belge bölümleri">
           <div role="tablist" aria-label="Bölümler" onKeyDown={(e) => {
             if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
             const at = sections.findIndex(([key]) => key === section);
             const next = sections[(at + (e.key === "ArrowRight" ? 1 : sections.length - 1)) % sections.length][0];
             setSection(next); document.getElementById(tabId(next))?.focus();
           }}>
-            {sections.map(([key, label]) => <button type="button" role="tab" key={key} id={tabId(key)} aria-selected={section === key}
+            {sections.map(([key, label]) => <Button variant="ghost" type="button" role="tab" key={key} id={tabId(key)} aria-selected={section === key}
               aria-controls={`${baseId}-panel`} tabIndex={section === key ? 0 : -1} onClick={() => setSection(key)}>
-              {label}{key !== "chat" && <i>{counts[key]}</i>}</button>)}
+              {label}{key !== "chat" && <i>{counts[key]}</i>}</Button>)}
           </div>
         </nav>}
       </header>
 
-      {!viewLatest && <div className="rw-banner rw-banner-warn" role="status">Eski bir düzenlemeyi görüntülüyorsunuz; düzenleme kapalı.
-        <button type="button" className="rw-btn" onClick={() => goToRevision(ws.latest_revision_id)} disabled={locked}>Güncel içeriğe dön</button></div>}
-      {viewLatest && !ws.can_edit && <div className="rw-banner" role="status">Bu belge şu an düzenlemeye kapalı; içerik yalnızca okunabilir.</div>}
-      {load.status === "error" && <div className="rw-banner rw-banner-warn" role="alert">{developerMode ? load.message : "Belge içeriği alınamadı. Tekrar deneyin."}
-        <button type="button" className="rw-btn" onClick={() => setReloadTick((t) => t + 1)}>Tekrar dene</button></div>}
-      {save.status === "saved" && <div className="rw-banner rw-banner-ok" role="status">{save.message}</div>}
-      {view !== "history" && <p className="rw-lede">İçeriği özgün dosyayla karşılaştırın. Değişikliklerinizi gözden geçirip kaydedin; her kayıt düzenleme geçmişine eklenir.</p>}
+      {!viewLatest && <div className="mt-3 mb-0 border border-solid border-line border-l-[4px] rounded-sm text-xs flex flex-wrap gap-y-2 gap-x-3 items-center justify-between border-l-warn bg-warn-soft mx-8 py-3 px-4 max-[1000px]:mx-4 [&_p]:m-0" role="status">Eski bir düzenlemeyi görüntülüyorsunuz; düzenleme kapalı.
+        <Button variant="ghost" type="button" className={reviewAction} onClick={() => goToRevision(ws.latest_revision_id)} disabled={locked}>Güncel içeriğe dön</Button></div>}
+      {viewLatest && !ws.can_edit && <div className="mt-3 mb-0 border border-solid border-line border-l-[4px] border-l-accent rounded-sm bg-paper text-xs flex flex-wrap gap-y-2 gap-x-3 items-center justify-between mx-8 py-3 px-4 max-[1000px]:mx-4 [&_p]:m-0" role="status">Bu belge şu an düzenlemeye kapalı; içerik yalnızca okunabilir.</div>}
+      {load.status === "error" && <div className="mt-3 mb-0 border border-solid border-line border-l-[4px] rounded-sm text-xs flex flex-wrap gap-y-2 gap-x-3 items-center justify-between border-l-warn bg-warn-soft mx-8 py-3 px-4 max-[1000px]:mx-4 [&_p]:m-0" role="alert">{developerMode ? load.message : "Belge içeriği alınamadı. Tekrar deneyin."}
+        <Button variant="ghost" type="button" className={reviewAction} onClick={() => setReloadTick((t) => t + 1)}>Tekrar dene</Button></div>}
+      {save.status === "saved" && <div className="mt-3 mb-0 border border-solid border-line border-l-[4px] rounded-sm text-xs flex flex-wrap gap-y-2 gap-x-3 items-center justify-between border-l-ok bg-ok-soft mx-8 py-3 px-4 max-[1000px]:mx-4 [&_p]:m-0" role="status">{save.message}</div>}
+      {view !== "history" && <p className="mt-3 mb-1 max-w-[78ch] text-ink2 text-xs leading-[1.6] mx-8 max-[1000px]:mx-4">İçeriği özgün dosyayla karşılaştırın. Değişikliklerinizi gözden geçirip kaydedin; her kayıt düzenleme geçmişine eklenir.</p>}
 
-      {view !== "history" && <button type="button" className="rw-source-toggle" aria-expanded={sourceOpen} onClick={() => setSourceOpen(!sourceOpen)}>
-        {sourceOpen ? "Kaynağı gizle" : "Kaynağı göster"}</button>}
-      <div className={`rw-body${sourceOpen && view !== "history" ? "" : " is-source-hidden"}`}>
+      {view !== "history" && <Button variant="ghost" type="button" className="h-auto min-h-7 whitespace-normal hidden max-[1000px]:block max-[1000px]:mt-3 max-[1000px]:mb-0 max-[1000px]:border max-[1000px]:border-solid max-[1000px]:border-line max-[1000px]:rounded-sm max-[1000px]:bg-paper max-[1000px]:text-xs max-[1000px]:font-semibold max-[1000px]:mx-4 max-[1000px]:py-2 max-[1000px]:px-3" aria-expanded={sourceOpen} onClick={() => setSourceOpen(!sourceOpen)}>
+        {sourceOpen ? "Kaynağı gizle" : "Kaynağı göster"}</Button>}
+      <div className={cn(`grid grid-cols-[minmax(300px,_.85fr)_minmax(0,_1.3fr)] pt-4 pb-0 [align-items:start] max-[1000px]:grid-cols-[minmax(0,_1fr)] max-[1000px]:pt-3 max-[1000px]:pb-0 gap-6 px-8 max-[1000px]:px-4${sourceOpen && view !== "history" ? "" : " grid-cols-[minmax(0,_1fr)]"}`)}>
         {sourceOpen && view !== "history" && <SourcePanel ws={ws} evidences={selectedEvidence} activeId={activeEvidenceItem?.id ?? null} setActiveId={setActiveEvidence}
           page={page} setPage={setPage} hasSelection={!!selection} panelRef={sourceRef} />}
-        <div className="rw-content" id={`${baseId}-panel`} role="tabpanel" aria-label={view === "history" ? "Düzenleme geçmişi" : undefined} aria-labelledby={view === "history" ? undefined : tabId(section)}>
+        <div className="min-w-0 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-300 motion-reduce:animate-none" id={`${baseId}-panel`} role="tabpanel" aria-label={view === "history" ? "Düzenleme geçmişi" : undefined} aria-labelledby={view === "history" ? undefined : tabId(section)}>
           {activeSection === "text" && <TextPanel blocks={index.blocks} />}
           {activeSection === "tables" && <TablesPanel blocks={index.blocks} tableId={tableId} setTableId={setTableId} grids={index.grids} />}
           {activeSection === "visuals" && <VisualsPanel blocks={index.blocks} snapshot={ws.snapshot} />}
@@ -1064,59 +1079,59 @@ export function ReviewWorkspace({ documentId, onSaved, mode, onDirtyChange, view
         </div>
       </div>
 
-      {(dirtyCount > 0 || conflict) && <section className="rw-commit" aria-label="Taslak değişiklikler">
-        {commitOpen && <div className="rw-commit-panel" id={`${baseId}-commit`}>
-          {conflict && <div className="rw-banner rw-banner-warn" role="alert"><p>{developerMode ? conflict : "Belge siz düzenlerken değişmiş olabilir. Taslağı indirin ve güncel içeriği yükleyin."}</p>
-            <div className="rw-row">
-              <button type="button" className="rw-btn" onClick={downloadDraft}>Taslağı indir</button>
-              <button type="button" className="rw-btn rw-btn-warn" onClick={loadCurrent} disabled={saving}>Güncel içeriği yükle (taslak silinir)</button>
+      {(dirtyCount > 0 || conflict) && <section className="sticky bottom-0 z-[25] mt-4 mb-0 flex flex-col border border-solid border-ink rounded-[var(--radius-sm)_var(--radius-sm)_0_0] bg-paper shadow-2 max-[1000px]:mt-3 max-[1000px]:mb-0 max-[1000px]:rounded-none mx-8 max-[1000px]:mx-0" aria-label="Taslak değişiklikler">
+        {commitOpen && <div className="max-h-[62vh] overflow-auto grid gap-3 p-4" id={`${baseId}-commit`}>
+          {conflict && <div className="border border-solid border-line border-l-[4px] rounded-sm text-xs flex flex-wrap gap-y-2 gap-x-3 items-center justify-between border-l-warn bg-warn-soft py-3 px-4 max-[1000px]:mx-4 m-0 [&_p]:m-0" role="alert"><p>{developerMode ? conflict : "Belge siz düzenlerken değişmiş olabilir. Taslağı indirin ve güncel içeriği yükleyin."}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="ghost" type="button" className={reviewAction} onClick={downloadDraft}>Taslağı indir</Button>
+              <Button variant="ghost" type="button" className="h-auto min-h-7 whitespace-normal inline-flex items-center justify-center border border-solid rounded-sm bg-paper text-xs font-semibold no-underline cursor-pointer motion-safe:transition-colors motion-safe:duration-150 [&:hover:not(:disabled)]:border-accent [&:hover:not(:disabled)]:bg-accent-soft [&:disabled]:opacity-[.45] [&:disabled]:cursor-default border-warn text-warn gap-1 py-2 px-3" onClick={loadCurrent} disabled={saving}>Güncel içeriği yükle (taslak silinir)</Button>
             </div></div>}
-          <div className="rw-form">
-            <label>İnceleyen kişi<input value={reviewer} autoComplete="off" disabled={locked}
+          <div className="grid grid-cols-[minmax(160px,_1fr)_minmax(0,_2.5fr)] [&_label]:grid [&_label]:text-xs [&_label]:font-semibold [&_input]:border [&_input]:border-solid [&_input]:border-line [&_input]:rounded-sm [&_input]:text-sm [&_input]:resize-y [&_textarea]:border [&_textarea]:border-solid [&_textarea]:border-line [&_textarea]:rounded-sm [&_textarea]:text-sm [&_textarea]:resize-y max-[640px]:grid-cols-[minmax(0,_1fr)] gap-3 [&_label]:gap-1 [&_input]:p-2 [&_textarea]:p-2">
+            <label>İnceleyen kişi<Input value={reviewer} autoComplete="off" disabled={locked}
               onChange={(e) => { invalidatePreview(); setReviewer(e.target.value); }} /></label>
-            <label>Değişiklik nedeni<textarea value={reason} rows={2} disabled={locked}
+            <label>Değişiklik nedeni<Textarea value={reason} rows={2} disabled={locked}
               onChange={(e) => { invalidatePreview(); setReason(e.target.value); }} /></label>
           </div>
-          <div className="rw-row">
-            <button type="button" className="rw-btn rw-btn-primary" disabled={!canSubmit || preview.status === "loading" || locked} onClick={() => void runPreview()}>
-              {preview.status === "loading" ? "Önizleniyor…" : "Farkları önizle"}</button>
-            <span className="rw-note">{!viewLatest || !ws.can_edit ? "Bu görünümde kayıt yapılamaz." : evaluated.invalid.length ? "Geçersiz değerleri düzeltin." :
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="ghost" type="button" className="h-auto min-h-7 whitespace-normal inline-flex items-center justify-center border border-solid rounded-sm text-xs font-semibold no-underline cursor-pointer motion-safe:transition-colors motion-safe:duration-150 [&:hover:not(:disabled)]:border-accent [&:disabled]:opacity-[.45] [&:disabled]:cursor-default bg-accent border-accent text-on-accent [&:hover:not(:disabled)]:bg-accent gap-1 py-2 px-3" disabled={!canSubmit || preview.status === "loading" || locked} onClick={() => void runPreview()}>
+              {preview.status === "loading" ? "Önizleniyor…" : "Farkları önizle"}</Button>
+            <span className="text-faint text-xs leading-[1.55] m-0">{!viewLatest || !ws.can_edit ? "Bu görünümde kayıt yapılamaz." : evaluated.invalid.length ? "Geçersiz değerleri düzeltin." :
               !reviewer.trim() || !reason.trim() ? "Önizleme için inceleyen kişi ve neden gerekli." : "Önizleme hiçbir şeyi kaydetmez."}</span>
           </div>
-          {preview.status === "error" && <p className="rw-error" role="alert">{developerMode ? preview.message : "Önizleme alınamadı. Bilgileri kontrol edip tekrar deneyin."}</p>}
-          {preview.status === "ready" && <div className="rw-diff">
+          {preview.status === "error" && <p className="mt-1 mb-0 text-danger text-xs mx-0" role="alert">{developerMode ? preview.message : "Önizleme alınamadı. Bilgileri kontrol edip tekrar deneyin."}</p>}
+          {preview.status === "ready" && <div className="grid [&_h3]:font-semibold [&_h3]:text-md [&_h3]:font-sans [&_ul]:[list-style:none] [&_ul]:grid [&_li]:border [&_li]:border-solid [&_li]:border-line2 [&_li]:rounded-sm gap-3 [&_ul]:gap-2 [&_li]:py-2 [&_li]:px-3 [&_h3]:m-0 [&_ul]:m-0 [&_ul]:p-0">
             <h3>Kaydedilecek farklar</h3>
-            {preview.data.warnings.map((warning, i) => <p key={i} className="rw-note rw-note-warn">{developerMode ? warning : "Kaydetmeden önce bu değişikliği özgün dosyayla kontrol edin."}</p>)}
+            {preview.data.warnings.map((warning, i) => <p key={i} className="text-xs leading-[1.55] text-warn m-0">{developerMode ? warning : "Kaydetmeden önce bu değişikliği özgün dosyayla kontrol edin."}</p>)}
             <ul>{preview.data.changes.map((change) => <li key={change.field_id}>
-              <div className="rw-diff-head"><strong>{change.label}</strong><span className="rw-chip">{KIND_LABEL[change.kind]}</span></div>
-              <div className="rw-diff-cols">
-                <div className="rw-before"><span>Önce</span><p>{formatScalar(change.before)}</p></div>
-                <div className="rw-after"><span>Sonra</span><p>{formatScalar(change.after)}</p></div>
+              <div className="flex flex-wrap items-center mb-2 gap-2"><strong>{change.label}</strong><span className="inline-flex items-center rounded-pill font-semibold text-2xs leading-[1.5] font-sans bg-line2 text-ink2 py-1 px-2">{KIND_LABEL[change.kind]}</span></div>
+              <div className="[&_span]:block [&_span]:font-bold [&_span]:text-2xs [&_span]:font-mono [&_span]:tracking-[.1em] [&_span]:uppercase [&_span]:text-warn grid grid-cols-[1fr_1fr] [&_>_div]:rounded-xs [&_>_div]:min-w-0 [&_p]:mt-1 [&_p]:mb-0 [&_p]:font-normal [&_p]:text-sm [&_p]:leading-[1.55] [&_p]:font-serif [&_p]:whitespace-pre-wrap [&_p]:wrap-anywhere max-[640px]:grid-cols-[minmax(0,_1fr)] gap-2 [&_p]:mx-0 [&_>_div]:p-2">
+                <div className="bg-warn-soft [&_p]:line-through [&_p]:[text-decoration-color:var(--warn-line)]"><span>Önce</span><p>{formatScalar(change.before)}</p></div>
+                <div className="bg-accent-soft [&_span]:text-accent"><span>Sonra</span><p>{formatScalar(change.after)}</p></div>
               </div>
-              {change.visual_uncertainties != null && <div className="rw-diff-cols">
-                <div className="rw-before"><span>Önce · belirsizlikler</span><p>{storedVisualUncertainties(ws.snapshot, change.node_id).join("\n") || "Not yok"}</p></div>
-                <div className="rw-after"><span>Sonra · belirsizlikler</span><p>{change.visual_uncertainties.join("\n") || "Not yok"}</p></div>
+              {change.visual_uncertainties != null && <div className="[&_span]:block [&_span]:font-bold [&_span]:text-2xs [&_span]:font-mono [&_span]:tracking-[.1em] [&_span]:uppercase [&_span]:text-warn grid grid-cols-[1fr_1fr] [&_>_div]:rounded-xs [&_>_div]:min-w-0 [&_p]:mt-1 [&_p]:mb-0 [&_p]:font-normal [&_p]:text-sm [&_p]:leading-[1.55] [&_p]:font-serif [&_p]:whitespace-pre-wrap [&_p]:wrap-anywhere max-[640px]:grid-cols-[minmax(0,_1fr)] gap-2 [&_p]:mx-0 [&_>_div]:p-2">
+                <div className="bg-warn-soft [&_p]:line-through [&_p]:[text-decoration-color:var(--warn-line)]"><span>Önce · belirsizlikler</span><p>{storedVisualUncertainties(ws.snapshot, change.node_id).join("\n") || "Not yok"}</p></div>
+                <div className="bg-accent-soft [&_span]:text-accent"><span>Sonra · belirsizlikler</span><p>{change.visual_uncertainties.join("\n") || "Not yok"}</p></div>
               </div>}
-              <div className="rw-block-actions">
-                <button type="button" className="rw-link" onClick={() => selectContent({ nodeId: change.node_id, fieldId: change.field_id }, true)}>Kaynakta göster</button>
-                <button type="button" className="rw-link" onClick={() => { selectContent({ nodeId: change.node_id, fieldId: change.field_id }); openSection(KIND_SECTION[change.kind], change.node_id); }}>İçerikte göster</button>
+              <div className="flex flex-wrap gap-y-1 gap-x-4 mt-2">
+                <Button variant="ghost" type="button" className={sourceAction} onClick={() => selectContent({ nodeId: change.node_id, fieldId: change.field_id }, true)}>Kaynakta göster</Button>
+                <Button variant="ghost" type="button" className={sourceAction} onClick={() => { selectContent({ nodeId: change.node_id, fieldId: change.field_id }); openSection(KIND_SECTION[change.kind], change.node_id); }}>İçerikte göster</Button>
               </div>
             </li>)}</ul>
-            <label className="rw-check rw-confirm"><input type="checkbox" checked={sourceChecked} disabled={locked} onChange={(e) => setSourceChecked(e.target.checked)} />
+            <label className="inline-flex items-start text-xs text-ink2 [&_input]:mt-1 [&_input]:accent-accent bg-accent-soft rounded-sm gap-2 py-2 px-3"><input type="checkbox" checked={sourceChecked} disabled={locked} onChange={(e) => setSourceChecked(e.target.checked)} />
               Bu değişiklikleri özgün kaynakla karşılaştırdım. Bu onay yalnızca değiştirilen alanlar içindir; belgenin tamamının doğruluğunu onaylamaz.</label>
-            <button type="button" className="rw-btn rw-btn-primary" disabled={!sourceChecked || locked} onClick={() => void runSave()}>
-              {saving ? "Kaydediliyor…" : "Değişiklikleri kaydet"}</button>
+            <Button variant="ghost" type="button" className="h-auto min-h-7 whitespace-normal inline-flex items-center justify-center border border-solid rounded-sm text-xs font-semibold no-underline cursor-pointer motion-safe:transition-colors motion-safe:duration-150 [&:hover:not(:disabled)]:border-accent [&:disabled]:opacity-[.45] [&:disabled]:cursor-default bg-accent border-accent text-on-accent [&:hover:not(:disabled)]:bg-accent gap-1 py-2 px-3" disabled={!sourceChecked || locked} onClick={() => void runSave()}>
+              {saving ? "Kaydediliyor…" : "Değişiklikleri kaydet"}</Button>
           </div>}
-          {save.status === "error" && <p className="rw-error" role="alert">{developerMode ? save.message : "Değişiklikler kaydedilemedi. Tekrar deneyin."}</p>}
+          {save.status === "error" && <p className="mt-1 mb-0 text-danger text-xs mx-0" role="alert">{developerMode ? save.message : "Değişiklikler kaydedilemedi. Tekrar deneyin."}</p>}
         </div>}
-        <div className="rw-commit-bar">
+        <div className="flex flex-wrap items-center gap-y-2 gap-x-3 bg-ink text-paper py-2 px-4">
           <strong aria-live="polite">{evaluated.changes.length} değişiklik taslakta{evaluated.invalid.length ? ` · ${evaluated.invalid.length} geçersiz değer` : ""}</strong>
-          <span className="rw-note">Henüz kaydedilmedi</span>
-          <div className="rw-row">
-            <button type="button" className="rw-btn" onClick={downloadDraft}>Taslağı indir</button>
-            <button type="button" className="rw-btn" onClick={revertAll} disabled={locked}>Tümünü geri al</button>
-            <button type="button" className="rw-btn rw-btn-primary" aria-expanded={commitOpen} aria-controls={`${baseId}-commit`} onClick={() => setCommitOpen(!commitOpen)}>
-              {commitOpen ? "Kayıt adımlarını gizle" : "Gözden geçir ve kaydet"}</button>
+          <span className="text-paper text-xs leading-[1.55] m-0">Henüz kaydedilmedi</span>
+          <div className="flex flex-wrap items-center ml-auto max-[640px]:ml-0 gap-2">
+            <Button variant="ghost" type="button" className="h-auto min-h-7 whitespace-normal inline-flex items-center justify-center border border-solid border-line-strong rounded-sm bg-transparent text-paper text-xs font-semibold no-underline cursor-pointer motion-safe:transition-colors motion-safe:duration-150 [&:hover:not(:disabled)]:border-accent [&:hover:not(:disabled)]:bg-accent-soft [&:disabled]:opacity-[.45] [&:disabled]:cursor-default [&:hover:not(:disabled)]:text-ink gap-1 py-2 px-3" onClick={downloadDraft}>Taslağı indir</Button>
+            <Button variant="ghost" type="button" className="h-auto min-h-7 whitespace-normal inline-flex items-center justify-center border border-solid border-line-strong rounded-sm bg-transparent text-paper text-xs font-semibold no-underline cursor-pointer motion-safe:transition-colors motion-safe:duration-150 [&:hover:not(:disabled)]:border-accent [&:hover:not(:disabled)]:bg-accent-soft [&:disabled]:opacity-[.45] [&:disabled]:cursor-default [&:hover:not(:disabled)]:text-ink gap-1 py-2 px-3" onClick={revertAll} disabled={locked}>Tümünü geri al</Button>
+            <Button variant="ghost" type="button" className="h-auto min-h-7 whitespace-normal inline-flex items-center justify-center border border-solid rounded-sm text-xs font-semibold no-underline cursor-pointer motion-safe:transition-colors motion-safe:duration-150 [&:hover:not(:disabled)]:border-accent [&:disabled]:opacity-[.45] [&:disabled]:cursor-default [&:hover:not(:disabled)]:text-ink bg-accent border-accent text-on-accent [&:hover:not(:disabled)]:bg-accent gap-1 py-2 px-3" aria-expanded={commitOpen} aria-controls={`${baseId}-commit`} onClick={() => setCommitOpen(!commitOpen)}>
+              {commitOpen ? "Kayıt adımlarını gizle" : "Gözden geçir ve kaydet"}</Button>
           </div>
         </div>
       </section>}

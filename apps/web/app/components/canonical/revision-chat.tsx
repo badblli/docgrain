@@ -1,8 +1,15 @@
 "use client";
 
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
+
 import { useEffect, useMemo, useRef, useState } from "react";
-import "./revision-chat.css";
 import { EvidenceView, type Evidence, type Node, type Snapshot } from "./inspector";
+
+
+const chatShell = "grid max-w-220 text-ink bg-paper text-base leading-[1.5] [&_h2]:mt-1 [&_h2]:mb-0 [&_h2]:text-lg [&_h2]:font-semibold [&_code]:text-xs [&_button:focus-visible]:[outline:2px_solid_var(--accent)] [&_button:focus-visible]:[outline-offset:2px] [&_textarea:focus-visible]:[outline:2px_solid_var(--accent)] [&_textarea:focus-visible]:[outline-offset:2px] [&_input:focus-visible]:[outline:2px_solid_var(--accent)] [&_input:focus-visible]:[outline-offset:2px] [&_summary:focus-visible]:[outline:2px_solid_var(--accent)] [&_summary:focus-visible]:[outline-offset:2px] gap-3 my-0 mx-auto [&_h2]:mx-0 p-4 [&_p]:m-0";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const MAX_IMAGES = 3;
@@ -87,21 +94,21 @@ function ReplyView({ turn, snapshot, versionId }: { turn: Turn; snapshot: Snapsh
       [{ image, node, src: `${API}${image.artifact_url}` }] : [];
   });
   const hidden = reply.citations.length - citations.length + reply.images.length - images.length;
-  return <article className="rc-turn">
-    <p className="rc-question"><span>Soru</span>{turn.question}{turn.attached > 0 && <small> · {turn.attached} görsel eklendi</small>}</p>
-    <div className={`rc-answer${reply.abstained ? " is-abstained" : ""}`}>
-      <span className="rc-kicker">{reply.abstained ? "Model yanıt vermedi" : "Model yanıtı"} · {reply.model}</span>
+  return <article className="grid border-t border-solid border-t-line pt-2 gap-2">
+    <p className="[&_span]:mr-2 [&_span]:text-2xs [&_span]:tracking-[.08em] [&_span]:uppercase [&_span]:text-muted [&_small]:text-muted"><span>Soru</span>{turn.question}{turn.attached > 0 && <small> · {turn.attached} görsel eklendi</small>}</p>
+    <div className={cn(`border border-solid border-line bg-paper whitespace-pre-wrap py-2 px-3${reply.abstained ? " border-dashed" : ""}`)}>
+      <span className="block text-2xs tracking-[.08em] uppercase text-muted">{reply.abstained ? "Model yanıt vermedi" : "Model yanıtı"} · {reply.model}</span>
       <p>{reply.answer}</p>
     </div>
-    {reply.warnings.map((warning, i) => <p className="rc-warning" key={i}>{warning}</p>)}
-    {hidden > 0 && <p className="rc-warning">{hidden} atıf veya görsel bu revision ile eşleşmediği için gizlendi.</p>}
-    {citations.length > 0 && <div className="rc-block"><span className="rc-kicker">Atıflar · kaynak izi</span>
-      {citations.map(({ node, evidence }, index) => <details key={`${node.id}-${evidence.id}`} className="rc-cite">
+    {reply.warnings.map((warning, i) => <p className="text-warn text-sm border-l-[3px] border-solid border-l-warn pl-2" key={i}>{warning}</p>)}
+    {hidden > 0 && <p className="text-warn text-sm border-l-[3px] border-solid border-l-warn pl-2">{hidden} atıf veya görsel bu revision ile eşleşmediği için gizlendi.</p>}
+    {citations.length > 0 && <div className="grid gap-1"><span className="block text-2xs tracking-[.08em] uppercase text-muted">Atıflar · kaynak izi</span>
+      {citations.map(({ node, evidence }, index) => <details key={`${node.id}-${evidence.id}`} className="border border-solid border-line bg-paper [&_summary]:cursor-pointer [&_summary]:text-sm py-1 px-2">
         <summary>Kaynak {index + 1} · {sourceLabel(evidence)}</summary>
         <EvidenceView evidence={evidence} snapshot={snapshot} versionId={versionId} />
       </details>)}</div>}
-    {images.length > 0 && <div className="rc-block"><span className="rc-kicker">Yanıtla ilgili görseller</span>
-      <div className="rc-images">{images.map(({ image, node, src }) => <figure key={node.id}>
+    {images.length > 0 && <div className="grid gap-1"><span className="block text-2xs tracking-[.08em] uppercase text-muted">Yanıtla ilgili görseller</span>
+      <div className="grid grid-cols-[repeat(auto-fill,_minmax(200px,_1fr))] [&_figure]:border [&_figure]:border-solid [&_figure]:border-line [&_figure]:bg-paper [&_img]:w-full [&_img]:max-h-55 [&_img]:object-contain [&_img]:bg-sheet [&_figcaption]:text-xs [&_figcaption]:text-muted [&_figcaption]:mt-1 gap-2 [&_figure]:m-0 [&_figure]:p-1">{images.map(({ image, node, src }) => <figure key={node.id}>
         <img src={src} alt={image.caption || image.description || "Belgeden çıkarılan görsel"} loading="lazy" />
         <figcaption>{image.caption || "Başlık yok"}{image.description ? ` · ${image.description}` : " · açıklama yok"}</figcaption>
       </figure>)}</div></div>}
@@ -188,37 +195,37 @@ export function RevisionChat({ snapshot, mode, snapshotSha256, versionId, revisi
   const toggle = (id: string) => setSelected((previous) =>
     previous.includes(id) ? previous.filter((item) => item !== id) : previous.length < MAX_IMAGES ? [...previous, id] : previous);
 
-  if (mode === "demo") return <div className="rc"><div className="rc-empty"><strong>Belge sohbeti demo modunda kullanılamıyor</strong>
+  if (mode === "demo") return <div className={chatShell}><div className="border border-dashed border-line bg-paper p-3"><strong>Belge sohbeti demo modunda kullanılamıyor</strong>
     <p>Demo verileri sentetiktir; model çağrısı yapılmaz.</p></div></div>;
-  if (mode === null) return <div className="rc"><div className="rc-empty"><strong>API bekleniyor</strong><p>Çalışma modu doğrulandığında sohbet açılır.</p></div></div>;
+  if (mode === null) return <div className={chatShell}><div className="border border-dashed border-line bg-paper p-3"><strong>API bekleniyor</strong><p>Çalışma modu doğrulandığında sohbet açılır.</p></div></div>;
 
-  return <div className="rc" aria-busy={busy}>
-    <header className="rc-head">
-      <div><span className="rc-kicker">Deneysel · belge sohbeti</span><h2>Bu revision hakkında soru sor</h2></div>
-      <div className="rc-badges">
-        <span className="rc-chip rc-chip-strong">Embedding yok</span>
-        <span className="rc-chip">Revision {revisionLabel ?? revisionId.slice(-10)}</span>
-        {config.model && <span className="rc-chip">Model: {config.model}</span>}
+  return <div className={chatShell} aria-busy={busy}>
+    <header className="flex flex-wrap justify-between gap-y-2 gap-x-4 items-start border-b border-solid border-b-line pb-2">
+      <div><span className="block text-2xs tracking-[.08em] uppercase text-muted">Deneysel · belge sohbeti</span><h2>Bu revision hakkında soru sor</h2></div>
+      <div className="flex flex-wrap gap-1">
+        <span className="inline-block border border-solid rounded-pill text-xs bg-paper text-accent border-accent font-semibold py-1 px-2">Embedding yok</span>
+        <span className="inline-block border border-solid border-line rounded-pill text-xs text-muted bg-paper py-1 px-2">Revision {revisionLabel ?? revisionId.slice(-10)}</span>
+        {config.model && <span className="inline-block border border-solid border-line rounded-pill text-xs text-muted bg-paper py-1 px-2">Model: {config.model}</span>}
       </div>
     </header>
-    <p className="rc-note">Yanıtlar bir modelin yorumudur ve doğru olduğu garanti edilmez. Sohbet yalnızca bu sabitlenmiş revision’ı kullanır; revision ve kaynak dosya değiştirilmez. Her soru bağımsızdır; önceki mesajlar modele gönderilmez.
+    <p className="text-muted text-sm">Yanıtlar bir modelin yorumudur ve doğru olduğu garanti edilmez. Sohbet yalnızca bu sabitlenmiş revision’ı kullanır; revision ve kaynak dosya değiştirilmez. Her soru bağımsızdır; önceki mesajlar modele gönderilmez.
       Docgrain sohbet geçmişini sunucuda tutmaz.</p>
-    {config.status === "loading" && <p className="rc-note" role="status">Sohbet ayarı kontrol ediliyor…</p>}
-    {config.status === "error" && <p className="rc-error" role="alert">Sohbet ayarı okunamadı. Sunucu çalışıyor mu kontrol edin.</p>}
-    {config.status === "ready" && !config.enabled && <div className="rc-empty"><strong>Belge sohbeti bu sunucuda kapalı</strong>
+    {config.status === "loading" && <p className="text-muted text-sm" role="status">Sohbet ayarı kontrol ediliyor…</p>}
+    {config.status === "error" && <p className="text-danger text-sm" role="alert">Sohbet ayarı okunamadı. Sunucu çalışıyor mu kontrol edin.</p>}
+    {config.status === "ready" && !config.enabled && <div className="border border-dashed border-line bg-paper p-3"><strong>Belge sohbeti bu sunucuda kapalı</strong>
       <p>Sunucu ayarı etkinleştirilmediği veya Gemini anahtarı tanımlanmadığı için soru sorulamaz.</p></div>}
 
-    {config.enabled && <section className="rc-form" aria-label="Soru sor">
-      <label>Sorunuz<textarea value={question} rows={3} maxLength={MAX_QUESTION} disabled={busy}
+    {config.enabled && <section className="grid border border-solid border-line bg-paper [&_label]:grid [&_label]:font-semibold [&_textarea]:[font-family:inherit] [&_textarea]:border [&_textarea]:border-solid [&_textarea]:border-line [&_textarea]:bg-paper [&_textarea]:text-inherit [&_textarea]:resize-y gap-2 [&_label]:gap-1 p-3 [&_textarea]:p-2" aria-label="Soru sor">
+      <label>Sorunuz<Textarea value={question} rows={3} maxLength={MAX_QUESTION} disabled={busy}
         placeholder="Örn. Bu belgedeki toplam tutar nedir?" onChange={(e) => setQuestion(e.target.value)} /></label>
-      <small className="rc-count">{question.length} / {MAX_QUESTION}</small>
+      <small className="[justify-self:end] text-muted text-xs">{question.length} / {MAX_QUESTION}</small>
 
-      {imageNodes.length > 0 && <details className="rc-attachment-picker"><summary>Görsel ekle · {selected.length} seçili / {imageNodes.length} görsel</summary><fieldset className="rc-pick" disabled={busy}>
+      {imageNodes.length > 0 && <details className="[&_summary]:cursor-pointer [&_summary]:text-accent [&_summary]:font-semibold [&_summary]:py-2 [&_summary]:px-0"><summary>Görsel ekle · {selected.length} seçili / {imageNodes.length} görsel</summary><fieldset className="border border-solid border-line grid [&_legend]:font-semibold gap-1 [&_legend]:py-0 [&_legend]:px-1 p-2 m-0" disabled={busy}>
         <legend>İsteğe bağlı: modele görsel ekle (en fazla {MAX_IMAGES})</legend>
-        <div className="rc-thumbs">{imageNodes.map((node, index) => {
+        <div className="grid grid-cols-[repeat(auto-fill,_minmax(120px,_1fr))] gap-2">{imageNodes.map((node, index) => {
           const artifact = snapshot.artifacts.find((item) => item.id === node.artifact_id)!;
           const on = selected.includes(node.id);
-          return <label key={node.id} className={`rc-thumb${on ? " is-on" : ""}`}>
+          return <label key={node.id} className={cn(`grid font-normal text-xs border border-solid border-line cursor-pointer bg-paper [&_img]:w-full [&_img]:h-20 [&_img]:object-contain [&_img]:bg-sheet gap-1 p-1${on ? " border-accent [box-shadow:0_0_0_1px_var(--accent)]" : ""}`)}>
             <input type="checkbox" checked={on} disabled={!on && selected.length >= MAX_IMAGES} onChange={() => toggle(node.id)} />
             <img src={`${API}${artifactPath(revisionId, artifact.id)}`} alt="" loading="lazy" />
             <span>{node.caption || `Görsel ${index + 1}`} · <code>{node.id.slice(-8)}</code></span>
@@ -227,23 +234,23 @@ export function RevisionChat({ snapshot, mode, snapshotSha256, versionId, revisi
         <small>Etiketler kayıtlı başlıktır; görselin anlamı çıkarılmaz.</small>
       </fieldset></details>}
 
-      <div className="rc-disclosure">
+      <div className="border-l-[3px] border-solid border-l-accent grid py-1 px-2 gap-1">
         <strong>Gemini’ye gönderilecekler</strong>
         <p>Yalnızca bu revision’ın kanonik içeriği (metin, tablolar, açıklamalar, kaynak konumları ve kayıtlı eksikler)
           {selected.length > 0 ? ` ile seçtiğiniz ${selected.length} görselin baytları` : ""} Google Gemini’ye gönderilir.
           Özgün PDF/Office dosyası ve seçmediğiniz görseller gönderilmez. Embedding üretilmez.</p>
-        <label className="rc-check"><input type="checkbox" checked={allow} disabled={busy} onChange={(e) => setAllow(e.target.checked)} />
+        <label className="flex items-start font-normal gap-2"><input type="checkbox" checked={allow} disabled={busy} onChange={(e) => setAllow(e.target.checked)} />
           Bu soru için içeriğin Gemini’ye gönderilmesine izin veriyorum.</label>
       </div>
-      <div className="rc-row">
-        <button type="button" className="rc-btn rc-btn-primary" disabled={!canAsk} onClick={() => void ask()}>{busy ? "Soruluyor…" : "Sor"}</button>
-        {!allow && <span className="rc-note">Her soru için onay kutusunu yeniden işaretleyin.</span>}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="ghost" type="button" className="h-auto whitespace-normal [font-family:inherit] border border-solid border-ink cursor-pointer [&:disabled]:opacity-[.45] [&:disabled]:cursor-not-allowed bg-ink text-paper py-1 px-3" disabled={!canAsk} onClick={() => void ask()}>{busy ? "Soruluyor…" : "Sor"}</Button>
+        {!allow && <span className="text-muted text-sm">Her soru için onay kutusunu yeniden işaretleyin.</span>}
       </div>
-      {error && <p className="rc-error" role="alert">{error}</p>}
+      {error && <p className="text-danger text-sm" role="alert">{error}</p>}
     </section>}
 
-    {turns.length > 0 && <section className="rc-turns" aria-label="Yanıtlar" aria-live="polite">
-      <p className="rc-note">Bu yanıtlar yalnızca bu sayfada durur; sayfa veya revision değişince silinir.</p>
+    {turns.length > 0 && <section className="grid gap-3" aria-label="Yanıtlar" aria-live="polite">
+      <p className="text-muted text-sm">Bu yanıtlar yalnızca bu sayfada durur; sayfa veya revision değişince silinir.</p>
       {turns.map((turn) => <ReplyView key={turn.id} turn={turn} snapshot={snapshot} versionId={versionId} />)}
     </section>}
   </div>;
