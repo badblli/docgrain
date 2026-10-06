@@ -5,7 +5,7 @@ import { useDeveloperMode } from "../developer-mode";
 import { Head, Ep, Icon } from "../console-ui";
 import { CollectionCard } from "../collection-card";
 import { getCollectionLabel, getFieldLabel } from "./labels";
-import type { Question } from "../question-card";
+import { SourceQuote, type Question } from "../question-card";
 import type { CollectionSummary, LoadState } from "../workspace-review";
 
 type Evidence = { document_id: string; document_name?: string; locator: string; quote: string };
@@ -35,13 +35,14 @@ function recordSummary(row: RecordRow) {
 }
 function ReviewBadge({ state }: { state?: string }) {
   const label = state === "accepted" ? "Onaylandı" : state === "proposed" ? "Öneri" : state === "needs_review" ? "İnceleme bekliyor" : state === "rejected" ? "Reddedildi" : "";
-  return label ? <span className={`reviewBadge ${state}`}>{label}</span> : null;
+  return label ? <span className={`reviewBadge ${state}`}><span className="reviewShape" aria-hidden="true">{state === "accepted" ? "✓" : state === "rejected" ? "×" : ""}</span>{label}</span> : null;
 }
-function EvidenceView({ evidence, developerMode, documentNames }: { evidence?: Evidence[]; developerMode: boolean; documentNames: Record<string, string> }) {
+function EvidenceView({ evidence, developerMode, documentNames, value }: { evidence?: Evidence[]; developerMode: boolean; documentNames: Record<string, string>; value: unknown }) {
   if (!evidence?.length) return null;
   return <details className="recordEvidence"><summary>Kaynakta göster</summary><ul>{evidence.map((item, index) => <li key={index}>
-    <span>{item.document_name || documentNames[item.document_id] || (developerMode ? item.document_id : `Kaynak belge ${index + 1}`)}{item.locator ? ` · ${item.locator}` : ""}</span>
-    <blockquote>“{item.quote}”</blockquote>
+    <span>{item.document_name || documentNames[item.document_id] || (developerMode ? item.document_id : `Kaynak belge ${index + 1}`)}</span>
+    <SourceQuote quote={item.quote ?? ""} values={[value]} />
+    {item.locator && <span className="sourceLocator">{item.locator}</span>}
   </li>)}</ul></details>;
 }
 
@@ -120,8 +121,8 @@ export function InformationView({ apiUrl, workspaceId, initialCollection, summar
         <div className="collectionToolbar"><label className="switch"><input type="checkbox" role="switch" checked={showLanguages} onChange={event => setShowLanguages(event.target.checked)} />Diğer dilleri göster</label>{questionState === "loading" && <span className="collectionWarning" role="status">Açık sorular yükleniyor…</span>}</div>
         <section className="card"><dl className="recordFields">{visibleFields(selectedRecord).map(field => {
           const meta = selectedRecord._meta?.fields?.[field];
-          return <div className="recordField" key={field}><dt>{getFieldLabel(field)}{questionButton(questionFor(field))}{developerMode && <div><Ep>{field}</Ep></div>}</dt><dd>{valueText(selectedRecord[field])}<ReviewBadge state={meta?.review_state} /><EvidenceView evidence={meta?.evidence} developerMode={developerMode} documentNames={documentNames} />
-            {showLanguages && Object.entries(selectedRecord.i18n ?? {}).filter(([, fields]) => fields[field] !== undefined).map(([lang, fields]) => <div className="recordTranslation" key={lang}><span>{lang}</span>{valueText(fields[field])}<ReviewBadge state={meta?.i18n_review_state?.[lang]} />{questionButton(questionFor(field, lang))}<EvidenceView evidence={meta?.i18n?.[lang]} developerMode={developerMode} documentNames={documentNames} /></div>)}
+          return <div className="recordField" key={field}><dt>{getFieldLabel(field)}{questionButton(questionFor(field))}{developerMode && <div><Ep>{field}</Ep></div>}</dt><dd>{valueText(selectedRecord[field])}<ReviewBadge state={meta?.review_state} /><EvidenceView value={selectedRecord[field]} evidence={meta?.evidence} developerMode={developerMode} documentNames={documentNames} />
+            {showLanguages && Object.entries(selectedRecord.i18n ?? {}).filter(([, fields]) => fields[field] !== undefined).map(([lang, fields]) => <div className="recordTranslation" key={lang}><span>{lang}</span>{valueText(fields[field])}<ReviewBadge state={meta?.i18n_review_state?.[lang]} />{questionButton(questionFor(field, lang))}<EvidenceView value={fields[field]} evidence={meta?.i18n?.[lang]} developerMode={developerMode} documentNames={documentNames} /></div>)}
           </dd></div>;
         })}</dl>{developerMode && <details className="recordDeveloper"><summary>Geliştirici: Ham JSON</summary><pre>{JSON.stringify(selectedRecord, null, 2)}</pre></details>}</section>
       </>}

@@ -59,6 +59,7 @@ def get_questions(workspace_id: str, revision_id: str | None = None,
 @workspace_router.post("/questions/{question_id}/answer")
 def answer_question(workspace_id: str, question_id: str, answer: Answer,
                     revision_id: str | None = None):
+    """Choose a candidate, all values cited by a document, a correction, or defer."""
     return _review_response("answer_question", workspace_id, question_id, answer, revision_id)
 
 

@@ -2,11 +2,15 @@ import { Icon } from "./console-ui";
 import type { CollectionSummary } from "./workspace-review";
 
 export function CollectionCard({ collection, onOpen }: { collection: CollectionSummary; onOpen: () => void }) {
-  const approved = collection.records > 0 && collection.conflicts === 0 && collection.needs_review === 0;
+  const accepted = collection.accepted_records ?? 0;
+  const pending = collection.pending_records ?? 0;
+  const percent = (count: number) => `${collection.records ? count / collection.records * 100 : 0}%`;
+  const questions = collection.conflicts + collection.needs_review;
   return <button className="card collectionCard" onClick={onOpen}>
-    <div className="collectionIcon"><Icon name={["rooms", "outlets", "activities"].includes(collection.key) ? collection.key : "grid"} /><Icon name="arrow" /></div>
+    <div className="collectionIcon"><span><Icon name={["rooms", "outlets", "activities"].includes(collection.key) ? collection.key : "grid"} /></span><Icon name="arrow" /></div>
     <h3>{collection.label}</h3>
-    <p>{collection.records.toLocaleString("tr-TR")} kayıt{collection.conflicts > 0 && <span className="conflictText"> · {collection.conflicts} çelişki</span>}</p>
-    {approved ? <span className="collectionFoot approvedText"><Icon name="check" />Tamamı onaylı</span> : <span className="collectionFoot muted">{collection.needs_review > 0 ? `${collection.needs_review} kayıt inceleme bekliyor` : "Kayıtları inceleyin"}</span>}
+    <p>Kayıtlar ve belge kaynakları</p>
+    <span className="collectionBar" aria-hidden="true"><i className="ok" style={{ width: percent(accepted) }} /><i className="warn" style={{ width: percent(pending) }} /></span>
+    <span className="collectionFoot"><span>{collection.records.toLocaleString("tr-TR")} kayıt</span><span>{accepted} onaylı</span>{questions > 0 && <span className="conflictText">{questions} soru</span>}</span>
   </button>;
 }

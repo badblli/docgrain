@@ -19,6 +19,10 @@ class CandidateAnswer(StrictModel):
     candidate_id: Text
 
 
+class DocumentAnswer(StrictModel):
+    document_id: Text
+
+
 class EditAnswer(StrictModel):
     value: JsonValue
     note: str
@@ -44,7 +48,7 @@ class SkipAnswer(StrictModel):
         return self
 
 
-Answer = CandidateAnswer | EditAnswer | SkipAnswer | AllAnswer
+Answer = CandidateAnswer | DocumentAnswer | EditAnswer | SkipAnswer | AllAnswer
 
 
 def _label(definition, key):
@@ -96,17 +100,22 @@ def questions(revision: MergeRevision) -> list[dict]:
                             record.id, field, lang]
                 options = []
                 for candidate in sorted(candidates, key=lambda c: c.id):
-                    # One option per candidate; every original evidence item stays in the revision.
-                    evidence = candidate.evidence[0]
-                    user_edit = isinstance(evidence, UserEditEvidence)
-                    options.append({
-                        "candidate_id": candidate.id, "value": candidate.value,
-                        "display": _display(candidate.value),
-                        "quote": None if user_edit else evidence.quote,
-                        "document_name": "Sizin düzeltmeniz" if user_edit else
-                        documents[evidence.document_id],
-                        "locator": None if user_edit else _locator(evidence.locator),
-                    })
+                    # A shared value can cite several documents/locations. Expose every
+                    # citation so document groups never lose a quote or invent a source.
+                    citations = sorted(candidate.evidence, key=lambda e: (
+                        "", "", e.note) if isinstance(e, UserEditEvidence) else
+                        (e.document_id, e.locator, e.quote))
+                    for evidence in citations:
+                        user_edit = isinstance(evidence, UserEditEvidence)
+                        options.append({
+                            "candidate_id": candidate.id, "value": candidate.value,
+                            "display": _display(candidate.value),
+                            "quote": None if user_edit else evidence.quote,
+                            "document_id": None if user_edit else evidence.document_id,
+                            "document_name": "Sizin düzeltmeniz" if user_edit else
+                            documents[evidence.document_id],
+                            "locator": None if user_edit else _locator(evidence.locator),
+                        })
                 result.append({
                     "id": "q_" + sha256(encode(identity)).hexdigest(), "kind": kind,
                     "collection": collection, "collection_label": _label(definition, collection),
@@ -136,8 +145,17 @@ def summary(revision: MergeRevision, updated_at: str) -> dict:
                     accepted += records[row["id"]].fields[field].accepted(lang) is not None
                     unsupported += not any(
                         e.get("quote") or e.get("kind") == "user_edit" for e in evidence)
+        pending_records = {q["record_id"] for q in pending if q["collection"] == key}
+        approved_records = sum(
+            bool(row["_meta"]["fields"]) and all(
+                records[row["id"]].fields[field].accepted(lang) is not None
+                for field, metadata in row["_meta"]["fields"].items()
+                for lang in metadata["i18n"])
+            for row in rows)
         collections.append({"key": key, "label": _label(definitions.get(key, {}), key),
                             "records": len(rows),
+                            "accepted_records": approved_records,
+                            "pending_records": len(pending_records),
                             "conflicts": sum(q["collection"] == key and q["kind"] == "conflict"
                                              for q in pending),
                             "needs_review": sum(q["collection"] == key and
@@ -153,7 +171,7 @@ def summary(revision: MergeRevision, updated_at: str) -> dict:
 
 
 def answer_revision(base: MergeRevision, question_id: str,
-                    answer: CandidateAnswer | EditAnswer | AllAnswer) -> MergeRevision:
+                    answer: CandidateAnswer | DocumentAnswer | EditAnswer | AllAnswer) -> MergeRevision:
     question = next((q for q in questions(base) if q["id"] == question_id), None)
     if question is None:
         raise LookupError("question unknown")
@@ -165,11 +183,19 @@ def answer_revision(base: MergeRevision, question_id: str,
     record = next(r for r in revision.records if r.id == question["record_id"])
     field = record.fields[question["field"]]
     all_candidates = []
-    if isinstance(answer, AllAnswer):
+    if isinstance(answer, (AllAnswer, DocumentAnswer)):
+        if isinstance(answer, AllAnswer) and not question["allow_all"]:
+            raise ValueError("all is not allowed for this question")
         all_candidates = sorted((c for c in field.candidates if c.lang == question["lang"]
-                                 and c.review_state != "rejected"), key=lambda c: c.id)
+                                 and c.review_state != "rejected" and (
+                                     isinstance(answer, AllAnswer) or any(
+                                         not isinstance(e, UserEditEvidence) and
+                                         e.document_id == answer.document_id
+                                         for e in c.evidence))), key=lambda c: c.id)
+        if not all_candidates:
+            raise ValueError("document outside question")
         chosen = all_candidates[0]
-        if question["lang"] not in field.multi_value_languages:
+        if len(all_candidates) > 1 and question["lang"] not in field.multi_value_languages:
             field.multi_value_languages.append(question["lang"])
     elif isinstance(answer, EditAnswer):
         value = revision_runtime(base).validate_value(record.type, question["field"], answer.value)

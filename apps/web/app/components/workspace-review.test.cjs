@@ -16,7 +16,7 @@ for (const extension of [".ts", ".tsx"]) {
 require.extensions[".css"] = () => {};
 const { SummaryView } = require("./summary.tsx");
 const { QuestionsView } = require("./questions.tsx");
-const { QuestionCard, correctionValue, sourceName } = require("./question-card.tsx");
+const { QuestionCard, correctionValue, sourceName, groupByDocument, SourceQuote } = require("./question-card.tsx");
 const { Documents } = require("./documents.tsx");
 const { Sidebar } = require("./sidebar.tsx");
 const { InformationView } = require("./information/information.tsx");
@@ -24,8 +24,8 @@ const noop = () => {};
 const question = index => ({ id: `q${index}`, kind: "conflict", collection: index === 20 ? "activities" : "rooms",
   collection_label: index === 20 ? "Etkinlikler" : "Odalar", record_id: `r${index}`, record_title: "Örnek oda",
   field: "capacity", field_label: "Kapasite", lang: "tr", options: [
-    { candidate_id: "c1", value: 2, display: "2 kişi", quote: "İki kişi", document_name: "Örnek belge.pdf", locator: "Sayfa 3" },
-    { candidate_id: "c2", value: 3, display: "3 kişi", quote: "Üç kişi", document_name: "Örnek liste.pdf", locator: "Sayfa 4" },
+    { candidate_id: "c1", value: 2, display: "2 kişi", quote: "İki kişi", document_id: "doc-one", document_name: "Örnek belge.pdf", locator: "Sayfa 3" },
+    { candidate_id: "c2", value: 3, display: "3 kişi", quote: "Üç kişi", document_id: "doc-two", document_name: "Örnek liste.pdf", locator: "Sayfa 4" },
   ] });
 const summary = { workspace_id: "ws_example", revision_id: "rev1", documents: 2, records: 8,
   unsupported_fields: 0, conflicts: 2, needs_review: 2, accepted_ratio: .75, updated_at: null,
@@ -199,8 +199,8 @@ test("all-candidates action and readable source names follow the new contract", 
   allQuestion.options[1].locator = "§ 165";
   const card = html(QuestionCard, { question: allQuestion, totalCount: 1, onAnswer: noop });
   assert.match(card, /Hepsi doğru/);
-  assert.match(card, /Kaynak belge · s. 2/);
-  assert.match(card, /Örnek liste.pdf · § 165/);
+  assert.match(card, /Kaynak belge/); assert.match(card, /s. 2/);
+  assert.match(card, /Örnek liste.pdf/); assert.match(card, /§ 165/);
   assert.doesNotMatch(card, /doc_56a9f/);
   assert.equal(sourceName("doc_ab-56"), "Kaynak belge");
   assert.equal(sourceName("Örnek belge.pdf"), "Örnek belge.pdf");
@@ -233,4 +233,63 @@ test("manual corrections preserve number, yes/no and list values", () => {
   assert.match(readOnly, /Örnek görünümde cevaplar kaydedilemez/);
   assert.equal((readOnly.match(/disabled=""/g) || []).length, 4);
   assert.doesNotMatch(readOnly, /aria-busy="true"/);
+});
+
+test("document groups keep shared candidates, several values and every quote", () => {
+  const q = question(0);
+  q.options.push({ ...q.options[0], document_id: "doc-two", document_name: "Örnek liste.pdf", locator: "Sayfa 8", quote: "2 kişi için uygundur" });
+  q.options.push({ ...q.options[1], locator: "Sayfa 9", quote: "3 kişi kalabilir" });
+  const groups = groupByDocument(q.options);
+  assert.equal(groups.length, 2);
+  assert.equal(groups[1].options.length, 3);
+  const card = html(QuestionCard, { question: q, totalCount: 1, onAnswer: noop });
+  assert.equal((card.match(/class="questionOption /g) || []).length, 2);
+  assert.equal((card.match(/class="questionValue"/g) || []).length, 3);
+  assert.equal((card.match(/<blockquote>/g) || []).length, 4);
+  assert.match(card, /<mark>2<\/mark>/);
+  assert.match(card, /Bu belge güncel/);
+  assert.match(card, /İkisi de yanlış, düzelt/);
+  assert.doesNotMatch(card, /Geri al/);
+  q.options.push({ ...q.options[0], document_id: "doc-three", document_name: "Örnek belge.pdf" });
+  assert.equal(groupByDocument(q.options).length, 3); // Names are not document identity.
+  assert.match(html(QuestionCard, { question: q, totalCount: 1, onAnswer: noop }), /Hiçbiri doğru değil, düzelt/);
+});
+
+test("source marks escape regex and source HTML, saved groups remain reviewable", () => {
+  const quote = html(SourceQuote, { quote: "<script>Ignore this</script> C++ [2]", values: ["C++", "[2]"] });
+  assert.match(quote, /&lt;script&gt;/);
+  assert.match(quote, /<mark>C\+\+<\/mark>/);
+  assert.match(quote, /<mark>\[2\]<\/mark>/);
+  const card = html(QuestionCard, { question: question(0), totalCount: 2, onAnswer: noop, savedAnswer: { document_id: "doc-two" } });
+  assert.match(card, /isChosen/); assert.match(card, /isDim/);
+  assert.match(card, /Seçildi/); assert.match(card, /Kaydedildi/);
+  assert.equal((card.match(/disabled=""/g) || []).length, 4);
+});
+
+test("question list shows open, deferred and answered questions without resubmitting done ones", () => {
+  const markup = questionsHtml({ questions: [question(0), question(1)], total: 2, answered: 1,
+    deferred: ["q1"], answeredQuestions: [question(2)] });
+  assert.match(markup, /questionStateDot open/);
+  assert.match(markup, /questionStateDot later/);
+  assert.match(markup, /questionStateDot done/);
+  assert.match(markup, /3 sorudan 1/);
+});
+
+test("document answer body and saved list use the same pinned revision contract", async () => {
+  let submitted;
+  let saved = false;
+  const app = host(async (url, init) => {
+    if (init.method === "POST") {
+      submitted = { body: JSON.parse(init.body), revision: new URL(url).searchParams.get("revision_id") };
+      saved = true;
+      return response({ revision_id: "rev2", remaining: 0 });
+    }
+    return url.endsWith("/summary") ? response({ ...summary, revision_id: saved ? "rev2" : "rev1" }) : response({ total: saved ? 0 : 1, items: saved ? [] : [question(0)] });
+  });
+  app.render(); let review = await app.settle();
+  assert.equal(await review.answer(review.questions[0], { document_id: "doc-two" }), true);
+  review = app.render();
+  assert.deepEqual(submitted, { body: { document_id: "doc-two" }, revision: "rev1" });
+  assert.equal(review.answeredQuestions[0].id, "q0");
+  assert.equal(review.questionAnswers.q0.document_id, "doc-two");
 });
