@@ -1,6 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Icon, Head, Ep, EmptyState } from "./components/console-ui";
+import { Sidebar } from "./components/sidebar";
+import { Documents } from "./components/documents";
+import { InformationView } from "./components/information/information";
+import { SummaryView } from "./components/summary";
+import { QuestionsView } from "./components/questions";
+import { useWorkspaceReview } from "./components/workspace-review";
+import { formatWorkspaceName, type WorkspaceItem, type Screen, type DocumentRow, type UploadState, type UploadPhase, type Mode } from "./components/console-types";
 import "./canonical.css";
 import { DeveloperModeContext, useDeveloperMode } from "./components/developer-mode";
 import { AIOutputView } from "./components/canonical/ai-output";
@@ -12,58 +20,7 @@ import { Assets as CanonicalAssets, Issues as CanonicalIssues, Overview as Canon
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const DEFAULT_WORKSPACE = process.env.NEXT_PUBLIC_WORKSPACE_ID ?? "ws_local";
 
-const WORKSPACE_NAMES: Record<string, string> = {
-  ws_primebeach: "Primebeach",
-  ws_dobedan: "Dobedan",
-  ws_susesi: "Susesi",
-  ws_nirvana: "Nirvana",
-  ws_local: "Yerel",
-  ws_demo: "Örnek",
-};
-
-function formatWorkspaceName(id: string): string {
-  if (WORKSPACE_NAMES[id]) return WORKSPACE_NAMES[id];
-  const cleaned = id.replace(/^ws_/, "").replace(/[-_]+/g, " ").trim();
-  if (!cleaned) return id;
-  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
-}
-
-type WorkspaceItem = {
-  id: string;
-  documents: number;
-};
-type Screen = "documents" | "jobs" | "providers" | "contract" | "detail" | "information";
 type DetailTab = "history" | "review" | "ai-output" | "overview" | "structure" | "tables" | "assets" | "issues" | "provenance" | "pages" | "pipeline" | "versions" | "raw";
-type UploadPhase =
-  | "idle"
-  | "registering"
-  | "uploading"
-  | "confirming"
-  | "queued"
-  | "running"
-  | "done"
-  | "partial"
-  | "failed"
-  | "error";
-type UploadState = {
-  phase: UploadPhase;
-  fileName?: string;
-  message?: string;
-  jobId?: string;
-};
-type DocumentRow = {
-  id: string;
-  versionId?: string;
-  jobId?: string;
-  title: string;
-  file: string;
-  type: string;
-  status: string;
-  version: string;
-  pages: number;
-  updated: string;
-  versionCount: number;
-};
 type Stage = {
   stage: string;
   status: string;
@@ -143,7 +100,7 @@ const stageMeta: Record<string, { name: string; via: string }> = {
   embed: { name: "Embedding / index", via: "Henüz uygulanmadı" },
   publish: { name: "Revision / artifact kaydı", via: "Canonical revision ve doğrulanmış çıktı paketi" },
 };
-type Mode = "live" | "demo";
+
 
 class HttpError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
@@ -205,7 +162,8 @@ const statusLabel = (s: string) =>
     skipped: "atlandı",
   })[s] ?? s;
 const documentStatusLabel = (status: string) => status === "done" ? "Hazır"
-  : status === "failed" || status === "error" ? "Hata" : "İnceleme gerekiyor";
+  : ["running", "processing"].includes(status) ? "Hazırlanıyor"
+  : ["queued", "pending"].includes(status) ? "Sırada" : "Kontrol edilmeli";
 const pillClass = (s: string) =>
   s === "done"
     ? "p-ok"
@@ -216,55 +174,6 @@ const pillClass = (s: string) =>
         : s === "failed"
           ? "p-err"
           : "p-idle";
-function Icon({ name }: { name: string }) {
-  const p: Record<string, React.ReactNode> = {
-    doc: (
-      <>
-        <path d="M6 2.75h8l4 4V21.25H6z" />
-        <path d="M14 2.75v4h4M9 11h6M9 15h6" />
-      </>
-    ),
-    clock: (
-      <>
-        <circle cx="12" cy="12" r="8.5" />
-        <path d="M12 7.5V12l3 2" />
-      </>
-    ),
-    grid: (
-      <>
-        <rect x="4" y="4" width="6" height="6" />
-        <rect x="14" y="4" width="6" height="6" />
-        <rect x="4" y="14" width="6" height="6" />
-        <rect x="14" y="14" width="6" height="6" />
-      </>
-    ),
-    book: (
-      <>
-        <path d="M5 4h6a3 3 0 0 1 3 3v13H8a3 3 0 0 0-3 1z" />
-        <path d="M19 4h-2a3 3 0 0 0-3 3v13h3a3 3 0 0 1 2 1z" />
-      </>
-    ),
-    upload: (
-      <>
-        <path d="M12 16V4M7.5 8.5 12 4l4.5 4.5" />
-        <path d="M4 14v6h16v-6" />
-      </>
-    ),
-  };
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      aria-hidden
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      {p[name]}
-    </svg>
-  );
-}
 function Status({ status }: { status: string }) {
   const developerMode = useDeveloperMode();
   return (
@@ -273,293 +182,6 @@ function Status({ status }: { status: string }) {
       {developerMode ? statusLabel(status) : documentStatusLabel(status)}
     </span>
   );
-}
-function Ep({ children }: { children: React.ReactNode }) {
-  return useDeveloperMode() ? <code className="ep">{children}</code> : null;
-}
-function EmptyState({ title, text }: { title: string; text: string }) {
-  return (
-    <div className="wrap">
-      <section className="card emptyArtifact">
-        <span>◇</span>
-        <h2>{title}</h2>
-        <p>{text}</p>
-      </section>
-    </div>
-  );
-}
-function Sidebar({
-  screen,
-  nav,
-  docs,
-  jobs,
-  workspace,
-  workspaces,
-  onWorkspaceChange,
-  developerMode,
-  toggleDeveloperMode,
-}: {
-  developerMode: boolean;
-  toggleDeveloperMode: () => void;
-  screen: Screen;
-  nav: (s: Screen) => void;
-  docs: number;
-  jobs: number;
-  workspace: string;
-  workspaces: WorkspaceItem[];
-  onWorkspaceChange: (wsId: string) => void;
-}) {
-  const currentWs = workspaces.find((w) => w.id === workspace);
-  const docCount = currentWs ? currentWs.documents : docs;
-
-  return (
-    <aside className="rail">
-      <button className="brand" onClick={() => nav("documents")}>
-        <svg className="mark" viewBox="0 0 28 28" fill="none">
-          <path d="M5 3.5h12l5 5V24.5H5z" stroke="#56534D" strokeWidth="1.5" />
-          <path d="M17 3.5v5h5M8.5 12h8M8.5 16h7" stroke="#787774" />
-          <circle cx="20.5" cy="20.5" r="4" fill="#EEEEEC" stroke="#787774" />
-          <path d="m18.8 20.6 1.1 1.1 2.1-2.3" stroke="#37352F" />
-        </svg>
-        <span>
-          <b>Docgrain</b>
-          <small>belgeleriniz ve bilgileriniz</small>
-        </span>
-      </button>
-
-      <div className="companySection">
-        <div className="navlbl" style={{ padding: "0 4px 4px" }}>Şirket</div>
-        <div className="companySelectWrap">
-          <select
-            className="companySelect"
-            value={workspace}
-            aria-label="Şirket seçin"
-            onChange={(e) => onWorkspaceChange(e.target.value)}
-          >
-            {workspaces.map((ws) => (
-              <option key={ws.id} value={ws.id}>
-                {formatWorkspaceName(ws.id)} ({ws.documents})
-              </option>
-            ))}
-          </select>
-          <span className="companySelectArrow" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="m6 9 6 6 6-6" />
-            </svg>
-          </span>
-        </div>
-      </div>
-
-      <div className="navlbl">Çalışma alanı</div>
-      <button
-        className="nav"
-        aria-current={screen === "documents" || screen === "detail"}
-        onClick={() => nav("documents")}
-      >
-        <Icon name="doc" />
-        Belgeler<em>{docs}</em>
-      </button>
-      <button className="nav" aria-current={screen === "information"} onClick={() => nav("information")}><Icon name="grid" />Bilgi</button>
-      {developerMode && <>
-      <div className="navlbl">Geliştirici araçları</div>
-      <button
-        className="nav"
-        aria-current={screen === "jobs"}
-        onClick={() => nav("jobs")}
-      >
-        <Icon name="clock" />
-        İşler<em>{jobs}</em>
-      </button>
-      <button
-        className="nav"
-        aria-current={screen === "providers"}
-        onClick={() => nav("providers")}
-      >
-        <Icon name="grid" />
-        Sağlayıcılar
-      </button>
-      <div className="navlbl">Referans</div>
-      <button
-        className="nav"
-        aria-current={screen === "contract"}
-        onClick={() => nav("contract")}
-      >
-        <Icon name="book" />
-        Veri sözleşmesi
-      </button>
-      </>}
-      <label className="switch developerSwitch"><input type="checkbox" role="switch" checked={developerMode} onChange={toggleDeveloperMode} />Geliştirici modu</label>
-      <div className="railfoot">Belgelerinizi okuyun, bilgileri kaynakla karşılaştırın ve eksik açıklamaları tamamlayın.</div>
-    </aside>
-  );
-}
-function Head({
-  section = "Çalışma alanı",
-  title,
-  sub,
-  endpoint,
-  children,
-}: {
-  section?: string;
-  title: string;
-  sub: string;
-  endpoint: string;
-  children?: React.ReactNode;
-}) {
-  return (
-    <header className="head">
-      <div className="crumb">
-        <span>{section}</span>
-        <b>›</b>
-        <span>{title}</span>
-      </div>
-      <div className="h1row">
-        <div>
-          <h1>{title}</h1>
-          <p className="sub">{sub}</p>
-        </div>
-        <div className="headact">
-          {children}
-          {endpoint && <Ep>{endpoint}</Ep>}
-        </div>
-      </div>
-    </header>
-  );
-}
-
-function Documents({
-  docs,
-  open,
-  upload,
-  uploadState,
-  mode,
-}: {
-  docs: DocumentRow[];
-  open: (d: DocumentRow) => void;
-  upload: (file: File) => Promise<void>;
-  uploadState: UploadState;
-  mode: Mode | null;
-}) {
-  const developerMode = useDeveloperMode();
-  const input = useRef<HTMLInputElement>(null);
-  const busy = mode !== "live" || ["registering", "uploading", "confirming", "queued", "running"].includes(
-    uploadState.phase,
-  );
-  return (
-    <>
-      <Head
-        title="Belgeler"
-        sub="Belgelerinizi yükleyin, durumlarını takip edin ve içeriklerini okuyun."
-        endpoint="GET /v1/documents"
-      />
-      <div className="wrap">
-        <section className="drop">
-          <div className="ico">
-            <Icon name="upload" />
-          </div>
-          <div>
-            <h3>Belge yükle</h3>
-            <p>
-              PDF, Word, Excel, metin veya görsel dosyası seçin. Her yükleme ayrı bir belge oluşturur. Okunan bilgileri özgün dosyayla karşılaştırın.
-            </p>
-            {uploadState.phase !== "idle" && (
-              <div className={`uploadState upload-${uploadState.phase}`} role="status">
-                <span className="uploadDot" />
-                <b>{uploadState.fileName}</b>
-                <span>{developerMode || uploadState.phase !== "error" ? uploadState.message : "Dosya yüklenemedi. Bağlantıyı kontrol edip yeniden deneyin."}</span>
-                {developerMode && uploadState.jobId && <code>{uploadState.jobId}</code>}
-              </div>
-            )}
-          </div>
-          <input
-            ref={input}
-            type="file"
-            hidden
-            // Use one extension list so native pickers do not select a PDF-only MIME filter.
-            accept=".pdf,.docx,.xlsx,.txt,.png,.jpg,.jpeg"
-            aria-label="Dosya yükle: PDF, DOCX, XLSX, TXT, PNG, JPG veya JPEG"
-            disabled={busy}
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (!file) return;
-              void upload(file).finally(() => {
-                if (input.current) input.current.value = "";
-              });
-            }}
-          />
-          <button
-            className="btn pri dropAction"
-            onClick={() => input.current?.click()}
-            disabled={busy}
-          >
-            {mode === "demo" ? "Örnek görünüm: yükleme kapalı" : mode === null ? "Bağlanıyor…" : busy ? "İşleniyor…" : "Dosya yükle"}
-          </button>
-        </section>
-        <section className="card">
-          <header>
-            <h2>Tüm belgeler</h2>
-            <p className="note">
-              İçeriğini okumak için bir belge açın.
-            </p>
-            <span className="sp">
-              <Ep>GET /v1/documents?limit=50</Ep>
-            </span>
-          </header>
-          <div className="scrollx">
-            <table className="grid docs">
-              <thead>
-                <tr>
-                  <th>Belge</th>
-                  <th>Durum</th>
-                  <th>Sürüm</th>
-                  <th>Sayfa</th>
-                  <th>Son işlem</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {!docs.length && <tr><td colSpan={6}>Henüz belge yok.</td></tr>}
-                {docs.map((d) => (
-                  <tr key={d.id} className="click" onClick={() => open(d)}>
-                    <td>
-                      <span className="fname">
-                        <span className="ftype">{d.type}</span>
-                        <span>
-                          {d.title} <small>{d.file}{developerMode ? ` · ${d.id}` : ""}</small>
-                        </span>
-                      </span>
-                    </td>
-                    <td>
-                      <Status status={d.status} />
-                    </td>
-                    <td>{d.version}</td>
-                    <td>{d.pages || "—"}</td>
-                    <td className="mono muted">{d.updated}</td>
-                    <td>
-                      <button
-                        className="btn sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          open(d);
-                        }}
-                      >
-                        Aç
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </div>
-    </>
-  );
-}
-import { InformationView } from "./components/information/information";
-
-function Information({ workspaceId }: { workspaceId: string }) {
-  return <InformationView apiUrl={API} workspaceId={workspaceId} Icon={Icon} Ep={Ep} Head={Head} EmptyState={EmptyState} />;
 }
 function Jobs({
   jobs,
@@ -1095,15 +717,9 @@ function Detail({
 }
 
 export default function Home() {
-  const [workspace, setWorkspace] = useState<string>(() => {
-    try {
-      return localStorage.getItem("docgrain.workspace_id") || DEFAULT_WORKSPACE;
-    } catch {
-      return DEFAULT_WORKSPACE;
-    }
-  });
+  const [workspace, setWorkspace] = useState<string>(DEFAULT_WORKSPACE);
   const [workspaces, setWorkspaces] = useState<WorkspaceItem[]>([]);
-  const [screen, setScreen] = useState<Screen>("documents"),
+  const [screen, setScreen] = useState<Screen>("summary"),
     [tab, setTab] = useState<DetailTab>("review"),
     [mode, setMode] = useState<Mode | null>(null),
     [loading, setLoading] = useState(true),
@@ -1123,6 +739,11 @@ export default function Home() {
     [uploadState, setUploadState] = useState<UploadState>({ phase: "idle" }),
     [toast, setToast] = useState("");
   const [developerMode, setDeveloperMode] = useState(false);
+  const [reviewRefresh, setReviewRefresh] = useState(0);
+  const [navigationKey, setNavigationKey] = useState(0);
+  const [initialCollection, setInitialCollection] = useState<string>();
+  const [focusedQuestionId, setFocusedQuestionId] = useState<string>();
+  const review = useWorkspaceReview(API, workspace, reviewRefresh);
   useEffect(() => {
     try { setDeveloperMode(localStorage.getItem("docgrain.developer-mode") === "true"); } catch { /* Storage may be unavailable. */ }
   }, []);
@@ -1131,7 +752,7 @@ export default function Home() {
     setDeveloperMode(next);
     try { localStorage.setItem("docgrain.developer-mode", String(next)); } catch { /* Keep the switch usable without storage. */ }
     if (!next) {
-      if (["jobs", "providers", "contract"].includes(screen)) setScreen("documents");
+      if (["jobs", "providers", "contract"].includes(screen)) setScreen("summary");
       if (tab !== "review" && tab !== "history") setTab("review");
     }
   }
@@ -1141,12 +762,13 @@ export default function Home() {
   async function refresh(targetWs = workspace) {
     const request = ++requestId.current;
     setLoading(true); setError(""); setMode(null);
+    setReviewRefresh(value => value + 1);
     setDocs([]); setJobs([]); setProviders([]);
     setSelected(null); setScreen((prev) => (prev === "detail" ? "documents" : prev));
     try {
       const health = await apiJson<{ mode: Mode }>(`${API}/healthz`);
       if (health.mode !== "live" && health.mode !== "demo") throw new Error("API çalışma modu doğrulanamadı.");
-      const [documents, nextJobs, nextProviders, nextWorkspaces] = await Promise.all([
+      const [documentResult, jobResult, providerResult, workspaceResult] = await Promise.allSettled([
         apiJson<DocumentListResponse[]>(`${API}/v1/documents?limit=50&workspace_id=${encodeURIComponent(targetWs)}`, undefined, health.mode),
         apiJson<Job[]>(`${API}/v1/jobs`, undefined, health.mode),
         apiJson<Provider[]>(`${API}/v1/providers/health`, undefined, health.mode),
@@ -1154,7 +776,12 @@ export default function Home() {
       ]);
       if (request !== requestId.current) return;
       setMode(health.mode);
-      setDocs(documents.map(documentRow)); setJobs(nextJobs); setProviders(nextProviders);
+      const documents = documentResult.status === "fulfilled" ? documentResult.value : [];
+      const nextWorkspaces = workspaceResult.status === "fulfilled" ? workspaceResult.value : [];
+      setDocs(documents.map(documentRow));
+      setJobs(jobResult.status === "fulfilled" ? jobResult.value : []);
+      setProviders(providerResult.status === "fulfilled" ? providerResult.value : []);
+      if (documentResult.status === "rejected") setError("Belgeler alınamadı.");
 
       // Ensure active workspace and default workspace are represented in the list
       const wsMap = new Map<string, number>();
@@ -1183,6 +810,8 @@ export default function Home() {
     if (nextWs === workspace) return;
     if (!confirmDiscard()) return;
     setWorkspace(nextWs);
+    setInitialCollection(undefined); setFocusedQuestionId(undefined);
+    setUploadState({ phase: "idle" });
     try {
       localStorage.setItem("docgrain.workspace_id", nextWs);
     } catch {
@@ -1191,7 +820,14 @@ export default function Home() {
     void refresh(nextWs);
   }
 
-  useEffect(() => { void refresh(workspace); return () => { requestId.current += 1; }; }, []);
+  useEffect(() => {
+    let savedWorkspace = DEFAULT_WORKSPACE;
+    try { savedWorkspace = localStorage.getItem("docgrain.workspace_id") || DEFAULT_WORKSPACE; }
+    catch { /* The default remains available without storage. */ }
+    if (savedWorkspace !== DEFAULT_WORKSPACE) setWorkspace(savedWorkspace);
+    void refresh(savedWorkspace);
+    return () => { requestId.current += 1; };
+  }, []);
   useEffect(() => {
     if (!toast) return;
     const id = setTimeout(() => setToast(""), 4000);
@@ -1372,7 +1008,13 @@ export default function Home() {
         developerMode={developerMode}
         toggleDeveloperMode={toggleDeveloperMode}
         screen={screen}
-        nav={(next) => { if (confirmDiscard()) setScreen(next); }}
+        nav={(next) => {
+          if (!confirmDiscard()) return;
+          setInitialCollection(undefined); setFocusedQuestionId(undefined);
+          setNavigationKey(value => value + 1); setScreen(next);
+        }}
+        questionCount={review.questionState === "ready" ? review.total : undefined}
+        busy={review.busy || ["registering", "uploading", "confirming", "queued", "running"].includes(uploadState.phase)}
         docs={docs.length}
         jobs={jobs.filter((j) => j.status === "running").length}
         workspace={workspace}
@@ -1380,12 +1022,20 @@ export default function Home() {
         onWorkspaceChange={handleWorkspaceChange}
       />
       <main>
-        <div className="modeNotice" role="status">
+        {(developerMode || mode === "demo" || screen === "documents" || screen === "detail") && <div className="modeNotice" role="status">
           <span>{mode === "demo" ? "Örnek belgeleri görüntülüyorsunuz. Düzenleme ve yükleme kapalı."
             : mode === "live" ? "Belgelerinizi kaynaklarıyla birlikte inceleyebilirsiniz." : "Bağlantı kuruluyor…"}</span>
-          <button className="btn sm" onClick={() => { if (confirmDiscard()) void refresh(workspace); }} disabled={loading || ["registering", "uploading", "confirming", "queued", "running"].includes(uploadState.phase)}>Listeyi yenile</button>
-        </div>
-        {screen === "information" ? <Information workspaceId={workspace} /> : loading ? <EmptyState title="Yükleniyor" text="Belgeleriniz alınıyor." />
+          <button className="btn sm" onClick={() => { if (confirmDiscard()) void refresh(workspace); }} disabled={loading || review.busy || ["registering", "uploading", "confirming", "queued", "running"].includes(uploadState.phase)}>Listeyi yenile</button>
+        </div>}
+        {screen === "summary" ? <SummaryView companyName={formatWorkspaceName(workspace)} review={review} readOnly={mode === "demo"}
+          onCollections={key => { setInitialCollection(key); setScreen("collections"); }}
+          onQuestions={() => { setFocusedQuestionId(undefined); setScreen("questions"); }}
+          onDocuments={() => setScreen("documents")} />
+          : screen === "questions" ? <QuestionsView key={`${workspace}:${navigationKey}`} review={review} readOnly={mode === "demo"} focusedId={focusedQuestionId} onCollections={() => { setInitialCollection(undefined); setScreen("collections"); }} />
+          : screen === "collections" ? <InformationView key={`${workspace}:${navigationKey}`} apiUrl={API} workspaceId={workspace} initialCollection={initialCollection}
+            documentNames={Object.fromEntries(docs.map(document => [document.id, document.title || document.file]))}
+            summaries={review.summary?.collections ?? []} questions={review.questions} questionState={review.questionState}
+            onQuestion={question => { setFocusedQuestionId(question.id); review.revisit(); setScreen("questions"); }} /> : loading ? <EmptyState title="Yükleniyor" text="Belgeleriniz alınıyor." />
           : error ? <div role="alert"><EmptyState title="Bağlantı kurulamadı" text={developerMode ? error : "Belgeler alınamadı. Bağlantıyı kontrol edip listeyi yenileyin."} /></div>
           : screen === "documents" ? (
           <Documents
