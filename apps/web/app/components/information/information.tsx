@@ -2,627 +2,129 @@
 
 import { useEffect, useState } from "react";
 import { useDeveloperMode } from "../developer-mode";
+import { Head, Ep, Icon } from "../console-ui";
+import { CollectionCard } from "../collection-card";
 import { getCollectionLabel, getFieldLabel } from "./labels";
+import type { Question } from "../question-card";
+import type { CollectionSummary, LoadState } from "../workspace-review";
 
-export function InformationView({
-  apiUrl,
-  workspaceId,
-  Icon,
-  Ep,
-  Head,
-  EmptyState,
-}: {
-  apiUrl: string;
-  workspaceId: string;
-  Icon: (props: { name: string }) => React.ReactElement;
-  Ep: (props: { children: React.ReactNode }) => React.ReactElement | null;
-  Head: (props: {
-    section?: string;
-    title: string;
-    sub: string;
-    endpoint: string;
-    children?: React.ReactNode;
-  }) => React.ReactElement;
-  EmptyState: (props: { title: string; text: string }) => React.ReactElement;
+type Evidence = { document_id: string; document_name?: string; locator: string; quote: string };
+type FieldMeta = {
+  lang?: string; review_state?: string; evidence?: Evidence[];
+  i18n?: Record<string, Evidence[]>; i18n_review_state?: Record<string, string>;
+};
+type RecordRow = {
+  id: string; _meta?: { review_state?: string; fields?: Record<string, FieldMeta>; conflicts?: { field: string; lang: string }[] };
+  i18n?: Record<string, Record<string, unknown>>; [field: string]: unknown;
+};
+type CollectionResult = { rows: RecordRow[]; failed: boolean };
+const visibleFields = (row: RecordRow) => Object.keys(row).filter(key => !["id", "_meta", "i18n"].includes(key));
+function recordTitle(row: RecordRow) {
+  return [row.name, row.title, ...visibleFields(row).map(key => row[key])].find(value => typeof value === "string" && value.trim()) as string || "Kayıt detayı";
+}
+function valueText(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "boolean") return value ? "Evet" : "Hayır";
+  if (Array.isArray(value)) return value.map(valueText).join(", ");
+  if (typeof value === "object") return Object.entries(value).map(([key, item]) => `${getFieldLabel(key)}: ${valueText(item)}`).join(" · ");
+  return String(value);
+}
+function recordSummary(row: RecordRow) {
+  return visibleFields(row).filter(key => row[key] !== recordTitle(row) && row[key] !== null && row[key] !== undefined)
+    .slice(0, 3).map(key => `${getFieldLabel(key)}: ${valueText(row[key])}`).join(" · ");
+}
+function ReviewBadge({ state }: { state?: string }) {
+  const label = state === "accepted" ? "Onaylandı" : state === "proposed" ? "Öneri" : state === "needs_review" ? "İnceleme bekliyor" : state === "rejected" ? "Reddedildi" : "";
+  return label ? <span className={`reviewBadge ${state}`}>{label}</span> : null;
+}
+function EvidenceView({ evidence, developerMode, documentNames }: { evidence?: Evidence[]; developerMode: boolean; documentNames: Record<string, string> }) {
+  if (!evidence?.length) return null;
+  return <details className="recordEvidence"><summary>Kaynakta göster</summary><ul>{evidence.map((item, index) => <li key={index}>
+    <span>{item.document_name || documentNames[item.document_id] || (developerMode ? item.document_id : `Kaynak belge ${index + 1}`)}{item.locator ? ` · ${item.locator}` : ""}</span>
+    <blockquote>“{item.quote}”</blockquote>
+  </li>)}</ul></details>;
+}
+
+export function InformationView({ apiUrl, workspaceId, initialCollection, summaries, questions, questionState, onQuestion, documentNames = {} }: {
+  apiUrl: string; workspaceId: string; initialCollection?: string;
+  summaries: CollectionSummary[]; questions: Question[]; questionState: LoadState;
+  onQuestion: (question: Question) => void; documentNames?: Record<string, string>;
 }) {
   const developerMode = useDeveloperMode();
   const [mode, setMode] = useState<"preview" | "approved">("preview");
-  const [state, setState] = useState<
-    "loading" | "error" | "empty" | "loaded"
-  >("loading");
-  const [revisions, setRevisions] = useState<string[]>([]);
+  const [state, setState] = useState<LoadState>("loading");
+  const [revision, setRevision] = useState("");
   const [collections, setCollections] = useState<string[]>([]);
-  const [collectionCounts, setCollectionCounts] = useState<Record<string, number | null>>({});
-  const [cachedRecords, setCachedRecords] = useState<Record<string, any[]>>({});
-  const [selectedCollection, setSelectedCollection] = useState<string | null>(null);
-  const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
-  const [records, setRecords] = useState<any[]>([]);
-  const [showI18n, setShowI18n] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
+  const [results, setResults] = useState<Record<string, CollectionResult>>({});
+  const [selectedCollection, setSelectedCollection] = useState(initialCollection ?? "");
+  const [selectedRecord, setSelectedRecord] = useState<RecordRow | null>(null);
+  const [showLanguages, setShowLanguages] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const base = `${apiUrl}/v1/workspaces/${encodeURIComponent(workspaceId)}`;
 
-  const currentRevision = revisions[0];
-
-  // Revizyon ve koleksiyon listesini getir
   useEffect(() => {
-    let canceled = false;
-    setState("loading");
-    setSelectedRecord(null);
-
-    fetch(`${apiUrl}/v1/workspaces/${workspaceId}/revisions`)
-      .then((r) => {
-        if (!r.ok) throw new Error("API ulaşılamıyor.");
-        return r.json();
-      })
-      .then((revs: string[]) => {
-        if (canceled) return;
-        if (!revs || revs.length === 0) {
-          setState("empty");
-        } else {
-          setRevisions(revs);
-          return fetch(
-            `${apiUrl}/v1/workspaces/${workspaceId}/revisions/${revs[0]}/collections?mode=${mode}`
-          )
-            .then((r) => {
-              if (!r.ok) throw new Error("Bilgi listesi alınamadı.");
-              return r.json();
-            })
-            .then((data: any) => {
-              if (canceled) return;
-              const cols: string[] = data.collections || [];
-              setCollections(cols);
-              setState(cols.length === 0 ? "empty" : "loaded");
-
-              // Kartlarda kayıt sayılarını göstermek için koleksiyonları paralel yükle
-              if (cols.length > 0) {
-                cols.forEach((colName) => {
-                  fetch(
-                    `${apiUrl}/v1/workspaces/${workspaceId}/revisions/${revs[0]}/collections/${colName}?mode=${mode}`
-                  )
-                    .then((res) => (res.ok ? res.json() : []))
-                    .then((rows: any[]) => {
-                      if (canceled) return;
-                      const count = Array.isArray(rows) ? rows.length : 0;
-                      setCollectionCounts((prev) => ({ ...prev, [colName]: count }));
-                      setCachedRecords((prev) => ({ ...prev, [colName]: rows }));
-                    })
-                    .catch(() => {
-                      if (canceled) return;
-                      setCollectionCounts((prev) => ({ ...prev, [colName]: 0 }));
-                    });
-                });
-              }
-            });
-        }
-      })
-      .catch((err) => {
-        if (canceled) return;
-        setErrorMsg(err.message);
-        setState("error");
-      });
-
-    return () => {
-      canceled = true;
-    };
-  }, [apiUrl, workspaceId, mode]);
-
-  // Seçilen koleksiyonun kayıtlarını güncelle
-  useEffect(() => {
-    if (!selectedCollection || !currentRevision) return;
-
-    if (cachedRecords[selectedCollection]) {
-      setRecords(cachedRecords[selectedCollection]);
-      return;
+    const controller = new AbortController();
+    setState("loading"); setResults({}); setSelectedRecord(null); setRevision(""); setCollections([]);
+    async function read<T>(url: string): Promise<T> {
+      const response = await fetch(url, { signal: controller.signal, cache: "no-store" });
+      if (!response.ok) throw new Error(String(response.status));
+      return response.json();
     }
-
-    let canceled = false;
-    fetch(
-      `${apiUrl}/v1/workspaces/${workspaceId}/revisions/${currentRevision}/collections/${selectedCollection}?mode=${mode}`
-    )
-      .then((r) => r.json())
-      .then((data) => {
-        if (canceled) return;
-        const rows = Array.isArray(data) ? data : [];
-        setRecords(rows);
-        setCachedRecords((prev) => ({ ...prev, [selectedCollection]: rows }));
-      })
-      .catch(() => {
-        if (canceled) return;
-        setRecords([]);
-      });
-
-    return () => {
-      canceled = true;
-    };
-  }, [apiUrl, workspaceId, selectedCollection, currentRevision, mode, cachedRecords]);
-
-  // Seçilen kayıt değiştiğinde veya liste güncellendiğinde senkronize et
-  useEffect(() => {
-    if (selectedRecord) {
-      const updated = records.find((r) => r.id === selectedRecord.id);
-      if (updated) {
-        setSelectedRecord(updated);
+    async function load() {
+      try {
+        const revisions = await read<string[]>(`${base}/revisions`);
+        if (controller.signal.aborted) return;
+        if (!Array.isArray(revisions)) throw new Error("Invalid revisions");
+        if (!revisions.length) { setState("ready"); return; }
+        const latest = revisions[0];
+        const response = await read<{ collections: string[] }>(`${base}/revisions/${encodeURIComponent(latest)}/collections?mode=${mode}`);
+        if (!Array.isArray(response.collections)) throw new Error("Invalid collections");
+        if (controller.signal.aborted) return;
+        setRevision(latest); setCollections(response.collections); setState("ready");
+        setSelectedCollection(previous => response.collections.includes(previous) ? previous : "");
+        await Promise.allSettled(response.collections.map(async key => {
+          try {
+            const rows = await read<RecordRow[]>(`${base}/revisions/${encodeURIComponent(latest)}/collections/${encodeURIComponent(key)}?mode=${mode}`);
+            if (!Array.isArray(rows)) throw new Error("Invalid records");
+            if (!controller.signal.aborted) setResults(previous => ({ ...previous, [key]: { rows, failed: false } }));
+          } catch {
+            if (!controller.signal.aborted) setResults(previous => ({ ...previous, [key]: { rows: [], failed: true } }));
+          }
+        }));
+      } catch (error) {
+        if (!controller.signal.aborted) setState(error instanceof Error && ["404", "405", "501"].includes(error.message) ? "missing" : "error");
       }
     }
-  }, [records]);
+    void load();
+    return () => controller.abort();
+  }, [base, mode, refreshKey]);
 
-  if (state === "loading") {
-    return (
-      <>
-        <Head title="Bilgi" sub="Belgelerinizden derlenen bilgiler" endpoint="" />
-        <div className="wrap">Yükleniyor...</div>
-      </>
-    );
-  }
+  const labelFor = (key: string) => summaries.find(item => item.key === key)?.label || getCollectionLabel(key);
+  const questionFor = (field: string, lang?: string) => questions.find(item => item.collection === selectedCollection && item.record_id === selectedRecord?.id && item.field === field && (!lang || item.lang === lang));
+  const questionButton = (question?: Question) => question && <button className="fieldQuestion" onClick={() => onQuestion(question)} aria-label={`${question.field_label}: açık soruyu cevapla`} title="Bu bilgi için bir soru var"><span className="conflictDot" aria-hidden="true" /></button>;
+  const retry = () => setRefreshKey(value => value + 1);
+  const result = results[selectedCollection];
 
-  if (state === "error") {
-    return (
-      <>
-        <Head title="Bilgi" sub="Belgelerinizden derlenen bilgiler" endpoint="" />
-        <EmptyState title="Bağlantı Hatası" text={errorMsg || "API ulaşılamıyor."} />
-      </>
-    );
-  }
-
-  if (state === "empty") {
-    return (
-      <>
-        <Head title="Bilgi" sub="Belgelerinizden derlenen bilgiler" endpoint="" />
-        <EmptyState
-          title="Henüz veri yok"
-          text="Yayınlanmış bir bilgi listesi bulunamadı."
-        />
-      </>
-    );
-  }
-
-  const handleModeChange = () => {
-    setMode(mode === "preview" ? "approved" : "preview");
-    setSelectedCollection(null);
-    setSelectedRecord(null);
-    setRecords([]);
-    setCachedRecords({});
-    setCollectionCounts({});
-  };
-
-  const getReviewBadge = (reviewState: string) => {
-    switch (reviewState) {
-      case "proposed":
-        return <span className="pill p-warn"><i className="dot"/>Öneri</span>;
-      case "needs_review":
-        return <span className="pill p-run"><i className="dot"/>İnceleme bekliyor</span>;
-      case "accepted":
-        return <span className="pill p-ok"><i className="dot"/>Onaylandı</span>;
-      default:
-        return null;
-    }
-  };
-
-  const renderValue = (val: any) => {
-    if (val === null || val === undefined) return "—";
-    if (Array.isArray(val)) {
-      return (
-        <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-          {val.map((v, i) => (
-            <div key={i}>• {String(v)}</div>
-          ))}
-        </div>
-      );
-    }
-    if (typeof val === "object") {
-      return JSON.stringify(val);
-    }
-    return String(val);
-  };
-
-  const EvidenceView = ({ evidence }: { evidence: any[] }) => {
-    if (!evidence || evidence.length === 0) return null;
-    return (
-      <details className="evidence-details" style={{ marginTop: "6px", fontSize: "12px", color: "#666" }}>
-        <summary style={{ cursor: "pointer", userSelect: "none" }}>Kaynakta göster</summary>
-        <ul style={{ paddingLeft: "16px", marginTop: "4px", marginBottom: "4px" }}>
-          {evidence.map((e, idx) => (
-            <li key={idx} style={{ marginTop: "4px", overflowWrap: "anywhere" }}>
-              <b>{e.document_id}</b> ({e.locator})<br />
-              <i style={{ color: "#444" }}>"{e.quote}"</i>
-            </li>
-          ))}
-        </ul>
-      </details>
-    );
-  };
-
-  // Bir kaydın başlığı: 'name', 'title' veya ilk dolu metin alanı
-  const getRecordTitle = (record: Record<string, any>): string => {
-    if (record.name && typeof record.name === "string") return record.name;
-    if (record.title && typeof record.title === "string") return record.title;
-    for (const [key, value] of Object.entries(record)) {
-      if (key === "id" || key === "_meta" || key === "i18n") continue;
-      if (typeof value === "string" && value.trim()) {
-        return value;
-      }
-    }
-    return "Kayıt Detayı";
-  };
-
-  // Bir kaydın tek satırlık özeti
-  const getRecordSummary = (record: Record<string, any>): string => {
-    const title = getRecordTitle(record);
-    const parts: string[] = [];
-
-    for (const [key, value] of Object.entries(record)) {
-      if (key === "id" || key === "_meta" || key === "i18n") continue;
-      if (typeof value === "string" && value === title) continue;
-      if (value === null || value === undefined || value === "") continue;
-
-      const label = getFieldLabel(key);
-      let valStr = "";
-      if (Array.isArray(value)) {
-        valStr = value.slice(0, 2).map(String).join(", ") + (value.length > 2 ? "..." : "");
-      } else if (typeof value === "object") {
-        continue;
-      } else {
-        valStr = String(value);
-      }
-
-      if (valStr) {
-        parts.push(`${label}: ${valStr}`);
-      }
-      if (parts.length >= 3) break;
-    }
-
-    return parts.length > 0 ? parts.join(" • ") : "Ayrıntı görüntülemek için tıklayın";
-  };
-
-  return (
-    <>
-      <Head
-        title="Bilgi"
-        sub="Belgelerinizden derlenen bilgileri burada bulabilirsiniz."
-        endpoint={currentRevision ? `GET /v1/workspaces/${workspaceId}/revisions/${currentRevision}/collections` : ""}
-      >
-        <label className="switch modeSwitch">
-          <input
-            type="checkbox"
-            role="switch"
-            checked={mode === "approved"}
-            onChange={handleModeChange}
-          />
-          Onaylı / Önizleme (Şu an: {mode === "preview" ? "Önizleme" : "Onaylı"})
-        </label>
-      </Head>
-
-      <div className="wrap" style={{ minWidth: 0, maxWidth: "100%", boxSizing: "border-box" }}>
-        {/* 1. GÖRÜNÜM: Koleksiyon Kartları */}
-        {!selectedCollection ? (
-          <div className="informationGrid" style={{ minWidth: 0, maxWidth: "100%" }}>
-            {collections.map((c) => {
-              const count = collectionCounts[c];
-              const countText =
-                count !== undefined && count !== null ? `${count} kayıt` : "…";
-
-              return (
-                <section
-                  className="card informationCard click"
-                  key={c}
-                  onClick={() => {
-                    setSelectedCollection(c);
-                    setSelectedRecord(null);
-                  }}
-                  style={{ minWidth: 0, boxSizing: "border-box" }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
-                    <Icon name="grid" />
-                    <span
-                      className="pill"
-                      style={{
-                        fontSize: "11px",
-                        background: "#f0f4ed",
-                        color: "#42624c",
-                        fontWeight: "600",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {countText}
-                    </span>
-                  </div>
-                  <h2 style={{ overflowWrap: "anywhere", wordBreak: "break-word", margin: "16px 0 8px" }}>
-                    {getCollectionLabel(c)}
-                  </h2>
-                  <div className="sub2" style={{ overflowWrap: "anywhere" }}>
-                    Kayıtları incelemek için tıklayın
-                  </div>
-                </section>
-              );
-            })}
-          </div>
-        ) : !selectedRecord ? (
-          /* 2. GÖRÜNÜM: Koleksiyon İçi Kayıt Listesi */
-          <div style={{ minWidth: 0, maxWidth: "100%" }}>
-            <div
-              style={{
-                marginBottom: "16px",
-                display: "flex",
-                gap: "12px",
-                alignItems: "center",
-                flexWrap: "wrap",
-                minWidth: 0,
-              }}
-            >
-              <button
-                className="btn sm"
-                onClick={() => {
-                  setSelectedCollection(null);
-                  setSelectedRecord(null);
-                }}
-              >
-                ← Bilgi Listelerine Dön
-              </button>
-              <h2 style={{ margin: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}>
-                {getCollectionLabel(selectedCollection)}
-              </h2>
-              <span
-                className="pill"
-                style={{ fontSize: "12px", background: "#f0f4ed", color: "#42624c" }}
-              >
-                {records.length} kayıt
-              </span>
-              <Ep>
-                GET /v1/workspaces/{workspaceId}/revisions/{currentRevision}/collections/{selectedCollection}?mode={mode}
-              </Ep>
-            </div>
-
-            {records.length === 0 ? (
-              <EmptyState title="Kayıt yok" text="Bu listede uygun kayıt bulunamadı." />
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "10px", minWidth: 0 }}>
-                {records.map((r, i) => {
-                  const title = getRecordTitle(r);
-                  const summary = getRecordSummary(r);
-                  const state = r._meta?.review_state;
-
-                  return (
-                    <div
-                      key={r.id || i}
-                      className="card click"
-                      onClick={() => setSelectedRecord(r)}
-                      style={{
-                        padding: "16px 18px",
-                        cursor: "pointer",
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        gap: "12px",
-                        minWidth: 0,
-                        boxSizing: "border-box",
-                      }}
-                    >
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "8px",
-                            flexWrap: "wrap",
-                            minWidth: 0,
-                          }}
-                        >
-                          <strong
-                            style={{
-                              fontSize: "15px",
-                              color: "#1f2937",
-                              overflowWrap: "anywhere",
-                              wordBreak: "break-word",
-                            }}
-                          >
-                            {title}
-                          </strong>
-                          {state && getReviewBadge(state)}
-                          {developerMode && (
-                            <code className="ep" style={{ fontSize: "10px" }}>
-                              {r.id}
-                            </code>
-                          )}
-                        </div>
-                        <div
-                          className="sub2"
-                          style={{
-                            marginTop: "6px",
-                            fontSize: "12.5px",
-                            color: "#555",
-                            overflowWrap: "anywhere",
-                            wordBreak: "break-word",
-                          }}
-                        >
-                          {summary}
-                        </div>
-                      </div>
-                      <div
-                        style={{
-                          color: "var(--muted)",
-                          fontSize: "18px",
-                          fontWeight: "bold",
-                          flexShrink: 0,
-                          paddingLeft: "8px",
-                        }}
-                      >
-                        →
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        ) : (
-          /* 3. GÖRÜNÜM: Kayıt Detayı */
-          <div style={{ minWidth: 0, maxWidth: "100%" }}>
-            <div
-              style={{
-                marginBottom: "16px",
-                display: "flex",
-                gap: "10px",
-                alignItems: "center",
-                flexWrap: "wrap",
-                minWidth: 0,
-              }}
-            >
-              <button
-                className="btn sm"
-                onClick={() => setSelectedRecord(null)}
-              >
-                ← {getCollectionLabel(selectedCollection)} Listesine Dön
-              </button>
-              <h2 style={{ margin: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}>
-                {getRecordTitle(selectedRecord)}
-              </h2>
-              {selectedRecord._meta?.review_state && getReviewBadge(selectedRecord._meta.review_state)}
-              <Ep>
-                GET /v1/workspaces/{workspaceId}/revisions/{currentRevision}/collections/{selectedCollection}/records/{selectedRecord.id}?mode={mode}
-              </Ep>
-              <div style={{ flex: 1 }}></div>
-              <label className="switch">
-                <input
-                  type="checkbox"
-                  role="switch"
-                  checked={showI18n}
-                  onChange={(e) => setShowI18n(e.target.checked)}
-                />
-                Diller
-              </label>
-            </div>
-
-            <section className="card" style={{ overflowX: "hidden", minWidth: 0, boxSizing: "border-box" }}>
-              {developerMode && (
-                <div style={{ marginBottom: "14px" }}>
-                  <code className="ep">{selectedRecord.id}</code>
-                </div>
-              )}
-
-              <table
-                className="grid"
-                style={{
-                  tableLayout: "fixed",
-                  width: "100%",
-                  maxWidth: "100%",
-                  boxSizing: "border-box",
-                }}
-              >
-                <tbody>
-                  {Object.keys(selectedRecord).map((key) => {
-                    if (key === "id" || key === "_meta" || key === "i18n") return null;
-                    const meta = selectedRecord._meta?.fields?.[key];
-                    const i18nVals = selectedRecord.i18n
-                      ? Object.keys(selectedRecord.i18n)
-                          .map((lang) => ({
-                            lang,
-                            val: selectedRecord.i18n[lang][key],
-                            state: meta?.i18n_review_state?.[lang],
-                          }))
-                          .filter((x) => x.val !== undefined)
-                      : [];
-
-                    return (
-                      <tr key={key}>
-                        <td
-                          style={{
-                            width: "35%",
-                            fontWeight: "bold",
-                            wordBreak: "break-word",
-                            overflowWrap: "anywhere",
-                            color: "#374151",
-                            verticalAlign: "top",
-                            padding: "10px 12px",
-                          }}
-                        >
-                          {getFieldLabel(key)}
-                          {developerMode && (
-                            <div style={{ fontSize: "10px", color: "var(--muted)", fontWeight: "normal", marginTop: "2px" }}>
-                              {key}
-                            </div>
-                          )}
-                        </td>
-                        <td
-                          style={{
-                            wordBreak: "break-word",
-                            overflowWrap: "anywhere",
-                            verticalAlign: "top",
-                            padding: "10px 12px",
-                          }}
-                        >
-                          <div>
-                            {renderValue(selectedRecord[key])}
-                            {meta?.review_state && (
-                              <span style={{ marginLeft: "8px" }}>
-                                {getReviewBadge(meta.review_state)}
-                              </span>
-                            )}
-                            {meta?.evidence && <EvidenceView evidence={meta.evidence} />}
-                          </div>
-
-                          {showI18n &&
-                            i18nVals.map((i18nVal) => (
-                              <div
-                                key={i18nVal.lang}
-                                style={{
-                                  marginTop: "8px",
-                                  padding: "8px 10px",
-                                  background: "#f9f9f9",
-                                  borderRadius: "4px",
-                                  border: "1px solid #eee",
-                                }}
-                              >
-                                <span
-                                  style={{
-                                    fontWeight: "bold",
-                                    marginRight: "8px",
-                                    textTransform: "uppercase",
-                                    fontSize: "0.8em",
-                                    color: "#4b5563",
-                                  }}
-                                >
-                                  {i18nVal.lang}:
-                                </span>
-                                {renderValue(i18nVal.val)}
-                                {i18nVal.state && (
-                                  <span style={{ marginLeft: "8px" }}>
-                                    {getReviewBadge(i18nVal.state)}
-                                  </span>
-                                )}
-                              </div>
-                            ))}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-
-              {developerMode && (
-                <details style={{ marginTop: "16px" }}>
-                  <summary className="mono muted" style={{ cursor: "pointer" }}>
-                    Geliştirici: Ham JSON
-                  </summary>
-                  <pre
-                    style={{
-                      padding: "10px",
-                      background: "#f5f5f5",
-                      overflowX: "auto",
-                      fontSize: "11px",
-                      whiteSpace: "pre-wrap",
-                      wordBreak: "break-all",
-                      maxWidth: "100%",
-                      borderRadius: "4px",
-                      marginTop: "8px",
-                    }}
-                  >
-                    {JSON.stringify(selectedRecord, null, 2)}
-                  </pre>
-                </details>
-              )}
-            </section>
-          </div>
-        )}
-      </div>
-    </>
-  );
+  return <><Head title="Koleksiyonlar" sub="Belgelerinizden derlenen kayıtları ve kaynaklarını inceleyin." endpoint={revision ? `GET /v1/workspaces/${workspaceId}/revisions/${revision}/collections` : ""}>
+    <label className="switch"><input type="checkbox" role="switch" checked={mode === "approved"} onChange={event => { setMode(event.target.checked ? "approved" : "preview"); setSelectedCollection(""); }} />Yalnızca onaylı bilgiler</label>
+  </Head><div className="wrap">
+    {state === "loading" ? <div className="card statePanel" role="status"><span className="loadingLine" /><h2>Koleksiyonlar hazırlanıyor…</h2><p>Şirketinizin kayıtları alınıyor.</p></div> : state !== "ready" ? <div className="card statePanel" role={state === "error" ? "alert" : "status"}><Icon name="grid" /><h2>{state === "missing" ? "Koleksiyonlar henüz hazır değil" : "Koleksiyonlar alınamadı"}</h2><p>Biraz sonra tekrar deneyebilirsiniz.</p><button className="btn" onClick={retry}>Tekrar dene</button></div> : !collections.length ? <div className="card statePanel"><Icon name="grid" /><h2>Henüz koleksiyon yok</h2><p>Belgelerinizden derlenen kayıtlar burada görünecek.</p></div> : !selectedCollection ? <div className="collectionGrid">{collections.map(key => {
+      const data = results[key];
+      const summary = summaries.find(item => item.key === key);
+      const collection = summary ?? { key, label: labelFor(key), records: data?.rows.length ?? 0, conflicts: data?.rows.reduce((sum, row) => sum + (row._meta?.conflicts?.length ?? 0), 0) ?? 0, needs_review: data?.rows.filter(row => row._meta?.review_state !== "accepted").length ?? 0 };
+      return !summary && !data ? <div className="card collectionCard" key={key} role="status"><Icon name="grid" /><h3>{labelFor(key)}</h3><p>Kayıtlar yükleniyor…</p></div> : !summary && data?.failed ? <div className="card collectionCard" key={key} role="alert"><h3>{labelFor(key)}</h3><p>Kayıtlar alınamadı.</p><button className="textButton" onClick={retry}>Tekrar dene</button></div> : <CollectionCard key={key} collection={collection} onOpen={() => { setSelectedCollection(key); setSelectedRecord(null); }} />;
+    })}</div> : <>
+      <div className="recordHeading"><button className="btn" onClick={() => { if (selectedRecord) setSelectedRecord(null); else setSelectedCollection(""); }}>← {selectedRecord ? labelFor(selectedCollection) : "Koleksiyonlar"}</button><h2>{selectedRecord ? recordTitle(selectedRecord) : labelFor(selectedCollection)}</h2>{selectedRecord && <ReviewBadge state={selectedRecord._meta?.review_state} />}</div>
+      {questionState === "error" || questionState === "missing" ? <p className="collectionWarning">Açık sorular şu anda gösterilemiyor. Sorular bölümünden tekrar deneyebilirsiniz.</p> : null}
+      {!result ? <div className="card statePanel" role="status"><h2>Kayıtlar yükleniyor…</h2></div> : result.failed ? <div className="card statePanel" role="alert"><h2>Kayıtlar alınamadı</h2><p>Bu koleksiyonun kayıtlarını yeniden yükleyin.</p><button className="btn" onClick={retry}>Tekrar dene</button></div> : !result.rows.length ? <div className="card statePanel"><h2>Bu koleksiyonda kayıt yok</h2><p>{mode === "approved" ? "Önizlemedeki bilgileri görmek için onaylı bilgi filtresini kapatın." : "Yeni kayıtlar derlendiğinde burada görünecek."}</p></div> : !selectedRecord ? <div className="recordList">{result.rows.map(row => <button key={row.id} className="card recordRow" onClick={() => setSelectedRecord(row)}><div><strong>{recordTitle(row)}</strong><ReviewBadge state={row._meta?.review_state} /><p>{recordSummary(row)}</p>{developerMode && <Ep>{row.id}</Ep>}</div><Icon name="arrow" /></button>)}</div> : <>
+        <div className="collectionToolbar"><label className="switch"><input type="checkbox" role="switch" checked={showLanguages} onChange={event => setShowLanguages(event.target.checked)} />Diğer dilleri göster</label>{questionState === "loading" && <span className="collectionWarning" role="status">Açık sorular yükleniyor…</span>}</div>
+        <section className="card"><dl className="recordFields">{visibleFields(selectedRecord).map(field => {
+          const meta = selectedRecord._meta?.fields?.[field];
+          return <div className="recordField" key={field}><dt>{getFieldLabel(field)}{questionButton(questionFor(field))}{developerMode && <div><Ep>{field}</Ep></div>}</dt><dd>{valueText(selectedRecord[field])}<ReviewBadge state={meta?.review_state} /><EvidenceView evidence={meta?.evidence} developerMode={developerMode} documentNames={documentNames} />
+            {showLanguages && Object.entries(selectedRecord.i18n ?? {}).filter(([, fields]) => fields[field] !== undefined).map(([lang, fields]) => <div className="recordTranslation" key={lang}><span>{lang}</span>{valueText(fields[field])}<ReviewBadge state={meta?.i18n_review_state?.[lang]} />{questionButton(questionFor(field, lang))}<EvidenceView evidence={meta?.i18n?.[lang]} developerMode={developerMode} documentNames={documentNames} /></div>)}
+          </dd></div>;
+        })}</dl>{developerMode && <details className="recordDeveloper"><summary>Geliştirici: Ham JSON</summary><pre>{JSON.stringify(selectedRecord, null, 2)}</pre></details>}</section>
+      </>}
+    </>}
+  </div></>;
 }
