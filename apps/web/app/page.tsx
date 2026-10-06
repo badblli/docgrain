@@ -502,11 +502,10 @@ function Documents({
     </>
   );
 }
+import { InformationView } from "./components/information/information";
+
 function Information() {
-  return <><Head title="Bilgi" sub="Belgelerinizden derlenen bilgileri burada bulabileceksiniz." endpoint="" />
-    <div className="wrap informationGrid">{["Odalar", "Restoranlar", "Etkinlikler"].map((title) =>
-      <section className="card informationCard" key={title}><Icon name="grid" /><h2>{title}</h2><span className="pill p-idle">yakında</span></section>)}
-    </div></>;
+  return <InformationView apiUrl={API} workspaceId={WORKSPACE} Icon={Icon} Ep={Ep} Head={Head} EmptyState={EmptyState} />;
 }
 function Jobs({
   jobs,

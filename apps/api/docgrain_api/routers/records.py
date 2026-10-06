@@ -11,6 +11,11 @@ from ..settings import get_settings
 
 router = APIRouter(prefix="/v1/workspaces/{workspace_id}/revisions/{revision_id}",
                    tags=["records"])
+workspace_router = APIRouter(prefix="/v1/workspaces/{workspace_id}", tags=["records"])
+
+@workspace_router.get("/revisions")
+def list_revisions(workspace_id: str):
+    return repository().list_revisions(workspace_id)
 
 
 def repository():
