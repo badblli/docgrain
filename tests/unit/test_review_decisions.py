@@ -76,14 +76,14 @@ def test_questions_exact_contract_order_pagination_and_stability(setup):
     assert [q["kind"] for q in result["items"]] == ["conflict", "needs_review"]
     conflict, pending = result["items"]
     assert set(conflict) == {"id", "kind", "collection", "collection_label", "record_id",
-                             "record_title", "field", "field_label", "lang", "options"}
+                             "record_title", "field", "field_label", "lang", "options", "allow_all"}
     assert conflict["collection"] == "rooms" and conflict["record_title"] == "Bahçe odası"
     assert conflict["field"] == "view" and conflict["lang"] == "en"
     assert conflict["options"] == [
         {"candidate_id": "view-a", "value": "Garden", "display": "Garden", "quote": "Garden",
-         "document_name": "doc-example", "locator": "§1 p.1"},
+         "document_name": "doc-example", "locator": "s. 1"},
         {"candidate_id": "view-b", "value": "Sea", "display": "Sea", "quote": "Sea",
-         "document_name": "doc-example", "locator": "§1 p.1"},
+         "document_name": "doc-example", "locator": "s. 1"},
     ]
     assert pending["options"][0]["value"] == ["double"]
     assert client.get(BASE + "/questions?limit=1&offset=1").json() == {
@@ -177,7 +177,7 @@ def test_skip_only_reorders_within_kind_and_survives_restart_and_answer(setup):
     assert client.get(BASE + "/questions").json()["items"] == [items[0], items[3], items[2]]
 
 
-@pytest.mark.parametrize("body", [{"skip": True}, {"candidate_id": "fact-a"},
+@pytest.mark.parametrize("body", [{"skip": True}, {"all": True}, {"candidate_id": "fact-a"},
                                  {"value": ["queen"], "note": "checked"}])
 def test_stale_revision_returns_409_including_skip_and_pinned_answers(setup, body):
     client, store = setup
@@ -220,6 +220,8 @@ def test_concurrent_answers_from_separate_repository_instances_have_one_winner(s
 
 
 @pytest.mark.parametrize("body", [{}, {"skip": False}, {"skip": 1},
+                                 {"all": False}, {"all": 1}, {"all": "true"},
+                                 {"all": True, "candidate_id": "view-a"},
                                  {"candidate_id": "view-a", "skip": True},
                                  {"candidate_id": "view-a", "note": "extra"},
                                  {"value": "Sea"}, {"candidate_id": None},

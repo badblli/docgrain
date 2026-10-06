@@ -1,5 +1,6 @@
 """Offline questions and immutable, evidenced answers for published records."""
 
+import re
 from collections import defaultdict
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -10,6 +11,7 @@ from pydantic import JsonValue, model_validator
 from .export import encode, project_records
 from .merge_models import AnswerHistory, FactCandidate, MergeRevision, UserEditEvidence
 from .models import StrictModel, Text
+from .multivalue import list_field, multiple_values
 from .runtime import revision_runtime
 
 
@@ -22,6 +24,16 @@ class EditAnswer(StrictModel):
     note: str
 
 
+class AllAnswer(StrictModel):
+    all: bool
+
+    @model_validator(mode="after")
+    def true_only(self):
+        if not self.all:
+            raise ValueError("all must be true")
+        return self
+
+
 class SkipAnswer(StrictModel):
     skip: bool
 
@@ -32,7 +44,7 @@ class SkipAnswer(StrictModel):
         return self
 
 
-Answer = CandidateAnswer | EditAnswer | SkipAnswer
+Answer = CandidateAnswer | EditAnswer | SkipAnswer | AllAnswer
 
 
 def _label(definition, key):
@@ -42,6 +54,14 @@ def _label(definition, key):
 
 def _display(value):
     return value if isinstance(value, str) else encode(value).decode()
+
+
+def _locator(value):
+    page = re.search(r"\b(?:p\.|page|s\.)\s*(\d+)\b", value, re.IGNORECASE)
+    if page:
+        return "s. " + page.group(1)
+    section = re.search(r"§\s*(\d+)", value)
+    return "§ " + section.group(1) if section else value
 
 
 def questions(revision: MergeRevision) -> list[dict]:
@@ -66,6 +86,9 @@ def questions(revision: MergeRevision) -> list[dict]:
             for lang, candidates in sorted(languages.items()):
                 if any(c.review_state == "accepted" for c in candidates):
                     continue
+                if len(candidates) > 1 and multiple_values(
+                        runtime, record, field, merged, lang, candidates):
+                    continue
                 kind = "conflict" if len(candidates) > 1 else "needs_review"
                 if kind == "needs_review" and candidates[0].review_state != "needs_review":
                     continue
@@ -82,7 +105,7 @@ def questions(revision: MergeRevision) -> list[dict]:
                         "quote": None if user_edit else evidence.quote,
                         "document_name": "Sizin düzeltmeniz" if user_edit else
                         documents[evidence.document_id],
-                        "locator": None if user_edit else evidence.locator,
+                        "locator": None if user_edit else _locator(evidence.locator),
                     })
                 result.append({
                     "id": "q_" + sha256(encode(identity)).hexdigest(), "kind": kind,
@@ -90,6 +113,7 @@ def questions(revision: MergeRevision) -> list[dict]:
                     "record_id": record.id, "record_title": titles.get(record.id, record.id),
                     "field": field, "field_label": _label(fields.get(field, {}), field),
                     "lang": lang, "options": options,
+                    "allow_all": len(candidates) > 1 and not list_field(runtime, record.type, field),
                 })
     return sorted(result, key=lambda q: (q["kind"] != "conflict", q["collection"],
                                         q["record_id"], q["field"], q["lang"]))
@@ -129,7 +153,7 @@ def summary(revision: MergeRevision, updated_at: str) -> dict:
 
 
 def answer_revision(base: MergeRevision, question_id: str,
-                    answer: CandidateAnswer | EditAnswer) -> MergeRevision:
+                    answer: CandidateAnswer | EditAnswer | AllAnswer) -> MergeRevision:
     question = next((q for q in questions(base) if q["id"] == question_id), None)
     if question is None:
         raise LookupError("question unknown")
@@ -140,7 +164,14 @@ def answer_revision(base: MergeRevision, question_id: str,
     revision.updated_at = datetime.now(UTC).isoformat()
     record = next(r for r in revision.records if r.id == question["record_id"])
     field = record.fields[question["field"]]
-    if isinstance(answer, EditAnswer):
+    all_candidates = []
+    if isinstance(answer, AllAnswer):
+        all_candidates = sorted((c for c in field.candidates if c.lang == question["lang"]
+                                 and c.review_state != "rejected"), key=lambda c: c.id)
+        chosen = all_candidates[0]
+        if question["lang"] not in field.multi_value_languages:
+            field.multi_value_languages.append(question["lang"])
+    elif isinstance(answer, EditAnswer):
         value = revision_runtime(base).validate_value(record.type, question["field"], answer.value)
         chosen = FactCandidate(id="fact_" + uuid4().hex, value=value, lang=question["lang"],
                                evidence=[UserEditEvidence(at=revision.updated_at, note=answer.note)])
@@ -152,10 +183,12 @@ def answer_revision(base: MergeRevision, question_id: str,
             raise ValueError("candidate outside question")
     for candidate in field.candidates:
         if candidate.lang == question["lang"]:
-            candidate.review_state = "accepted" if candidate is chosen else "rejected"
+            candidate.review_state = "accepted" if (
+                candidate is chosen or candidate in all_candidates) else "rejected"
     revision.history.append(AnswerHistory(
         question_id=question_id, record_id=record.id, field=question["field"],
         lang=question["lang"], candidate_id=chosen.id, at=revision.updated_at,
+        candidate_ids=[c.id for c in all_candidates], all=isinstance(answer, AllAnswer),
         note=answer.note if isinstance(answer, EditAnswer) else "",
     ))
     # Revalidate every candidate's evidence, including unchanged fields.

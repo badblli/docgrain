@@ -4,6 +4,7 @@ import json
 from collections import defaultdict
 
 from .merge_models import MergeRevision, VersionedEvidence
+from .multivalue import combine, multiple_values
 from .runtime import revision_runtime
 
 COLLECTIONS = {
@@ -61,15 +62,17 @@ def project_records(revision: MergeRevision, lang: str | None = None,
                     languages[candidate.lang].append(candidate)
             visible = {}
             for language, candidates in sorted(languages.items()):
+                multi = multiple_values(runtime, record, field, merged, language, candidates)
                 accepted = [c for c in candidates if c.review_state == "accepted"]
-                if len(accepted) > 1:
+                if len(accepted) > 1 and not multi:
                     raise ValueError("multiple accepted values in one language")
                 if accepted:
-                    visible[language] = accepted[0]
+                    visible[language] = combine(accepted) if multi else accepted[0]
                 elif mode == "preview" and candidates:
                     candidates.sort(key=lambda c: c.id)
-                    visible[language] = candidates[0]
-                    if len(candidates) > 1:
+                    visible[language] = (combine(candidates, inferred=len(candidates) > 1)
+                                         if multi else candidates[0])
+                    if len(candidates) > 1 and not multi:
                         meta["conflicts"].append({"field": field, "lang": language,
                             "candidates": [c.model_dump(mode="json") for c in candidates]})
             if not visible:
