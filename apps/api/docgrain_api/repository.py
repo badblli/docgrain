@@ -126,6 +126,33 @@ def list_documents() -> list[Document]:
         return [_document(row) for row in cursor.fetchall()]
 
 
+def list_workspaces() -> list[dict[str, object]]:
+    """Return distinct workspace ids with document counts, newest activity first."""
+    if _fixture_mode():
+        workspaces: dict[str, dict[str, object]] = {}
+        for doc in sorted(_documents, key=lambda item: item.updated_at, reverse=True):
+            if doc.workspace_id not in workspaces:
+                workspaces[doc.workspace_id] = {
+                    "id": doc.workspace_id,
+                    "documents": 1,
+                    "last_activity": doc.updated_at,
+                }
+            else:
+                workspaces[doc.workspace_id]["documents"] = int(workspaces[doc.workspace_id]["documents"]) + 1
+        return [
+            {"id": item["id"], "documents": item["documents"]}
+            for item in workspaces.values()
+        ]
+    with _connection() as connection, connection.cursor() as cursor:
+        cursor.execute(
+            """SELECT workspace_id AS id, count(*)::int AS documents, max(updated_at) AS last_activity
+            FROM documents
+            GROUP BY workspace_id
+            ORDER BY max(updated_at) DESC"""
+        )
+        return [{"id": row["id"], "documents": row["documents"]} for row in cursor.fetchall()]
+
+
 def get_document(document_id: str) -> Document | None:
     if _fixture_mode():
         return next((item for item in _documents if item.id == document_id), None)
