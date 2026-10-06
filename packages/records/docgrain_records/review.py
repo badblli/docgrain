@@ -1,0 +1,162 @@
+"""Offline questions and immutable, evidenced answers for published records."""
+
+from collections import defaultdict
+from datetime import UTC, datetime
+from hashlib import sha256
+from uuid import uuid4
+
+from pydantic import JsonValue, model_validator
+
+from .export import encode, project_records
+from .merge_models import AnswerHistory, FactCandidate, MergeRevision, UserEditEvidence
+from .models import StrictModel, Text
+from .runtime import revision_runtime
+
+
+class CandidateAnswer(StrictModel):
+    candidate_id: Text
+
+
+class EditAnswer(StrictModel):
+    value: JsonValue
+    note: str
+
+
+class SkipAnswer(StrictModel):
+    skip: bool
+
+    @model_validator(mode="after")
+    def true_only(self):
+        if not self.skip:
+            raise ValueError("skip must be true")
+        return self
+
+
+Answer = CandidateAnswer | EditAnswer | SkipAnswer
+
+
+def _label(definition, key):
+    return next((label["value"] for label in definition.get("label_i18n", [])
+                 if label["lang"] == "tr"), key)
+
+
+def _display(value):
+    return value if isinstance(value, str) else encode(value).decode()
+
+
+def questions(revision: MergeRevision) -> list[dict]:
+    """A question is one unresolved record/field/language slot, never a proposal."""
+    runtime = revision_runtime(revision)
+    definitions = {c["key"]: c for c in (runtime.schema or {}).get("collections", [])}
+    rows = project_records(revision, "tr")
+    titles = {row["id"]: _display(row.get(runtime.identities[kind], row["id"]))
+              for kind, key in runtime.collections.items() for row in rows[key]}
+    documents = {pin.document_id: pin.document_name or pin.document_id
+                 for pin in revision.documents}
+    result = []
+    for record in sorted(revision.records, key=lambda r: r.id):
+        collection = runtime.collections[record.type]
+        definition = definitions.get(collection, {})
+        fields = {f["key"]: f for f in definition.get("fields", [])}
+        for field, merged in sorted(record.fields.items()):
+            languages = defaultdict(list)
+            for candidate in merged.candidates:
+                if candidate.review_state != "rejected":
+                    languages[candidate.lang].append(candidate)
+            for lang, candidates in sorted(languages.items()):
+                if any(c.review_state == "accepted" for c in candidates):
+                    continue
+                kind = "conflict" if len(candidates) > 1 else "needs_review"
+                if kind == "needs_review" and candidates[0].review_state != "needs_review":
+                    continue
+                identity = [revision.workspace_id, revision.lineage_id or revision.id,
+                            record.id, field, lang]
+                options = []
+                for candidate in sorted(candidates, key=lambda c: c.id):
+                    # One option per candidate; every original evidence item stays in the revision.
+                    evidence = candidate.evidence[0]
+                    user_edit = isinstance(evidence, UserEditEvidence)
+                    options.append({
+                        "candidate_id": candidate.id, "value": candidate.value,
+                        "display": _display(candidate.value),
+                        "quote": None if user_edit else evidence.quote,
+                        "document_name": "Sizin düzeltmeniz" if user_edit else
+                        documents[evidence.document_id],
+                        "locator": None if user_edit else evidence.locator,
+                    })
+                result.append({
+                    "id": "q_" + sha256(encode(identity)).hexdigest(), "kind": kind,
+                    "collection": collection, "collection_label": _label(definition, collection),
+                    "record_id": record.id, "record_title": titles.get(record.id, record.id),
+                    "field": field, "field_label": _label(fields.get(field, {}), field),
+                    "lang": lang, "options": options,
+                })
+    return sorted(result, key=lambda q: (q["kind"] != "conflict", q["collection"],
+                                        q["record_id"], q["field"], q["lang"]))
+
+
+def summary(revision: MergeRevision, updated_at: str) -> dict:
+    """Count published preview fields; each language value is a field slot."""
+    runtime = revision_runtime(revision)
+    definitions = {c["key"]: c for c in (runtime.schema or {}).get("collections", [])}
+    projected = project_records(revision)
+    pending = questions(revision)
+    records = {r.id: r for r in revision.records}
+    accepted = total = unsupported = 0
+    collections = []
+    for key, rows in projected.items():
+        for row in rows:
+            for field, metadata in row["_meta"]["fields"].items():
+                for lang, evidence in metadata["i18n"].items():
+                    total += 1
+                    accepted += records[row["id"]].fields[field].accepted(lang) is not None
+                    unsupported += not any(
+                        e.get("quote") or e.get("kind") == "user_edit" for e in evidence)
+        collections.append({"key": key, "label": _label(definitions.get(key, {}), key),
+                            "records": len(rows),
+                            "conflicts": sum(q["collection"] == key and q["kind"] == "conflict"
+                                             for q in pending),
+                            "needs_review": sum(q["collection"] == key and
+                                                q["kind"] == "needs_review" for q in pending)})
+    return {"workspace_id": revision.workspace_id, "revision_id": revision.id,
+            "documents": len({p.document_id for p in revision.documents}),
+            "records": sum(c["records"] for c in collections),
+            "unsupported_fields": unsupported,
+            "conflicts": sum(c["conflicts"] for c in collections),
+            "needs_review": sum(c["needs_review"] for c in collections),
+            "accepted_ratio": accepted / total if total else 0.0,
+            "updated_at": revision.updated_at or updated_at, "collections": collections}
+
+
+def answer_revision(base: MergeRevision, question_id: str,
+                    answer: CandidateAnswer | EditAnswer) -> MergeRevision:
+    question = next((q for q in questions(base) if q["id"] == question_id), None)
+    if question is None:
+        raise LookupError("question unknown")
+    revision = base.model_copy(deep=True)
+    revision.id = "rev_" + uuid4().hex
+    revision.parent_id = base.id
+    revision.lineage_id = base.lineage_id or base.id
+    revision.updated_at = datetime.now(UTC).isoformat()
+    record = next(r for r in revision.records if r.id == question["record_id"])
+    field = record.fields[question["field"]]
+    if isinstance(answer, EditAnswer):
+        value = revision_runtime(base).validate_value(record.type, question["field"], answer.value)
+        chosen = FactCandidate(id="fact_" + uuid4().hex, value=value, lang=question["lang"],
+                               evidence=[UserEditEvidence(at=revision.updated_at, note=answer.note)])
+        field.candidates.append(chosen)
+    else:
+        chosen = next((c for c in field.candidates if c.id == answer.candidate_id
+                       and c.lang == question["lang"] and c.review_state != "rejected"), None)
+        if chosen is None:
+            raise ValueError("candidate outside question")
+    for candidate in field.candidates:
+        if candidate.lang == question["lang"]:
+            candidate.review_state = "accepted" if candidate is chosen else "rejected"
+    revision.history.append(AnswerHistory(
+        question_id=question_id, record_id=record.id, field=question["field"],
+        lang=question["lang"], candidate_id=chosen.id, at=revision.updated_at,
+        note=answer.note if isinstance(answer, EditAnswer) else "",
+    ))
+    # Revalidate every candidate's evidence, including unchanged fields.
+    return MergeRevision.model_validate_json(revision.model_dump_json(round_trip=True))

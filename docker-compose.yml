@@ -80,7 +80,7 @@ services:
       CANONICAL_PERSISTENCE_ENABLED: ${CANONICAL_PERSISTENCE_ENABLED:-true}
       RECORDS_PUBLICATION_ROOT: ${RECORDS_PUBLICATION_ROOT:-/srv/storage/records}
     volumes:
-      - ./storage/records:/srv/storage/records:ro
+      - ./storage/records:/srv/storage/records:rw
     ports:
       - "8000:8000"
     depends_on:

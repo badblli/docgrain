@@ -1,12 +1,19 @@
-"""Read-only, explicitly pinned workspace KnowledgePack access."""
+"""Pinned KnowledgePack reads and workspace-scoped review decisions."""
 
 import json
 from hashlib import sha256
 
 from docgrain_records.export import MODES
-from fastapi import APIRouter, HTTPException, Request, Response
+from docgrain_records.review import Answer
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 
-from ..records_repository import PackMissing, PackUnpublished, RecordsRepository
+from ..records_repository import (
+    AnswerInvalid,
+    PackMissing,
+    PackUnpublished,
+    QuestionStale,
+    RecordsRepository,
+)
 from ..settings import get_settings
 
 router = APIRouter(prefix="/v1/workspaces/{workspace_id}/revisions/{revision_id}",
@@ -23,6 +30,36 @@ def repository():
     if not root:
         raise HTTPException(404, "record publications unavailable")
     return RecordsRepository(root)
+
+
+def _review_response(operation, workspace_id, *args, **kwargs):
+    try:
+        return getattr(repository(), operation)(workspace_id, *args, **kwargs)
+    except (PackUnpublished, QuestionStale) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except PackMissing as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except AnswerInvalid as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        raise HTTPException(503, "published artifact unavailable or invalid") from exc
+
+
+@workspace_router.get("/summary")
+def get_summary(workspace_id: str, revision_id: str | None = None):
+    return _review_response("workspace_summary", workspace_id, revision_id)
+
+
+@workspace_router.get("/questions")
+def get_questions(workspace_id: str, revision_id: str | None = None,
+                  limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0)):
+    return _review_response("list_questions", workspace_id, revision_id, limit, offset)
+
+
+@workspace_router.post("/questions/{question_id}/answer")
+def answer_question(workspace_id: str, question_id: str, answer: Answer,
+                    revision_id: str | None = None):
+    return _review_response("answer_question", workspace_id, question_id, answer, revision_id)
 
 
 def _response(request, workspace, revision, collection=None, lang=None, compact=False,
