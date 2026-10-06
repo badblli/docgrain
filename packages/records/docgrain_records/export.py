@@ -6,6 +6,7 @@ from collections import defaultdict
 from .merge_models import MergeRevision, VersionedEvidence
 from .multivalue import combine, multiple_values
 from .runtime import revision_runtime
+from .schedule import date_field, infer_schedule
 
 COLLECTIONS = {
     "property": "properties", "room_type": "rooms", "outlet": "outlets",
@@ -92,6 +93,10 @@ def project_records(revision: MergeRevision, lang: str | None = None,
                                           for x in meta["conflicts"]) else c.review_state)
                     for language, c in visible.items() if not language.startswith("en")},
             }
+            if date_field(field) and isinstance(primary.value, list):
+                schedule = infer_schedule(primary.value)
+                if schedule:
+                    meta["fields"][field]["schedule"] = schedule
             for language, candidate in visible.items():
                 if not language.startswith("en"):
                     row["i18n"].setdefault(language, {})[field] = candidate.value
@@ -142,6 +147,7 @@ def context(collection: str, rows: list[dict], workspace: str, revision: str,
         for field, metadata in row["_meta"]["fields"].items():
             lines.append("- " + encode({"field": field, "value": row[field],
                 "lang": metadata["lang"], "review_state": metadata["review_state"],
+                **({"schedule": metadata["schedule"]} if "schedule" in metadata else {}),
                 "sources": references(metadata["evidence"])}).decode())
         for language, fields in row["i18n"].items():
             for field, value in fields.items():
