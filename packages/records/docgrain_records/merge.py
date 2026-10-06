@@ -8,6 +8,8 @@ from hashlib import sha256
 from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 
+from docgrain_eval.scoring import normalized_value
+
 from .extractor import _blocks, normalize_quote
 from .extractor import _source_key as evidence_source_key
 from .merge_models import (
@@ -219,7 +221,7 @@ def _merge(state, revision_id, documents, decisions, alias_decisions):
         record_id = resolved[index]
         types[record_id] = item.record.type
         for field, lang, value, evidence in facts[index]:
-            key = _json([lang, value])
+            key = _json([lang, normalized_value(value, field)])
             bucket = grouped[record_id][field].setdefault(key, [lang, value, {}])
             for citation in evidence:
                 bucket[2][_json(_payload(citation))] = citation
