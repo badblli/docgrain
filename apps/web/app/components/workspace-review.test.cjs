@@ -116,6 +116,7 @@ test("versioned answer bodies, saved progress, skip, and all follow the contract
   let items = [question(0), question(1), question(2)];
   const bodies = [];
   const revisions = [];
+  const summaryRevisions = [];
   let revision = "rev1";
   const app = host(async (url, init) => {
     if (init.method === "POST") {
@@ -125,7 +126,13 @@ test("versioned answer bodies, saved progress, skip, and all follow the contract
       if (!body.skip) revision = `rev${Number(revision.slice(3)) + 1}`;
       return response({ revision_id: revision, remaining: items.length });
     }
-    return url.endsWith("/summary") ? response({ ...summary, revision_id: revision }) : response({ total: items.length, items });
+    if (new URL(url).pathname.endsWith("/summary")) {
+      const requested = new URL(url).searchParams.get("revision_id");
+      summaryRevisions.push(requested);
+      assert.equal(requested, revisions.length ? revision : null);
+      return response({ ...summary, revision_id: revision });
+    }
+    return response({ total: items.length, items });
   });
   app.render(); let review = await app.settle();
   await review.answer(review.questions[0], { candidate_id: "c1" });
@@ -138,17 +145,23 @@ test("versioned answer bodies, saved progress, skip, and all follow the contract
   review = app.render(); assert.equal(review.answered, 3); assert.equal(review.total, 0);
   assert.deepEqual(bodies, [{ candidate_id: "c1" }, { skip: true }, { all: true }, { value: "4", note: "Kullanıcı düzeltmesi" }]);
   assert.deepEqual(revisions, ["rev1", "rev2", "rev2", "rev3"]);
+  assert.deepEqual(summaryRevisions, [null, "rev2", "rev2", "rev3", "rev4"]);
 });
 
 test("409 reloads questions with a clear message; save failures retain the question", async () => {
   let reads = 0;
+  let revision = "rev1";
+  const questionRevisions = [];
   const app = host(async (url, init) => {
-    if (init.method === "POST") return response({}, 409);
-    if (url.endsWith("/summary")) return response(summary);
+    if (init.method === "POST") { revision = "rev2"; return response({}, 409); }
+    if (new URL(url).pathname.endsWith("/summary")) return response({ ...summary, revision_id: revision });
+    questionRevisions.push(new URL(url).searchParams.get("revision_id"));
     reads++; return response({ total: reads === 1 ? 1 : 0, items: reads === 1 ? [question(0)] : [] });
   });
   app.render(); let review = await app.settle(); await review.answer(review.questions[0], { candidate_id: "c1" });
-  review = app.render(); assert.equal(review.notice, "Bu soru başka biri tarafından cevaplandı"); assert.equal(review.total, 0); assert.equal(review.answered, 0);
+  review = app.render(); assert.equal(review.notice, "Bilgiler değişti; cevabınız kaydedilmedi. Güncel soruları kontrol edin."); assert.equal(review.total, 0); assert.equal(review.answered, 0);
+  assert.equal(review.summary.revision_id, "rev2");
+  assert.deepEqual(questionRevisions, ["rev1", "rev2"]);
   const failed = host(async (url, init) => init.method === "POST" ? Promise.reject(new Error("network details")) : url.endsWith("/summary") ? response(summary) : response({ total: 1, items: [question(0)] }));
   failed.render(); const failure = await failed.settle();
   await assert.rejects(failure.answer(failure.questions[0], { candidate_id: "c1" }), /Cevap kaydedilemedi/);

@@ -94,11 +94,11 @@ export function getCollectionLabel(key: string): string {
 /**
  * Returns Turkish label for a field key or falls back to humanized key.
  */
-export function getFieldLabel(key: string): string {
-  return FIELD_LABELS[key] || humanizeKey(key);
+export function getFieldLabel(key: string, label?: string | null): string {
+  return label?.trim() && label !== key && !label.includes("_") ? label : FIELD_LABELS[key] || humanizeKey(key);
 }
 
 /** The API sends the key itself when a schema has no Turkish label; fall back to the label map then. */
 export function displayCollectionLabel(key: string, label?: string | null): string {
-  return label && label !== key ? label : getCollectionLabel(key);
+  return label?.trim() && label !== key && !label.includes("_") ? label : getCollectionLabel(key);
 }

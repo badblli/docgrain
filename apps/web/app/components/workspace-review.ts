@@ -3,6 +3,7 @@ import type { Question, QuestionAnswer } from "./question-card";
 
 export type CollectionSummary = {
   key: string; label: string; records: number; conflicts: number; needs_review: number;
+  fields?: { key: string; label?: string; label_tr?: string }[];
   accepted_records?: number; pending_records?: number; duplicates?: number;
 };
 export type SummaryData = {
@@ -42,6 +43,8 @@ export function useWorkspaceReview(apiUrl: string, workspaceId: string, refreshK
   const [summaryState, setSummaryState] = useState<LoadState>("loading");
   const [questions, setQuestions] = useState<Question[]>([]);
   const [questionState, setQuestionState] = useState<LoadState>("loading");
+  const [fieldLabels, setFieldLabels] = useState<Record<string, Record<string, string>>>({});
+  const learnedLabels = useRef<Record<string, Record<string, string>>>({});
   const [total, setTotal] = useState(0);
   const [deferred, setDeferred] = useState<string[]>([]);
   const [answered, setAnswered] = useState(0);
@@ -57,7 +60,7 @@ export function useWorkspaceReview(apiUrl: string, workspaceId: string, refreshK
   const questionsRevision = useRef<string | null>(null);
   const base = `${apiUrl}/v1/workspaces/${encodeURIComponent(workspaceId)}`;
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (revisionId?: string) => {
     request.current?.abort();
     setSummaryState(previous => previous === "ready" ? previous : "loading");
     setQuestionState("loading");
@@ -67,7 +70,7 @@ export function useWorkspaceReview(apiUrl: string, workspaceId: string, refreshK
     const active = () => mounted.current && !controller.signal.aborted;
     let summaryData: SummaryData;
     try {
-      summaryData = await read<SummaryData>(`${base}/summary`, controller.signal);
+      summaryData = await read<SummaryData>(`${base}/summary${revisionId ? `?revision_id=${encodeURIComponent(revisionId)}` : ""}`, controller.signal);
       if (!Array.isArray(summaryData.collections) || typeof summaryData.records !== "number" ||
         (summaryData.revision_id !== null && typeof summaryData.revision_id !== "string")) {
         throw new Error("Özet okunamadı.");
@@ -90,12 +93,20 @@ export function useWorkspaceReview(apiUrl: string, workspaceId: string, refreshK
       if (active()) {
         questionsRevision.current = summaryData.revision_id;
         questionOrder.current = [...questionOrder.current, ...data.items.map(item => item.id).filter(id => !questionOrder.current.includes(id))];
+        const labels = { ...learnedLabels.current };
+        for (const item of data.items) {
+          if (item.field_label && item.field_label !== item.field) labels[item.collection] = { ...labels[item.collection], [item.field]: item.field_label };
+        }
+        learnedLabels.current = labels; setFieldLabels(labels);
+        // Keep learned display labels when all questions have been approved and a page is refreshed.
+        // Published field metadata, when present, remains the first choice in Collections.
+        try { localStorage.setItem(`docgrain.field-labels:${workspaceId}`, JSON.stringify(labels)); } catch { /* Optional display cache. */ }
         setQuestions(data.items); setTotal(data.total); setQuestionState("ready");
       }
     } catch (error) {
       if (active()) { setQuestions([]); setTotal(0); setQuestionState(failureState(error)); }
     }
-  }, [base]);
+  }, [base, workspaceId]);
 
   useEffect(() => {
     mounted.current = true;
@@ -103,7 +114,16 @@ export function useWorkspaceReview(apiUrl: string, workspaceId: string, refreshK
     saving.current = false; setBusy(false);
     setSummaryState("loading"); setQuestionState("loading"); setNotice("");
     setSummary(null); setQuestions([]); setTotal(0); setDeferred([]); setAnswered(0); setAnsweredQuestions([]);
-    setQuestionAnswers({}); questionOrder.current = [];
+    learnedLabels.current = {};
+    try {
+      const saved = JSON.parse(localStorage.getItem(`docgrain.field-labels:${workspaceId}`) || "{}");
+      if (saved && typeof saved === "object" && !Array.isArray(saved)) {
+        for (const [collection, fields] of Object.entries(saved)) {
+          if (fields && typeof fields === "object" && !Array.isArray(fields)) learnedLabels.current[collection] = Object.fromEntries(Object.entries(fields).filter(([, label]) => typeof label === "string"));
+        }
+      }
+    } catch { /* Optional display cache. */ }
+    setFieldLabels(learnedLabels.current); setQuestionAnswers({}); questionOrder.current = [];
     void reload();
     return () => { mounted.current = false; scope.current += 1; request.current?.abort(); };
   }, [reload, refreshKey]);
@@ -122,14 +142,14 @@ export function useWorkspaceReview(apiUrl: string, workspaceId: string, refreshK
       });
       if (!active()) return false;
       if (response.status === 409) {
-        setNotice("Bu soru başka biri tarafından cevaplandı");
+        setNotice("Bilgiler değişti; cevabınız kaydedilmedi. Güncel soruları kontrol edin.");
         await reload();
         return false;
       }
       if (!response.ok) throw new Error("Cevap kaydedilemedi. Bağlantıyı kontrol edip tekrar deneyin.");
       const result: { revision_id: string; remaining: number } = await response.json();
       if (!active()) return false;
-      if (!Number.isInteger(result.remaining) || result.remaining < 0) throw new Error("Cevap doğrulanamadı.");
+      if (typeof result.revision_id !== "string" || !result.revision_id || !Number.isInteger(result.remaining) || result.remaining < 0) throw new Error("Cevap doğrulanamadı.");
       if ("skip" in body) {
         setDeferred(previous => [...previous.filter(id => id !== question.id), question.id]);
         setNotice("Bu soruyu sonraya bıraktınız.");
@@ -141,8 +161,7 @@ export function useWorkspaceReview(apiUrl: string, workspaceId: string, refreshK
         setDeferred(previous => previous.filter(id => id !== question.id));
         setNotice("Kaydedildi");
       }
-      await new Promise(resolve => setTimeout(resolve, 450));
-      if (active()) await reload();
+      if (active()) await reload(result.revision_id);
       return active();
     } catch {
       if (active()) throw new Error("Cevap kaydedilemedi. Bağlantıyı kontrol edip tekrar deneyin.");
@@ -151,6 +170,6 @@ export function useWorkspaceReview(apiUrl: string, workspaceId: string, refreshK
     }
   }
   function revisit() { setDeferred([]); setNotice(""); }
-  return { summary, summaryState, questions, questionState, total, answered, answeredQuestions, questionAnswers, questionOrder: questionOrder.current, deferred, notice, busy, reload, answer, revisit };
+  return { fieldLabels, summary, summaryState, questions, questionState, total, answered, answeredQuestions, questionAnswers, questionOrder: questionOrder.current, deferred, notice, busy, reload, answer, revisit };
 }
 export type WorkspaceReview = ReturnType<typeof useWorkspaceReview>;

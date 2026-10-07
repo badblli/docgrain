@@ -88,6 +88,8 @@ export function QuestionCard({ question, onAnswer, currentIndex = 1, totalCount,
   const disabled = submitting || busy || readOnly || saved !== null;
   const schedule = question.kind === "schedule_swap" || question.kind === "schedule_conflict";
   const duplicate = question.kind === "duplicate";
+  const confirmation = question.kind === "needs_review" && new Set(question.options.map(option => option.candidate_id)).size === 1;
+  const fieldLabel = getFieldLabel(question.field, question.field_label);
   async function submit(answer: QuestionAnswer) {
     if (disabled) return;
     setSubmitting(true); setError(""); setAttempt(answer);
@@ -106,10 +108,10 @@ export function QuestionCard({ question, onAnswer, currentIndex = 1, totalCount,
   return <article aria-labelledby={titleId} aria-busy={submitting || busy} className="min-w-0 self-start motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-3 motion-safe:duration-300">
     <Card className="gap-0 border border-line p-0 ring-0">
       <div className="px-4 pt-5 sm:px-6 sm:pt-6">
-        <p className="mb-3 flex flex-wrap items-center gap-2 text-xs text-warn"><span className="size-1.5 shrink-0 rounded-full bg-warn" aria-hidden="true" />{duplicate ? "Benzer kayıtlar bulundu" : question.kind === "conflict" || schedule ? "Kaynaklar farklı söylüyor" : "İnceleme bekliyor"}<span className="text-muted">· {displayCollectionLabel(question.collection, question.collection_label)}</span></p>
-        <h2 className="text-xl leading-snug font-semibold tracking-[-0.02em] wrap-anywhere" id={titleId} ref={heading} tabIndex={-1}>{question.question_tr || `${question.record_title} için ${question.field_label} hangisi?`}</h2>
+        <p className="mb-3 flex flex-wrap items-center gap-2 text-xs text-warn"><span className="size-1.5 shrink-0 rounded-full bg-warn" aria-hidden="true" />{duplicate ? "Benzer kayıtlar bulundu" : question.kind === "conflict" || schedule ? "Kaynaklar farklı söylüyor" : confirmation ? "Bu bilgiyi onaylayın" : "İnceleme bekliyor"}<span className="text-muted">· {displayCollectionLabel(question.collection, question.collection_label)}</span></p>
+        <h2 className="text-xl leading-snug font-semibold tracking-[-0.02em] wrap-anywhere" id={titleId} ref={heading} tabIndex={-1}>{confirmation ? `${question.record_title} · ${fieldLabel}` : question.question_tr || `${question.record_title} için ${fieldLabel} hangisi?`}</h2>
         {schedule && <p className="mt-1 text-sm text-muted">{question.records?.join(" ve ")} · {question.period_label_tr}</p>}
-        <p className="mt-1 text-base text-muted">{duplicate ? "Aynı şeyi anlatıyorlarsa kayıtları birleştirin. Farklı bilgiler için ayrıca soracağız." : <>Güncel belgeyi seçin{question.allow_all ? '; tüm değerler geçerliyse “Hepsi doğru” deyin.' : "; koleksiyonunuz güncellensin."}</>}</p>
+        <p className="mt-1 text-base text-muted">{duplicate ? "Aynı şeyi anlatıyorlarsa kayıtları birleştirin. Farklı bilgiler için ayrıca soracağız." : confirmation ? "Kaynağı okuyun; bu bilgi doğruysa onaylayın." : <>Güncel belgeyi seçin{question.allow_all ? '; tüm değerler geçerliyse “Hepsi doğru” deyin.' : "; koleksiyonunuz güncellensin."}</>}</p>
       </div>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,230px),1fr))] gap-3 p-4 sm:px-6 sm:pb-6 sm:pt-5">
         {duplicate && question.duplicate_records?.map(record => <section className="flex min-w-0 flex-col gap-3 rounded-lg border border-line bg-paper p-4 sm:p-5" key={record.id}>
@@ -137,7 +139,7 @@ export function QuestionCard({ question, onAnswer, currentIndex = 1, totalCount,
               {option.locator && <p className="mt-1 font-mono text-2xs text-faint wrap-anywhere">{option.locator}</p>}
             </div>)}</div>
             <Button variant={chosen ? "default" : "outline"} className={cn("mt-auto h-auto min-h-[38px] max-w-full self-start whitespace-normal", chosen && "disabled:opacity-100")}
-              disabled={disabled} onClick={() => void submit(group.documentId ? { document_id: group.documentId } : { candidate_id: group.options[0].candidate_id })} aria-label={`${group.name}: ${group.documentId ? "Bu belge güncel" : "Bu düzeltme doğru"}`}>{chosen ? "Seçildi" : group.documentId ? "Bu belge güncel" : "Bu düzeltme doğru"}</Button>
+              disabled={disabled} onClick={() => void submit(!confirmation && group.documentId ? { document_id: group.documentId } : { candidate_id: group.options[0].candidate_id })} aria-label={`${group.name}: ${confirmation ? "Bu bilgiyi onayla" : group.documentId ? "Bu belge güncel" : "Bu düzeltme doğru"}`}>{chosen ? "Seçildi" : confirmation ? "Bu bilgiyi onayla" : group.documentId ? "Bu belge güncel" : "Bu düzeltme doğru"}</Button>
           </section>;
         })}
       </div>

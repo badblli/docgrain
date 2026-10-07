@@ -17,7 +17,7 @@ import type { CollectionSummary, LoadState } from "../workspace-review";
 
 type Evidence = { document_id: string; document_name?: string; locator: string; quote: string };
 type FieldMeta = {
-  lang?: string; review_state?: string; evidence?: Evidence[];
+  label_tr?: string; label?: string; lang?: string; review_state?: string; evidence?: Evidence[];
   schedule?: { label_tr: string };
   i18n?: Record<string, Evidence[]>; i18n_review_state?: Record<string, string>;
 };
@@ -38,9 +38,9 @@ function valueText(value: unknown): string {
   if (typeof value === "object") return Object.entries(value).map(([key, item]) => `${getFieldLabel(key)}: ${valueText(item)}`).join(" · ");
   return String(value);
 }
-function recordSummary(row: RecordRow) {
+function recordSummary(row: RecordRow, label: (key: string) => string) {
   return visibleFields(row).filter(key => row[key] !== recordTitle(row) && row[key] !== null && row[key] !== undefined)
-    .slice(0, 3).map(key => `${getFieldLabel(key)}: ${valueText(row[key])}`).join(" · ");
+    .slice(0, 3).map(key => `${label(key)}: ${valueText(row[key])}`).join(" · ");
 }
 
 function EvidenceView({ evidence, developerMode, documentNames, value }: { evidence?: Evidence[]; developerMode: boolean; documentNames: Record<string, string>; value: unknown }) {
@@ -52,7 +52,8 @@ function EvidenceView({ evidence, developerMode, documentNames, value }: { evide
   </li>)}</ul></details>;
 }
 
-export function InformationView({ apiUrl, workspaceId, initialCollection, summaries, questions, questionState, onQuestion, documentNames = {} }: {
+export function InformationView({ apiUrl, workspaceId, initialCollection, summaries, questions, questionState, onQuestion, documentNames = {}, revisionId, fieldLabels = {} }: {
+  revisionId?: string | null; fieldLabels?: Record<string, Record<string, string>>;
   apiUrl: string; workspaceId: string; initialCollection?: string;
   summaries: CollectionSummary[]; questions: Question[]; questionState: LoadState;
   onQuestion: (question: Question) => void; documentNames?: Record<string, string>;
@@ -79,7 +80,7 @@ export function InformationView({ apiUrl, workspaceId, initialCollection, summar
     }
     async function load() {
       try {
-        const revisions = await read<string[]>(`${base}/revisions`);
+        const revisions = revisionId ? [revisionId] : await read<string[]>(`${base}/revisions`);
         if (controller.signal.aborted) return;
         if (!Array.isArray(revisions)) throw new Error("Invalid revisions");
         if (!revisions.length) { setState("ready"); return; }
@@ -91,7 +92,7 @@ export function InformationView({ apiUrl, workspaceId, initialCollection, summar
         setSelectedCollection(previous => response.collections.includes(previous) ? previous : "");
         await Promise.allSettled(response.collections.map(async key => {
           try {
-            const rows = await read<RecordRow[]>(`${base}/revisions/${encodeURIComponent(latest)}/collections/${encodeURIComponent(key)}?mode=${mode}`);
+            const rows = await read<RecordRow[]>(`${base}/revisions/${encodeURIComponent(latest)}/collections/${encodeURIComponent(key)}?mode=${mode}&lang=tr`);
             if (!Array.isArray(rows)) throw new Error("Invalid records");
             if (!controller.signal.aborted) setResults(previous => ({ ...previous, [key]: { rows, failed: false } }));
           } catch {
@@ -104,9 +105,14 @@ export function InformationView({ apiUrl, workspaceId, initialCollection, summar
     }
     void load();
     return () => controller.abort();
-  }, [base, mode, refreshKey]);
+  }, [base, mode, refreshKey, revisionId]);
 
   const labelFor = (key: string) => displayCollectionLabel(key, summaries.find(item => item.key === key)?.label);
+  const fieldLabel = (field: string, row?: RecordRow) => {
+    const meta = row?._meta?.fields?.[field];
+    const definition = summaries.find(item => item.key === selectedCollection)?.fields?.find(item => item.key === field);
+    return getFieldLabel(field, meta?.label_tr || definition?.label_tr || definition?.label || fieldLabels[selectedCollection]?.[field] || questions.find(item => item.collection === selectedCollection && item.field === field)?.field_label || meta?.label);
+  };
   const questionFor = (field: string, lang?: string) => questions.find(item => item.collection === selectedCollection && (item.record_id === selectedRecord?.id || item.record_ids?.includes(selectedRecord?.id ?? "")) && item.field === field && (!lang || item.lang === lang));
   const questionButton = (question?: Question) => question && <Button variant="ghost" className="inline-flex align-[middle] border-0 bg-transparent rounded-sm [&:hover]:bg-warn-soft p-1" onClick={() => onQuestion(question)} aria-label={`${question.field_label}: açık soruyu cevapla`} title="Bu bilgi için bir soru var"><span className="inline-block w-[6px] h-[6px] rounded-pill bg-warn flex-none" aria-hidden="true" /></Button>;
   const retry = () => setRefreshKey(value => value + 1);
@@ -118,16 +124,17 @@ export function InformationView({ apiUrl, workspaceId, initialCollection, summar
     {state === "loading" ? <InformationState role="status"><Skeleton className="mx-auto h-1 w-12 bg-accent" /><h2>Koleksiyonlar hazırlanıyor…</h2><p>Şirketinizin kayıtları alınıyor.</p></InformationState> : state !== "ready" ? <InformationState role={state === "error" ? "alert" : "status"}><Icon name="grid" /><h2>{state === "missing" ? "Koleksiyonlar henüz hazır değil" : "Koleksiyonlar alınamadı"}</h2><p>Biraz sonra tekrar deneyebilirsiniz.</p><Button variant="outline" onClick={retry}>Tekrar dene</Button></InformationState> : !collections.length ? <InformationState><Icon name="grid" /><h2>Henüz koleksiyon yok</h2><p>Belgelerinizden derlenen kayıtlar burada görünecek.</p></InformationState> : !selectedCollection ? <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{collections.map(key => {
       const data = results[key];
       const summary = summaries.find(item => item.key === key);
-      const collection = summary ?? { key, label: labelFor(key), records: data?.rows.length ?? 0, conflicts: data?.rows.reduce((sum, row) => sum + (row._meta?.conflicts?.length ?? 0), 0) ?? 0, needs_review: data?.rows.filter(row => row._meta?.review_state !== "accepted").length ?? 0 };
-      return !summary && !data ? <Card className="gap-2 border border-line p-5 ring-0" key={key} role="status"><Icon name="grid" /><h3 className="text-md font-semibold">{labelFor(key)}</h3><p className="text-sm text-muted">Kayıtlar yükleniyor…</p></Card> : !summary && data?.failed ? <Card className="gap-2 border border-line p-5 ring-0" key={key} role="alert"><h3 className="text-md font-semibold">{labelFor(key)}</h3><p className="text-sm text-muted">Kayıtlar alınamadı.</p><Button variant="ghost" className="self-start" onClick={retry}>Tekrar dene</Button></Card> : <CollectionCard key={key} collection={collection} onOpen={() => { setSelectedCollection(key); setSelectedRecord(null); }} />;
+      const collection = mode === "approved" ? { key, label: labelFor(key), records: data?.rows.length ?? 0, accepted_records: data?.rows.length ?? 0, conflicts: 0, needs_review: 0 }
+        : summary ? { ...summary, label: labelFor(key) } : { key, label: labelFor(key), records: data?.rows.length ?? 0, conflicts: data?.rows.reduce((sum, row) => sum + (row._meta?.conflicts?.length ?? 0), 0) ?? 0, needs_review: data?.rows.filter(row => row._meta?.review_state !== "accepted").length ?? 0 };
+      return !data && (mode === "approved" || !summary) ? <Card className="gap-2 border border-line p-5 ring-0" key={key} role="status"><Icon name="grid" /><h3 className="text-md font-semibold">{labelFor(key)}</h3><p className="text-sm text-muted">Kayıtlar yükleniyor…</p></Card> : data?.failed ? <Card className="gap-2 border border-line p-5 ring-0" key={key} role="alert"><h3 className="text-md font-semibold">{labelFor(key)}</h3><p className="text-sm text-muted">Kayıtlar alınamadı.</p><Button variant="ghost" className="self-start" onClick={retry}>Tekrar dene</Button></Card> : <CollectionCard key={key} collection={collection} onOpen={() => { setSelectedCollection(key); setSelectedRecord(null); }} />;
     })}</div> : <>
       <div className="flex flex-wrap items-center gap-4"><Button variant="outline" className="h-auto max-w-full whitespace-normal" onClick={() => { if (selectedRecord) setSelectedRecord(null); else setSelectedCollection(""); }}>← {selectedRecord ? labelFor(selectedCollection) : "Koleksiyonlar"}</Button><h2 className="text-xl font-semibold wrap-anywhere">{selectedRecord ? recordTitle(selectedRecord) : labelFor(selectedCollection)}</h2>{selectedRecord && <ReviewBadge state={selectedRecord._meta?.review_state} />}</div>
       {questionState === "error" || questionState === "missing" ? <p className="text-xs text-muted">Açık sorular şu anda gösterilemiyor. Sorular bölümünden tekrar deneyebilirsiniz.</p> : null}
-      {!result ? <InformationState role="status"><h2>Kayıtlar yükleniyor…</h2></InformationState> : result.failed ? <InformationState role="alert"><h2>Kayıtlar alınamadı</h2><p>Bu koleksiyonun kayıtlarını yeniden yükleyin.</p><Button variant="outline" onClick={retry}>Tekrar dene</Button></InformationState> : !result.rows.length ? <InformationState><h2>Bu koleksiyonda kayıt yok</h2><p>{mode === "approved" ? "Önizlemedeki bilgileri görmek için onaylı bilgi filtresini kapatın." : "Yeni kayıtlar derlendiğinde burada görünecek."}</p></InformationState> : !selectedRecord ? <div className="flex flex-col gap-3">{result.rows.map(row => <Card key={row.id} className="gap-0 border border-line p-0 ring-0 transition-colors hover:border-accent"><button className="flex w-full min-w-0 items-center justify-between gap-4 p-4 text-left sm:px-6 sm:py-5" onClick={() => setSelectedRecord(row)}><span className="min-w-0"><strong className="text-md font-semibold wrap-anywhere">{recordTitle(row)}</strong><ReviewBadge state={row._meta?.review_state} /><span className="mt-2 block text-sm text-muted wrap-anywhere">{recordSummary(row)}</span>{developerMode && <Ep>{row.id}</Ep>}</span><Icon name="arrow" className="size-[18px] shrink-0" /></button></Card>)}</div> : <>
+      {!result ? <InformationState role="status"><h2>Kayıtlar yükleniyor…</h2></InformationState> : result.failed ? <InformationState role="alert"><h2>Kayıtlar alınamadı</h2><p>Bu koleksiyonun kayıtlarını yeniden yükleyin.</p><Button variant="outline" onClick={retry}>Tekrar dene</Button></InformationState> : !result.rows.length ? <InformationState><h2>Bu koleksiyonda kayıt yok</h2><p>{mode === "approved" ? "Önizlemedeki bilgileri görmek için onaylı bilgi filtresini kapatın." : "Yeni kayıtlar derlendiğinde burada görünecek."}</p></InformationState> : !selectedRecord ? <div className="flex flex-col gap-3">{result.rows.map(row => <Card key={row.id} className="gap-0 border border-line p-0 ring-0 transition-colors hover:border-accent"><button className="flex w-full min-w-0 items-center justify-between gap-4 p-4 text-left sm:px-6 sm:py-5" onClick={() => setSelectedRecord(row)}><span className="min-w-0"><strong className="text-md font-semibold wrap-anywhere">{recordTitle(row)}</strong><ReviewBadge state={row._meta?.review_state} /><span className="mt-2 block text-sm text-muted wrap-anywhere">{recordSummary(row, field => fieldLabel(field, row))}</span>{developerMode && <Ep>{row.id}</Ep>}</span><Icon name="arrow" className="size-[18px] shrink-0" /></button></Card>)}</div> : <>
         <div className="flex flex-wrap items-center gap-4"><Label className="flex items-center gap-2 text-xs font-normal text-muted"><input className="size-4 accent-accent" type="checkbox" role="switch" checked={showLanguages} onChange={event => setShowLanguages(event.target.checked)} />Diğer dilleri göster</Label>{questionState === "loading" && <span className="text-xs text-muted" role="status">Açık sorular yükleniyor…</span>}</div>
         <Card className="gap-0 border border-line p-0 ring-0"><dl className="m-0">{visibleFields(selectedRecord).map(field => {
           const meta = selectedRecord._meta?.fields?.[field];
-          return <div className="grid grid-cols-1 gap-3 border-b border-line2 p-5 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] sm:gap-6 sm:p-6" key={field}><dt className="min-w-0 text-sm font-semibold wrap-anywhere">{getFieldLabel(field)}{questionButton(questionFor(field))}{developerMode && <div><Ep>{field}</Ep></div>}</dt><dd className="m-0 min-w-0 text-base wrap-anywhere">{valueText(selectedRecord[field])}{meta?.schedule && <p className="mt-1 text-sm text-muted">{meta.schedule.label_tr}</p>}<ReviewBadge state={meta?.review_state} /><EvidenceView value={selectedRecord[field]} evidence={meta?.evidence} developerMode={developerMode} documentNames={documentNames} />
+          return <div className="grid grid-cols-1 gap-3 border-b border-line2 p-5 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] sm:gap-6 sm:p-6" key={field}><dt className="min-w-0 text-sm font-semibold wrap-anywhere">{fieldLabel(field, selectedRecord)}{questionButton(questionFor(field))}{developerMode && <div><Ep>{field}</Ep></div>}</dt><dd className="m-0 min-w-0 text-base wrap-anywhere">{valueText(selectedRecord[field])}{meta?.schedule && <p className="mt-1 text-sm text-muted">{meta.schedule.label_tr}</p>}<ReviewBadge state={meta?.review_state} /><EvidenceView value={selectedRecord[field]} evidence={meta?.evidence} developerMode={developerMode} documentNames={documentNames} />
             {showLanguages && Object.entries(selectedRecord.i18n ?? {}).filter(([, fields]) => fields[field] !== undefined).map(([lang, fields]) => <div className="mt-4 rounded-lg bg-sheet p-3 text-sm" key={lang}><span className="mr-2 text-2xs text-muted">{lang}</span>{valueText(fields[field])}<ReviewBadge state={meta?.i18n_review_state?.[lang]} />{questionButton(questionFor(field, lang))}<EvidenceView value={fields[field]} evidence={meta?.i18n?.[lang]} developerMode={developerMode} documentNames={documentNames} /></div>)}
           </dd></div>;
         })}</dl>{developerMode && <details className="m-6"><summary className="cursor-pointer">Geliştirici: Ham JSON</summary><pre className="whitespace-pre-wrap font-mono text-2xs wrap-anywhere">{JSON.stringify(selectedRecord, null, 2)}</pre></details>}</Card>

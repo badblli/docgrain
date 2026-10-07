@@ -1,4 +1,5 @@
 import { useId, useState } from "react";
+import { Input } from "@/components/ui/input";
 import { Menu } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -23,12 +24,17 @@ type SidebarProps = {
   screen: Screen; nav: (screen: Screen) => void; docs: number; jobs: number;
   questionCount?: number; workspace: string; workspaces: WorkspaceItem[];
   onWorkspaceChange: (id: string) => void; developerMode: boolean;
-  toggleDeveloperMode: () => void; busy: boolean;
+  toggleDeveloperMode: () => void; busy: boolean; readOnly?: boolean; onCreateWorkspace?: (name: string) => Promise<boolean>;
 };
-function SidebarContent({ screen, nav, docs, jobs, questionCount, workspace, workspaces, onWorkspaceChange, developerMode, toggleDeveloperMode, busy }: SidebarProps) {
+function SidebarContent({ screen, nav, docs, jobs, questionCount, workspace, workspaces, onWorkspaceChange, developerMode, toggleDeveloperMode, readOnly, onCreateWorkspace }: SidebarProps) {
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const pickerId = useId();
   const switchId = useId();
   const choices = workspaces.length ? workspaces : [{ id: workspace, documents: docs }];
+  const companyName = formatWorkspaceName(workspace, choices.find(item => item.id === workspace)?.name);
   const navigation = (target: Screen, name: string, icon: string, count?: number) => <Button key={target} variant="ghost"
     className="h-[38px] w-full justify-start gap-3 rounded-lg px-3 text-sm text-ink2 aria-[current=page]:bg-accent-soft aria-[current=page]:font-semibold aria-[current=page]:text-accent"
     aria-current={screen === target || (target === "documents" && screen === "detail") ? "page" : undefined} onClick={() => nav(target)}>
@@ -42,19 +48,31 @@ function SidebarContent({ screen, nav, docs, jobs, questionCount, workspace, wor
     <div className="grid gap-2">
       <Label htmlFor={pickerId} className="px-2 text-xs text-muted">Şirket</Label>
       <div className="flex min-w-0 items-center gap-2 rounded-lg border border-line bg-paper p-2">
-        <Avatar className="size-[26px] rounded-sm"><AvatarFallback className="rounded-sm bg-accent-soft text-xs font-semibold text-accent">{formatWorkspaceName(workspace).charAt(0)}</AvatarFallback></Avatar>
+        <Avatar className="size-[26px] rounded-sm"><AvatarFallback className="rounded-sm bg-accent-soft text-xs font-semibold text-accent">{companyName.charAt(0)}</AvatarFallback></Avatar>
         <div className="min-w-0 flex-1">
-          <Select value={workspace} disabled={busy} onValueChange={onWorkspaceChange}>
-            <SelectTrigger id={pickerId} className="h-auto w-full min-w-0 border-0 bg-paper p-0 text-sm font-semibold shadow-none"><SelectValue>{formatWorkspaceName(workspace)}</SelectValue></SelectTrigger>
-            <SelectContent>{choices.map(item => <SelectItem key={item.id} value={item.id}>{formatWorkspaceName(item.id)}</SelectItem>)}</SelectContent>
+          <Select value={workspace} onValueChange={id => { if (id === "__new__") { setCreating(true); setError(""); } else { setCreating(false); setError(""); onWorkspaceChange(id); } }}>
+            <SelectTrigger id={pickerId} className="h-auto w-full min-w-0 border-0 bg-paper p-0 text-sm font-semibold shadow-none"><SelectValue>{companyName}</SelectValue></SelectTrigger>
+            <SelectContent>{choices.map(item => <SelectItem key={item.id} value={item.id}>{formatWorkspaceName(item.id, item.name)}</SelectItem>)}{onCreateWorkspace && !readOnly && <SelectItem value="__new__">Yeni şirket</SelectItem>}</SelectContent>
           </Select>
           <small className="block text-2xs text-muted">{choices.find(item => item.id === workspace)?.documents ?? docs} belge</small>
         </div>
       </div>
+      {creating && <form className="grid min-w-0 gap-2 rounded-lg border border-line p-3" onSubmit={async event => {
+        event.preventDefault(); if (saving || !name.trim() || !onCreateWorkspace) return;
+        setSaving(true); setError("");
+        try { if (await onCreateWorkspace(name.trim())) { setCreating(false); setName(""); } else setError("Şirket oluşturulamadı. Bağlantıyı kontrol edip yeniden deneyin."); }
+        catch { setError("Şirket oluşturulamadı. Bağlantıyı kontrol edip yeniden deneyin."); }
+        finally { setSaving(false); }
+      }}>
+        <Label htmlFor={`${pickerId}-new`}>Şirket adı</Label><Input id={`${pickerId}-new`} autoFocus value={name} maxLength={200} onChange={event => setName(event.target.value)} required disabled={saving} />
+        {error && <p className="text-xs text-danger" role="alert">{error}</p>}
+        <Button type="submit" disabled={saving || !name.trim()}>{saving ? "Oluşturuluyor…" : "Şirket oluştur"}</Button><Button variant="ghost" type="button" disabled={saving} onClick={() => setCreating(false)}>Vazgeç</Button>
+      </form>}
     </div>
     <nav className="grid gap-1" aria-label="Ana menü">
       {navigation("summary", "Özet", "summary")}{navigation("questions", "Sorular", "question", questionCount)}
       {navigation("collections", "Koleksiyonlar", "grid")}{navigation("documents", "Belgeler", "doc")}
+      {navigation("try", "Dene", "question")}{navigation("settings", "Ayarlar", "book")}
     </nav>
     {developerMode && <nav className="grid gap-1" aria-label="Geliştirici araçları">
       <p className="text-xs text-muted p-2">Geliştirici araçları</p>
