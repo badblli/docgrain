@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .canonical_repository import CanonicalRepository
 from .repository import initialize
 from .routers import (
+    ai,
     canonical_chunks,
     chat,
     chunks,
@@ -100,6 +101,7 @@ app.include_router(documents.workspaces_router)
 app.include_router(reviews.router)
 app.include_router(records.router)
 app.include_router(records.workspace_router)
+app.include_router(ai.router)
 app.include_router(chat.router)
 app.include_router(local_visuals.router)
 app.include_router(knowledge.document_router)

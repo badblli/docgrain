@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
+from typing import get_args
 
 from docgrain_records.export import MODES, SCHEMA_VERSION, encode, export_bundle
 from docgrain_records.merge_models import MergeRevision
@@ -193,6 +194,22 @@ class RecordsRepository:
         self.manifest(workspace, revision)
         return MergeRevision.model_validate_json(
             (self._path(workspace, revision) / "source.json").read_bytes())
+
+    def access_metadata(self, workspace, revision=None):
+        """Read the pinned accepted contract and document names, never candidate values."""
+        source = self._source(workspace, revision)
+        runtime = revision_runtime(source)
+        collections = {}
+        for kind, key in runtime.collections.items():
+            collections[key] = {
+                name: get_args(field.annotation)[0].model_json_schema()["properties"]["value"]
+                for name, field in runtime.models[kind][1].model_fields.items()
+            }
+        return {"workspace_id": workspace, "revision_id": source.id,
+                "workspace_schema_version": runtime.schema["version"] if runtime.schema else None,
+                "collections": collections,
+                "document_names": {pin.document_id: pin.document_name or pin.document_id
+                                   for pin in source.documents}}
 
     def _review_state(self, workspace):
         path = self._path(workspace) / "review.json"
