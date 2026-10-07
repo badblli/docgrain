@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -36,6 +37,8 @@ class Settings(BaseSettings):
     use_fixtures: bool = False
     canonical_persistence_enabled: bool = False
     records_publication_root: str = ""
+    # Metadata only; actual credentials live in each profile's server environment.
+    docgrain_model_credential_profiles: str = Field(default="{}", repr=False)
 
 
 @lru_cache
