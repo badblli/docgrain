@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useDeveloperMode } from "./developer-mode";
-import { Head, Icon, Ep } from "./console-ui";
+import { Head, Icon, Ep, pageBody } from "./console-ui";
 import type { DocumentRow, UploadState, Mode } from "./console-types";
 
 function Status({ status }: { status: string }) {
@@ -23,7 +23,7 @@ export function Documents({ docs, open, upload, uploadState, uploadStates, retry
   const uploads = uploadStates ?? (uploadState && uploadState.phase !== "idle" ? [uploadState] : []);
   return <>
     <Head title="Belgeler" sub="Belgelerinizi yükleyin, durumlarını takip edin ve içeriklerini okuyun." endpoint="GET /v1/documents" />
-    <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6 px-4 pb-16 pt-6 md:gap-8 md:px-6 xl:px-10">
+    <div className={pageBody}>
       <section className="flex flex-wrap items-center gap-4">
         <div className="grid size-9 shrink-0 place-items-center rounded-lg border border-line bg-paper text-muted"><Icon name="upload" className="size-5" /></div>
         <div className="min-w-0 flex-1"><h3 className="text-base font-semibold">Belgeleri ekleyin</h3><p className="mt-1 max-w-[56ch] text-xs text-muted">PDF, Word, Excel, metin veya görsel dosyalarınızı ekleyin.</p>
@@ -41,8 +41,8 @@ export function Documents({ docs, open, upload, uploadState, uploadStates, retry
         {developerMode && item.jobId && <code className="wrap-anywhere text-faint">{item.jobId}</code>}
       </li>)}</ul>}
       {extraction && <section className="grid gap-4 rounded-card border border-line bg-paper p-4 sm:p-5" aria-labelledby="extract-title">
-        <div><h2 id="extract-title" className="text-base font-semibold">Belgelerden bilgilerinizi derleyin</h2><p className="mt-1 text-sm text-muted">Belgenin hazır olması, bilgilerinin çıkarıldığı veya onaylandığı anlamına gelmez. Bilgi çıkarıldıktan sonra kaynakları kontrol edip Sorular'da onaylayın.</p></div>
-        {extraction.reason && <p className="text-sm text-muted" role="status">{extraction.reason}</p>}
+        <div><h2 id="extract-title" className="text-base font-semibold">Belgelerden bilgilerinizi derleyin</h2><p className="mt-1 max-w-[72ch] text-sm text-muted">Belgenin hazır olması, bilgilerinin çıkarıldığı veya onaylandığı anlamına gelmez. Bilgi çıkarıldıktan sonra kaynakları kontrol edip Sorular'da onaylayın.</p></div>
+        {extraction.reason && <p className="max-w-[72ch] text-sm text-muted" role="status">{extraction.reason}</p>}
         <div className="flex flex-wrap gap-2"><Button className="h-auto min-h-[38px] max-w-full whitespace-normal" disabled={!extraction.enabled} onClick={extraction.start}>{extraction.starting ? "Başlatılıyor…" : "Bilgileri çıkar"}</Button>
           {extraction.showSettings && <Button variant="outline" onClick={extraction.settings}>Ayarlar'a git</Button>}</div>
         <RecordJobProgress job={extraction.job} error={extraction.error} />

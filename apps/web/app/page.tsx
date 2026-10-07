@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 
 
 import { useEffect, useRef, useState } from "react";
-import { Icon, Head, Ep, EmptyState } from "./components/console-ui";
+import { Icon, Head, Ep, EmptyState, pageBody, pageGutter } from "./components/console-ui";
 import { Sidebar } from "./components/sidebar";
 import { WorkspaceSettings } from "./components/settings/workspace-settings";
 import { TryView } from "./components/try/try-view";
@@ -28,7 +28,7 @@ import { Assets as CanonicalAssets, Issues as CanonicalIssues, Overview as Canon
   type Knowledge } from "./components/canonical/inspector";
 
 
-const screenContent = "pt-6 pb-16 flex flex-col min-w-0 w-full max-w-[var(--content-max)] max-[560px]:pt-6 max-[560px]:pb-10 px-10 gap-8 max-[780px]:px-4 my-0 mx-auto max-[1100px]:px-6 max-[560px]:px-4 max-[560px]:gap-6";
+const screenContent = pageBody;
 const technicalCard = "bg-paper border border-solid border-line rounded-card shadow-none overflow-hidden [&_>_header]:border-b [&_>_header]:border-solid [&_>_header]:border-b-line2 [&_>_header]:flex [&_>_header]:items-center [&_>_header]:flex-wrap [&_>_header_h2]:text-sm [&_>_header_h2]:font-semibold [&_>_header_h2]:tracking-[-0.01em] [&_>_header]:py-3 [&_>_header]:px-4 [&_>_header]:gap-2 [&_>_header_h2]:m-0";
 const technicalNote = "bg-sheet border border-solid border-line2 border-l-[2.5px] border-l-faint rounded-[0_var(--radius)_var(--radius)_0] text-xs text-ink2 leading-[1.55] [&_b]:text-ink p-3";
 const technicalChip = "font-normal text-2xs font-mono rounded-sm bg-sheet border border-solid border-line text-ink2 [button&]:[&:hover]:border-accent [&_b]:font-semibold [&_b]:text-ink py-1 px-2";
@@ -426,7 +426,7 @@ function DetailHead({
     </TabsTrigger>
   );
   return (
-    <header className="bg-transparent border-b-0 border-solid border-b-line pt-10 pb-0 static top-0 z-[20] max-[560px]:[&_h1]:wrap-anywhere w-full max-w-[var(--content-max)] [&_h1]:text-2xl [&_h1]:tracking-[var(--tracking-display)] [&_h1]:font-semibold max-[560px]:pt-6 max-[560px]:pb-0 px-10 max-[780px]:px-4 my-0 mx-auto max-[1100px]:px-6 max-[560px]:px-4">
+    <header className="bg-transparent border-b-0 border-solid border-b-line pt-10 pb-0 static top-0 z-[20] max-[560px]:[&_h1]:wrap-anywhere w-full min-w-0 [&_h1]:text-2xl [&_h1]:tracking-[var(--tracking-display)] [&_h1]:font-semibold max-[560px]:pt-6 max-[560px]:pb-0 px-4 md:px-6 xl:px-10">
       <div className="hidden items-center text-2xs text-muted mb-2 [&_b]:text-line [&_b]:font-normal max-[560px]:wrap-anywhere gap-2">
         <span>Çalışma alanı</span>
         <b>›</b>
@@ -1033,7 +1033,7 @@ export default function Home() {
         onCreateWorkspace={createWorkspace}
       />
       <main className="flex min-w-0 flex-col">
-        {(developerMode || mode === "demo" || screen === "documents" || screen === "detail") && <div className="bg-transparent border-b border-solid border-b-line flex items-center justify-between text-xs max-[780px]:flex-wrap text-muted py-3 px-10 gap-4 max-[780px]:py-3 max-[780px]:px-4 max-[1100px]:px-6 max-[560px]:py-3 max-[560px]:px-4" role="status">
+        {(developerMode || mode === "demo" || screen === "documents" || screen === "detail") && <div className="bg-transparent border-b border-solid border-b-line flex items-center justify-between text-xs max-[780px]:flex-wrap text-muted py-3 gap-4 px-4 md:px-6 xl:px-10" role="status">
           <span>{mode === "demo" ? "Örnek belgeleri görüntülüyorsunuz. Düzenleme ve yükleme kapalı."
             : mode === "live" ? "Belgelerinizi kaynaklarıyla birlikte inceleyebilirsiniz." : "Bağlantı kuruluyor…"}</span>
           <Button variant="ghost" className="h-auto whitespace-normal border border-solid border-line bg-paper rounded-lg font-medium text-ink2 inline-flex items-center [&:hover]:border-line-strong [&:hover]:bg-sheet [&:hover]:text-ink [&:disabled]:cursor-not-allowed [&:disabled]:opacity-[.55] [&:disabled]:bg-idle-soft [&:disabled]:border-line [&:disabled]:text-muted [&:disabled:hover]:cursor-not-allowed [&:disabled:hover]:opacity-[0.58] [&:disabled:hover]:bg-idle-soft [&:disabled:hover]:border-line [&:disabled:hover]:text-muted motion-safe:transition-colors motion-safe:duration-150 justify-center text-xs min-h-[var(--control-height-sm)] gap-1 py-1 px-2" onClick={() => { if (confirmDiscard()) void refresh(workspace); }} disabled={loading || review.busy || transferBusy}>Listeyi yenile</Button>
@@ -1050,7 +1050,7 @@ export default function Home() {
             onQuestion={question => { setFocusedQuestionId(question.id); review.revisit(); setScreen("questions"); }} />
           : screen === "settings" || screen === "try" ? mode === null ? <div role={error ? "alert" : "status"}>
               <EmptyState title={error ? "Bağlantı kurulamadı" : "Bağlanıyor"} text={error ? "Çalışma alanı alınamadı. Bağlantıyı kontrol edip yeniden deneyin." : "Çalışma alanı kontrol ediliyor."} />
-              {error && <div className="mx-auto max-w-[1200px] px-4 md:px-6 xl:px-10"><Button variant="outline" onClick={() => void refresh(workspace)}>Tekrar dene</Button></div>}
+              {error && <div className={pageGutter}><Button variant="outline" onClick={() => void refresh(workspace)}>Tekrar dene</Button></div>}
             </div> : screen === "settings" ? <WorkspaceSettings key={workspace} apiUrl={API} workspaceId={workspace} mode={mode} onSaved={() => setModelRefresh(value => value + 1)} />
               : <TryView key={`${workspace}:${review.summary?.revision_id ?? "empty"}`} apiUrl={API} workspaceId={workspace} mode={mode} /> : loading ? <EmptyState title="Yükleniyor" text="Belgeleriniz alınıyor." />
           : error ? <div role="alert"><EmptyState title="Bağlantı kurulamadı" text={developerMode ? error : "Belgeler alınamadı. Bağlantıyı kontrol edip listeyi yenileyin."} /></div>

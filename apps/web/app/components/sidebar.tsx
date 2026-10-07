@@ -36,7 +36,7 @@ function SidebarContent({ screen, nav, docs, jobs, questionCount, workspace, wor
   const choices = workspaces.length ? workspaces : [{ id: workspace, documents: docs }];
   const companyName = formatWorkspaceName(workspace, choices.find(item => item.id === workspace)?.name);
   const navigation = (target: Screen, name: string, icon: string, count?: number) => <Button key={target} variant="ghost"
-    className="h-[38px] w-full justify-start gap-3 rounded-lg px-3 text-sm text-ink2 aria-[current=page]:bg-accent-soft aria-[current=page]:font-semibold aria-[current=page]:text-accent"
+    className="h-[38px] w-full justify-start gap-3 rounded-lg px-3 text-sm text-ink2 transition-none aria-[current=page]:bg-accent-soft aria-[current=page]:font-semibold aria-[current=page]:text-accent"
     aria-current={screen === target || (target === "documents" && screen === "detail") ? "page" : undefined} onClick={() => nav(target)}>
     <Icon name={icon} className="size-[18px]" />{name}
     {count !== undefined && count > 0 && <Badge variant={target === "questions" ? "bekliyor" : "secondary"} className="ml-auto rounded-sm" aria-label={target === "questions" ? `${count} açık soru` : undefined}>{count}</Badge>}
