@@ -17,6 +17,24 @@ export const COLLECTION_LABELS: Record<string, string> = {
   service_prices: "Hizmet Fiyatları",
   services: "Hizmet Fiyatları",
   meeting_rooms: "Toplantı Odaları",
+  restaurants: "Restoranlar",
+  bars: "Barlar",
+  pools: "Havuzlar",
+  swimming_pools: "Havuzlar",
+  events: "Etkinlikler",
+  faqs: "Sıkça Sorulan Sorular",
+  local_attractions: "Gezilecek Yerler",
+  housekeeping_services: "Kat Hizmetleri",
+  aquaparks: "Su Parkları",
+  cabanas: "Kabanalar",
+  certifications: "Sertifikalar",
+  hotels: "Oteller",
+  membership_tiers: "Üyelik Seviyeleri",
+  shops: "Mağazalar",
+  shows: "Gösteriler",
+  pillows: "Yastık Menüsü",
+  theme_nights: "Tema Geceleri",
+  spa_services: "Spa Hizmetleri",
 };
 
 export const FIELD_LABELS: Record<string, string> = {
@@ -78,4 +96,9 @@ export function getCollectionLabel(key: string): string {
  */
 export function getFieldLabel(key: string): string {
   return FIELD_LABELS[key] || humanizeKey(key);
+}
+
+/** The API sends the key itself when a schema has no Turkish label; fall back to the label map then. */
+export function displayCollectionLabel(key: string, label?: string | null): string {
+  return label && label !== key ? label : getCollectionLabel(key);
 }
