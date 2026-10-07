@@ -34,9 +34,11 @@ from .. import repository
 from ..queue import enqueue
 from ..settings import get_settings
 from ..storage import get_text, object_exists, put_upload
+from .workspace_settings import router as settings_router
 
 router = APIRouter(prefix="/v1/documents", tags=["documents"])
-workspaces_router = APIRouter(prefix="/v1/workspaces", tags=["workspaces"])
+workspaces_router = APIRouter(tags=["workspaces"])
+workspaces_router.include_router(settings_router)
 
 
 def _require_live_uploads() -> None:
@@ -46,13 +48,15 @@ def _require_live_uploads() -> None:
 
 class WorkspaceListItem(BaseModel):
     id: str
+    name: str
     documents: int
 
 
-@workspaces_router.get("", response_model=list[WorkspaceListItem])
+@workspaces_router.get("/v1/workspaces", response_model=list[WorkspaceListItem])
 def list_workspaces() -> list[WorkspaceListItem]:
     return [
-        WorkspaceListItem(id=str(item["id"]), documents=int(item["documents"]))
+        WorkspaceListItem(id=str(item["id"]), name=str(item.get("name", item["id"])),
+                          documents=int(item["documents"]))
         for item in repository.list_workspaces()
     ]
 

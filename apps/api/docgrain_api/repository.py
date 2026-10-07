@@ -77,6 +77,9 @@ def initialize() -> None:
             CREATE INDEX IF NOT EXISTS jobs_version_idx ON jobs(document_version_id);
             """
         )
+        from .workspace_settings_repository import initialize as initialize_workspace_settings
+
+        initialize_workspace_settings(connection)
 
 
 def _document(row: dict[str, object]) -> Document:
@@ -145,12 +148,16 @@ def list_workspaces() -> list[dict[str, object]]:
         ]
     with _connection() as connection, connection.cursor() as cursor:
         cursor.execute(
-            """SELECT workspace_id AS id, count(*)::int AS documents, max(updated_at) AS last_activity
-            FROM documents
-            GROUP BY workspace_id
-            ORDER BY max(updated_at) DESC"""
+            """WITH activity AS (
+                SELECT workspace_id AS id, count(*)::int AS documents,
+                       max(updated_at) AS last_activity FROM documents GROUP BY workspace_id
+            )
+            SELECT coalesce(c.id, a.id) AS id, coalesce(c.name, a.id) AS name,
+                   coalesce(a.documents, 0) AS documents
+            FROM workspace_catalog c FULL OUTER JOIN activity a ON c.id = a.id
+            ORDER BY greatest(c.created_at, a.last_activity) DESC, coalesce(c.id, a.id)"""
         )
-        return [{"id": row["id"], "documents": row["documents"]} for row in cursor.fetchall()]
+        return [dict(row) for row in cursor.fetchall()]
 
 
 def get_document(document_id: str) -> Document | None:
