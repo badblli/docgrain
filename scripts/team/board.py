@@ -10,6 +10,7 @@ Usage:
   board.py step <wp> <step> ["<note>"]        move a WP to a step; a note is logged as a lead message
   board.py say <wp> <from> "<text>"           log one message
   board.py agent <wp>                         print the assigned agent id
+  board.py name <agent-id>                    print the agent\'s name in the active theme
   board.py model <wp>                         print "<model> <effort> <tier>" from the WP's "- Model:" line
   board.py ingest <wp>                        read Codex --json events on stdin, log agent messages
   board.py report <wp> <report.md>            log the agent's final report summary
@@ -56,6 +57,14 @@ def say(wp: str, sender: str, text: str, kind: str = "message") -> None:
     entry = {"ts": int(time.time() * 1000), "from": sender, "kind": kind, "text": text}
     with (chat / f"{wp}.jsonl").open("a", encoding="utf-8") as out:
         out.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def display_name(agent_id: str) -> str:
+    """The agent's name in the active theme (team.json "theme"), else its plain name, else the id."""
+    theme = TEAM.get("themes", {}).get(TEAM.get("theme", ""), {})
+    themed = theme.get("agents", {}).get(agent_id, {}).get("name")
+    plain = next((a.get("name") for a in TEAM.get("agents", []) if a.get("id") == agent_id), None)
+    return themed or plain or agent_id
 
 
 def agent_of(wp: str) -> str:
@@ -110,6 +119,8 @@ def main(argv: list[str]) -> None:
         print(routing[key][tier]["model"], routing[key][tier]["effort"], tier, engine)
     elif cmd == "agent":
         print(agent_of(args[0]))
+    elif cmd == "name":
+        print(display_name(args[0]))
     elif cmd == "say":
         say(args[0], args[1], args[2])
     elif cmd == "ingest":

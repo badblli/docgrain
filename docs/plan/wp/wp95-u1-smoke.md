@@ -7,7 +7,7 @@
 - Branch: `codex/wp95-u1-smoke` (base: `origin/dev`)
 - Depends on: wp91-u1-pipeline, wp92-u1-settings, wp93-u1-web-flow, wp94-u1-try (canlı kabul); fixture/test geliştirme paralel
 - Role: implementer
-- Owner: Ece (agy)
+- Owner: Bulbasaur (agy)
 
 ## Goal
 

@@ -69,7 +69,8 @@ AGENTS.md.
 ----- WORK PACKAGE -----
 $(cat "$spec")"
 
-echo "agent: ${agent:-?}  wp: $wp  model: $model/$effort ($tier)  dir: $workdir  logs: $run"
+agent_name="$(board name "${agent:-?}" 2>/dev/null | tr -d '\r' || true)"
+echo "agent: ${agent_name:-${agent:-?}}  wp: $wp  model: $model/$effort ($tier)  dir: $workdir  logs: $run"
 status=0
 if [[ -n "${WP_RESUME_RUN:-}" ]]; then
   status=1

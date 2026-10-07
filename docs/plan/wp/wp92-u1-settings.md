@@ -8,7 +8,7 @@
 - Branch: `codex/wp92-u1-settings` (base: `origin/dev`)
 - Depends on: none
 - Role: implementer
-- Owner: Cem (codex)
+- Owner: Porygon (codex)
 
 ## Goal
 

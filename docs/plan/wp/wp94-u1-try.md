@@ -8,7 +8,7 @@
 - Branch: `codex/wp94-u1-try` (base: `origin/dev`)
 - Depends on: wp92-u1-settings runtime sözleşmesi; mevcut wp68 AI araçları
 - Role: implementer
-- Owner: Ada (codex)
+- Owner: Charizard (codex)
 
 ## Goal
 
