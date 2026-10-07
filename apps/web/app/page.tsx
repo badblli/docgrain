@@ -10,12 +10,16 @@ import { cn } from "@/lib/utils";
 import { useEffect, useRef, useState } from "react";
 import { Icon, Head, Ep, EmptyState } from "./components/console-ui";
 import { Sidebar } from "./components/sidebar";
+import { WorkspaceSettings } from "./components/settings/workspace-settings";
+import { TryView } from "./components/try/try-view";
+import { useRecordJob, jobActive } from "./components/record-job-progress";
+import { createUploadQueue, sha256 } from "../lib/u1-upload";
 import { Documents } from "./components/documents";
 import { InformationView } from "./components/information/information";
 import { SummaryView } from "./components/summary";
 import { QuestionsView } from "./components/questions";
 import { useWorkspaceReview } from "./components/workspace-review";
-import { formatWorkspaceName, type WorkspaceItem, type Screen, type DocumentRow, type UploadState, type UploadPhase, type Mode } from "./components/console-types";
+import { formatWorkspaceName, type WorkspaceItem, type Screen, type DocumentRow, type UploadState, type Mode } from "./components/console-types";
 import { DeveloperModeContext, useDeveloperMode } from "./components/developer-mode";
 import { AIOutputView } from "./components/canonical/ai-output";
 import { ReviewWorkspace } from "./components/canonical/review-workspace";
@@ -99,6 +103,16 @@ type DocumentListResponse = {
   latest_version: Version | null;
   latest_job_id: string | null;
 };
+
+async function readDocuments(workspaceId: string, mode: Mode, signal?: AbortSignal): Promise<DocumentListResponse[]> {
+  const rows: DocumentListResponse[] = [];
+  let page: DocumentListResponse[];
+  do {
+    page = await apiJson<DocumentListResponse[]>(`${API}/v1/documents?limit=50&offset=${rows.length}&workspace_id=${encodeURIComponent(workspaceId)}`, { signal, cache: "no-store" }, mode);
+    rows.push(...page);
+  } while (page.length === 50);
+  return rows;
+}
 
 const stageMeta: Record<string, { name: string; via: string }> = {
   register: { name: "Kayıt", via: "API metadata kaydı" },
@@ -741,14 +755,38 @@ export default function Home() {
     [markdown, setMarkdown] = useState(""),
     [knowledge, setKnowledge] = useState<Knowledge | null>(null),
     [knowledgeState, setKnowledgeState] = useState(""),
-    [uploadState, setUploadState] = useState<UploadState>({ phase: "idle" }),
+    [uploadStates, setUploadStates] = useState<UploadState[]>([]),
     [toast, setToast] = useState("");
   const [developerMode, setDeveloperMode] = useState(false);
   const [reviewRefresh, setReviewRefresh] = useState(0);
   const [navigationKey, setNavigationKey] = useState(0);
   const [initialCollection, setInitialCollection] = useState<string>();
   const [focusedQuestionId, setFocusedQuestionId] = useState<string>();
+  const [documentPollError, setDocumentPollError] = useState("");
+  const [modelRefresh, setModelRefresh] = useState(0);
+  const generation = useRef(0);
+  const workspaceRef = useRef(workspace);
+  const uploadController = useRef<AbortController | null>(null);
+  const uploadQueue = useRef<ReturnType<typeof createUploadQueue<RegisterResponse>> | null>(null);
   const review = useWorkspaceReview(API, workspace, reviewRefresh);
+  const informationJob = useRecordJob(API, workspace, mode, modelRefresh, () => { void review.reload(); });
+  const transferBusy = uploadStates.some(item => ["waiting", "hashing", "registering", "uploading", "confirming"].includes(item.phase));
+  const extractionReason = mode === "demo" ? "Örnek görünümde yükleme ve bilgi çıkarma kapalı."
+    : mode !== "live" || loading ? "Bağlantı ve belgeler kontrol ediliyor."
+    : error ? "Belgeler alınamadı. Bağlantıyı kontrol edip listeyi yenileyin."
+    : documentPollError ? documentPollError
+    : !informationJob.loaded ? "Bilgi işinin durumu kontrol ediliyor."
+    : informationJob.starting || jobActive(informationJob.job) ? "Bilgi işi devam ediyor; aşamalar aşağıda gösteriliyor."
+    : informationJob.modelState === "loading" ? "Model seçimi kontrol ediliyor."
+    : informationJob.modelState === "error" ? "Model seçimi alınamadı. Ayarlar'ı açıp bağlantıyı kontrol edin."
+    : informationJob.modelState !== "ready" ? "Bilgi çıkarmak için Ayarlar'dan model seçin ve etkinleştirin."
+    : !docs.length ? "Önce belgelerinizi yükleyin."
+    : transferBusy ? "Dosyaların yüklenmesi bitince bilgi çıkarabilirsiniz."
+    : uploadStates.some(item => item.phase === "error") ? "Yüklenemeyen dosyayı yeniden deneyin; tüm belgeler hazır olmalı."
+    : docs.some(document => document.status === "partial") ? "Bazı belgeler kısmi hazır. Belgeleri açıp eksik içeriği kontrol edin; tüm belgeler hazır olmalı."
+    : docs.some(document => document.status === "failed") ? "Bazı belgeler hazırlanamadı. Belgeleri açıp sorunu kontrol edin; tüm belgeler hazır olmalı."
+    : docs.some(document => document.status !== "done") ? "Belgeler hazırlanıyor. Tümü hazır olduğunda bilgi çıkarabilirsiniz."
+    : "";
   useEffect(() => {
     try { setDeveloperMode(localStorage.getItem("docgrain.developer-mode") === "true"); } catch { /* Storage may be unavailable. */ }
   }, []);
@@ -766,15 +804,16 @@ export default function Home() {
 
   async function refresh(targetWs = workspace) {
     const request = ++requestId.current;
-    setLoading(true); setError(""); setMode(null);
+    setLoading(true); setError(""); setDocumentPollError(""); setMode(null);
     setReviewRefresh(value => value + 1);
     setDocs([]); setJobs([]); setProviders([]);
     setSelected(null); setScreen((prev) => (prev === "detail" ? "documents" : prev));
     try {
       const health = await apiJson<{ mode: Mode }>(`${API}/healthz`);
+      if (request !== requestId.current) return;
       if (health.mode !== "live" && health.mode !== "demo") throw new Error("API çalışma modu doğrulanamadı.");
       const [documentResult, jobResult, providerResult, workspaceResult] = await Promise.allSettled([
-        apiJson<DocumentListResponse[]>(`${API}/v1/documents?limit=50&workspace_id=${encodeURIComponent(targetWs)}`, undefined, health.mode),
+        readDocuments(targetWs, health.mode),
         apiJson<Job[]>(`${API}/v1/jobs`, undefined, health.mode),
         apiJson<Provider[]>(`${API}/v1/providers/health`, undefined, health.mode),
         apiJson<WorkspaceItem[]>(`${API}/v1/workspaces`, undefined, health.mode).catch(() => [] as WorkspaceItem[]),
@@ -789,20 +828,17 @@ export default function Home() {
       if (documentResult.status === "rejected") setError("Belgeler alınamadı.");
 
       // Ensure active workspace and default workspace are represented in the list
-      const wsMap = new Map<string, number>();
+      const wsMap = new Map<string, WorkspaceItem>();
       for (const w of nextWorkspaces) {
-        wsMap.set(w.id, w.documents);
+        wsMap.set(w.id, w);
       }
       if (!wsMap.has(targetWs)) {
-        wsMap.set(targetWs, documents.length);
+        wsMap.set(targetWs, { id: targetWs, documents: documents.length });
       }
       if (!wsMap.has(DEFAULT_WORKSPACE)) {
-        wsMap.set(DEFAULT_WORKSPACE, 0);
+        wsMap.set(DEFAULT_WORKSPACE, { id: DEFAULT_WORKSPACE, documents: 0 });
       }
-      const combinedWorkspaces: WorkspaceItem[] = Array.from(wsMap.entries()).map(([id, docCount]) => ({
-        id,
-        documents: id === targetWs ? documents.length : docCount,
-      }));
+      const combinedWorkspaces = Array.from(wsMap.values()).map(item => ({ ...item, documents: item.id === targetWs ? documents.length : item.documents }));
       setWorkspaces(combinedWorkspaces);
     } catch (cause) {
       if (request === requestId.current) setError(`API verileri alınamadı: ${String(cause)}`);
@@ -814,9 +850,13 @@ export default function Home() {
   function handleWorkspaceChange(nextWs: string) {
     if (nextWs === workspace) return;
     if (!confirmDiscard()) return;
-    setWorkspace(nextWs);
+    generation.current += 1; workspaceRef.current = nextWs;
+    uploadController.current?.abort(); uploadQueue.current = null;
+    setWorkspace(nextWs); setScreen("documents"); setToast("");
+    setSelected(null); setJob(null); setPages([]); setVersions([]); setKnowledge(null); setMarkdown("");
+    setDetailLoading(false); setDetailError(""); dirtyRef.current = false;
     setInitialCollection(undefined); setFocusedQuestionId(undefined);
-    setUploadState({ phase: "idle" });
+    setUploadStates([]); setDocumentPollError("");
     try {
       localStorage.setItem("docgrain.workspace_id", nextWs);
     } catch {
@@ -829,9 +869,10 @@ export default function Home() {
     let savedWorkspace = DEFAULT_WORKSPACE;
     try { savedWorkspace = localStorage.getItem("docgrain.workspace_id") || DEFAULT_WORKSPACE; }
     catch { /* The default remains available without storage. */ }
+    workspaceRef.current = savedWorkspace;
     if (savedWorkspace !== DEFAULT_WORKSPACE) setWorkspace(savedWorkspace);
     void refresh(savedWorkspace);
-    return () => { requestId.current += 1; };
+    return () => { requestId.current += 1; generation.current += 1; uploadController.current?.abort(); };
   }, []);
   useEffect(() => {
     if (!toast) return;
@@ -892,120 +933,83 @@ export default function Home() {
       if (!silent && request === requestId.current) setDetailLoading(false);
     }
   }
-  async function upload(file: File) {
-    if (mode !== "live") return;
-    const terminal = new Set(["done", "partial", "failed"]);
-    try {
-      setUploadState({
-        phase: "registering",
-        fileName: file.name,
-        message: "Belgeniz kaydediliyor…",
-      });
-      const registration = await apiJson<RegisterResponse>(`${API}/v1/documents`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          workspace_id: workspace,
-          filename: file.name,
-          mime_type: file.type || "application/octet-stream",
-          byte_size: file.size,
-        }),
-      }, "live");
-
-      const pendingRow = documentRow({
-        document: registration.document,
-        latest_version: registration.version,
-        latest_job_id: registration.job_id,
-      });
-      setDocs((current) => [pendingRow, ...current.filter((d) => d.id !== pendingRow.id)]);
-
-      if (!registration.deduplicated) {
-        if (!registration.upload_url) throw new Error("API bir upload URL döndürmedi");
-        setUploadState({
-          phase: "uploading",
-          fileName: file.name,
-          jobId: registration.job_id,
-          message: "Dosya yükleniyor…",
-        });
-        const form = new FormData();
-        form.append("file", file, file.name);
-        await apiJson<{ status: string }>(registration.upload_url, {
-          method: "PUT",
-          body: form,
-        }, "live");
-
-        setUploadState({
-          phase: "confirming",
-          fileName: file.name,
-          jobId: registration.job_id,
-          message: "Dosya kontrol ediliyor…",
-        });
-        await apiJson<{ status: string; job_id: string }>(
-          `${API}/v1/documents/${registration.document.id}/versions/${registration.version.id}/uploaded`,
-          { method: "POST" }, "live",
-        );
-      }
-
-      setUploadState({
-        phase: "queued",
-        fileName: file.name,
-        jobId: registration.job_id,
-        message: registration.deduplicated
-          ? "Aynı içerik daha önce kaydedilmiş. Mevcut sürüm kullanılıyor."
-          : "Belgeniz hazırlanmayı bekliyor…",
-      });
-
-      for (let poll = 0; poll < 450; poll += 1) {
-        const currentJob = await apiJson<Job>(`${API}/v1/jobs/${registration.job_id}`, undefined, "live");
-        setJobs((current) => [
-          currentJob,
-          ...current.filter((item) => item.id !== currentJob.id),
-        ]);
-        setDocs((current) =>
-          current.map((item) =>
-            item.id === registration.document.id
-              ? { ...item, status: currentJob.status }
-              : item,
-          ),
-        );
-        setUploadState({
-          phase: currentJob.status as UploadPhase,
-          fileName: file.name,
-          jobId: currentJob.id,
-          message: terminal.has(currentJob.status)
-            ? documentStatusLabel(currentJob.status)
-            : currentJob.status === "running"
-              ? "Belgeniz okunuyor…"
-              : "Belgeniz hazırlanmayı bekliyor…",
-        });
-        if (terminal.has(currentJob.status)) {
-          const refreshed = await apiJson<DocumentListResponse>(
-            `${API}/v1/documents/${registration.document.id}`, undefined, "live",
-          );
-          const finalRow = documentRow(refreshed);
-          setDocs((current) => [
-            finalRow,
-            ...current.filter((item) => item.id !== finalRow.id),
-          ]);
-          setToast(`${file.name}: ${documentStatusLabel(currentJob.status)}`);
-          void refresh(workspace);
-          return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-      }
-
-      setUploadState({
-        phase: "error",
-        fileName: file.name,
-        jobId: registration.job_id,
-        message: "Takip süresi doldu. Güncel durumu görmek için listeyi yenileyin.",
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Bilinmeyen upload hatası";
-      setUploadState({ phase: "error", fileName: file.name, message });
-      setToast(`${file.name} yüklenemedi: ${message}`);
-    }
+  async function createWorkspace(name: string) {
+    if (mode !== "live" || !confirmDiscard()) return false;
+    const epoch = generation.current;
+    const result = await apiJson<WorkspaceItem>(`${API}/v1/workspaces`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }),
+    }, "live");
+    if (epoch !== generation.current) return false;
+    setWorkspaces(previous => [...previous.filter(item => item.id !== result.id), result]);
+    dirtyRef.current = false;
+    handleWorkspaceChange(result.id);
+    return true;
   }
+  function upload(files: File[]) {
+    if (mode !== "live") return;
+    if (!uploadQueue.current) {
+      const epoch = generation.current;
+      const controller = new AbortController(); uploadController.current = controller;
+      uploadQueue.current = createUploadQueue<RegisterResponse>({
+        apiUrl: API, workspaceId: workspace, fetch, hash: sha256, signal: controller.signal,
+        active: () => epoch === generation.current,
+        onState: state => setUploadStates(previous => previous.some(item => item.id === state.id)
+          ? previous.map(item => item.id === state.id ? state : item) : [...previous, state]),
+        onRegistered: registration => {
+          const row = documentRow({ document: registration.document, latest_version: registration.version, latest_job_id: registration.job_id });
+          setDocs(previous => [row, ...previous.filter(item => item.id !== row.id)]);
+        },
+        onUploaded: () => { /* The independent document poll follows preparation. */ },
+      });
+    }
+    uploadQueue.current.add(files);
+  }
+  useEffect(() => {
+    if (mode !== "live") return;
+    const epoch = generation.current;
+    const controller = new AbortController();
+    let reading = false;
+    const active = () => !controller.signal.aborted && epoch === generation.current && workspaceRef.current === workspace;
+    async function pollDocuments() {
+      if (reading || !active()) return;
+      reading = true;
+      try {
+        const [documentResult, jobResult] = await Promise.allSettled([
+          readDocuments(workspace, "live", controller.signal),
+          apiJson<Job[]>(`${API}/v1/jobs`, { signal: controller.signal, cache: "no-store" }, "live"),
+        ]);
+        if (documentResult.status === "rejected") throw documentResult.reason;
+        const rows = documentResult.value.map(documentRow);
+        if (jobResult.status === "fulfilled") {
+          const currentJobs = jobResult.value.filter(item => rows.some(row => row.jobId === item.id));
+          for (const row of rows) {
+            const preparation = currentJobs.find(item => item.id === row.jobId);
+            if (["processing", "running", "queued", "pending"].includes(row.status) && preparation && ["queued", "running", "partial", "failed"].includes(preparation.status)) row.status = preparation.status;
+          }
+          if (active()) setJobs(currentJobs);
+        }
+        if (!active()) return;
+        setDocumentPollError(jobResult.status === "rejected" ? "Belge hazırlığının durumu alınamadı. Bağlantıyı kontrol edin; tekrar kontrol ediliyor." : "");
+        setDocs(previous => {
+          // Registrations may finish while a list request is in flight. Keep those rows until the next poll.
+          const known = new Set(rows.map(row => row.id));
+          return [...rows, ...previous.filter(row => !known.has(row.id))];
+        });
+        setUploadStates(previous => previous.map(item => {
+          if (["error", "waiting", "hashing", "registering", "uploading", "confirming"].includes(item.phase)) return item;
+          const row = rows.find(row => row.jobId === item.jobId);
+          if (!row) return item;
+          const phase = row.status === "processing" ? "running" : row.status;
+          return { ...item, phase: phase as UploadState["phase"], message: documentStatusLabel(row.status) };
+        }));
+        setWorkspaces(previous => previous.map(item => item.id === workspace ? { ...item, documents: rows.length } : item));
+      } catch { if (active()) setDocumentPollError("Belge durumları alınamadı. Bağlantıyı kontrol edin; tekrar kontrol ediliyor."); }
+      finally { reading = false; }
+    }
+    const timer = setInterval(() => { void pollDocuments(); }, 2000);
+    return () => { controller.abort(); clearInterval(timer); };
+  }, [workspace, mode]);
+
   return (
     <DeveloperModeContext.Provider value={developerMode}>
     <div className="min-h-dvh text-base md:grid md:grid-cols-[244px_minmax(0,1fr)] motion-reduce:[&_*]:animate-none motion-reduce:[&_*]:transition-none">
@@ -1019,35 +1023,45 @@ export default function Home() {
           setNavigationKey(value => value + 1); setScreen(next);
         }}
         questionCount={review.questionState === "ready" ? review.total : undefined}
-        busy={review.busy || ["registering", "uploading", "confirming", "queued", "running"].includes(uploadState.phase)}
+        busy={review.busy || transferBusy}
         docs={docs.length}
         jobs={jobs.filter((j) => j.status === "running").length}
         workspace={workspace}
         workspaces={workspaces}
         onWorkspaceChange={handleWorkspaceChange}
+        readOnly={mode !== "live"}
+        onCreateWorkspace={createWorkspace}
       />
       <main className="flex min-w-0 flex-col">
         {(developerMode || mode === "demo" || screen === "documents" || screen === "detail") && <div className="bg-transparent border-b border-solid border-b-line flex items-center justify-between text-xs max-[780px]:flex-wrap text-muted py-3 px-10 gap-4 max-[780px]:py-3 max-[780px]:px-4 max-[1100px]:px-6 max-[560px]:py-3 max-[560px]:px-4" role="status">
           <span>{mode === "demo" ? "Örnek belgeleri görüntülüyorsunuz. Düzenleme ve yükleme kapalı."
             : mode === "live" ? "Belgelerinizi kaynaklarıyla birlikte inceleyebilirsiniz." : "Bağlantı kuruluyor…"}</span>
-          <Button variant="ghost" className="h-auto whitespace-normal border border-solid border-line bg-paper rounded-lg font-medium text-ink2 inline-flex items-center [&:hover]:border-line-strong [&:hover]:bg-sheet [&:hover]:text-ink [&:disabled]:cursor-not-allowed [&:disabled]:opacity-[.55] [&:disabled]:bg-idle-soft [&:disabled]:border-line [&:disabled]:text-muted [&:disabled:hover]:cursor-not-allowed [&:disabled:hover]:opacity-[0.58] [&:disabled:hover]:bg-idle-soft [&:disabled:hover]:border-line [&:disabled:hover]:text-muted motion-safe:transition-colors motion-safe:duration-150 justify-center text-xs min-h-[var(--control-height-sm)] gap-1 py-1 px-2" onClick={() => { if (confirmDiscard()) void refresh(workspace); }} disabled={loading || review.busy || ["registering", "uploading", "confirming", "queued", "running"].includes(uploadState.phase)}>Listeyi yenile</Button>
+          <Button variant="ghost" className="h-auto whitespace-normal border border-solid border-line bg-paper rounded-lg font-medium text-ink2 inline-flex items-center [&:hover]:border-line-strong [&:hover]:bg-sheet [&:hover]:text-ink [&:disabled]:cursor-not-allowed [&:disabled]:opacity-[.55] [&:disabled]:bg-idle-soft [&:disabled]:border-line [&:disabled]:text-muted [&:disabled:hover]:cursor-not-allowed [&:disabled:hover]:opacity-[0.58] [&:disabled:hover]:bg-idle-soft [&:disabled:hover]:border-line [&:disabled:hover]:text-muted motion-safe:transition-colors motion-safe:duration-150 justify-center text-xs min-h-[var(--control-height-sm)] gap-1 py-1 px-2" onClick={() => { if (confirmDiscard()) void refresh(workspace); }} disabled={loading || review.busy || transferBusy}>Listeyi yenile</Button>
         </div>}
-        {screen === "summary" ? <SummaryView companyName={formatWorkspaceName(workspace)} review={review} readOnly={mode === "demo"}
+        {screen === "summary" ? <SummaryView companyName={formatWorkspaceName(workspace, workspaces.find(item => item.id === workspace)?.name)} review={review} readOnly={mode !== "live"}
           onCollections={key => { setInitialCollection(key); setScreen("collections"); }}
           onQuestions={() => { setFocusedQuestionId(undefined); setScreen("questions"); }}
           onDocuments={() => setScreen("documents")} />
-          : screen === "questions" ? <QuestionsView key={`${workspace}:${navigationKey}`} review={review} readOnly={mode === "demo"} focusedId={focusedQuestionId} onCollections={() => { setInitialCollection(undefined); setScreen("collections"); }} />
+          : screen === "questions" ? <QuestionsView key={`${workspace}:${navigationKey}`} review={review} readOnly={mode !== "live"} focusedId={focusedQuestionId} onCollections={() => { setInitialCollection(undefined); setScreen("collections"); }} />
           : screen === "collections" ? <InformationView key={`${workspace}:${navigationKey}`} apiUrl={API} workspaceId={workspace} initialCollection={initialCollection}
+            revisionId={review.summary?.revision_id} fieldLabels={review.fieldLabels}
             documentNames={Object.fromEntries(docs.map(document => [document.id, document.title || document.file]))}
             summaries={review.summary?.collections ?? []} questions={review.questions} questionState={review.questionState}
-            onQuestion={question => { setFocusedQuestionId(question.id); review.revisit(); setScreen("questions"); }} /> : loading ? <EmptyState title="Yükleniyor" text="Belgeleriniz alınıyor." />
+            onQuestion={question => { setFocusedQuestionId(question.id); review.revisit(); setScreen("questions"); }} />
+          : screen === "settings" || screen === "try" ? mode === null ? <div role={error ? "alert" : "status"}>
+              <EmptyState title={error ? "Bağlantı kurulamadı" : "Bağlanıyor"} text={error ? "Çalışma alanı alınamadı. Bağlantıyı kontrol edip yeniden deneyin." : "Çalışma alanı kontrol ediliyor."} />
+              {error && <div className="mx-auto max-w-[1200px] px-4 md:px-6 xl:px-10"><Button variant="outline" onClick={() => void refresh(workspace)}>Tekrar dene</Button></div>}
+            </div> : screen === "settings" ? <WorkspaceSettings key={workspace} apiUrl={API} workspaceId={workspace} mode={mode} onSaved={() => setModelRefresh(value => value + 1)} />
+              : <TryView key={`${workspace}:${review.summary?.revision_id ?? "empty"}`} apiUrl={API} workspaceId={workspace} mode={mode} /> : loading ? <EmptyState title="Yükleniyor" text="Belgeleriniz alınıyor." />
           : error ? <div role="alert"><EmptyState title="Bağlantı kurulamadı" text={developerMode ? error : "Belgeler alınamadı. Bağlantıyı kontrol edip listeyi yenileyin."} /></div>
           : screen === "documents" ? (
           <Documents
             docs={docs}
             open={(d) => { if (confirmDiscard()) void open(d); }}
             upload={upload}
-            uploadState={uploadState}
+            uploadStates={uploadStates}
+            retryUpload={id => uploadQueue.current?.retry(id)}
+            extraction={{ enabled: !extractionReason, reason: extractionReason, start: () => { void informationJob.start(!extractionReason); }, settings: () => setScreen("settings"), job: informationJob.job, error: informationJob.error, starting: informationJob.starting, showSettings: mode === "live" && ["off", "error"].includes(informationJob.modelState) }}
             mode={mode}
           />
         ) : screen === "jobs" ? (
@@ -1077,7 +1091,7 @@ export default function Home() {
         ) : null}
       </main>
       {toast && (
-        <div className="fixed right-[22px] bottom-[22px] bg-accent text-on-accent border border-solid border-accent-line rounded-lg shadow-2 text-xs z-[99] motion-safe:animate-in motion-safe:fade-in motion-safe:duration-300 [&_i]:inline-block [&_i]:w-[7px] [&_i]:h-[7px] [&_i]:rounded-pill [&_i]:bg-ok [&_i]:mr-2 py-2 px-3">
+        <div role="status" className="fixed max-w-[calc(100vw-32px)] wrap-anywhere right-4 bottom-4 bg-accent text-on-accent border border-solid border-accent-line rounded-lg shadow-2 text-xs z-[99] motion-safe:animate-in motion-safe:fade-in motion-safe:duration-300 [&_i]:inline-block [&_i]:w-[7px] [&_i]:h-[7px] [&_i]:rounded-pill [&_i]:bg-ok [&_i]:mr-2 py-2 px-3">
           <i />
           {developerMode || !toast.includes("yüklenemedi") && !toast.includes("yenilenemedi") ? toast : "İşlem tamamlanamadı. Bağlantıyı kontrol edip tekrar deneyin."}
         </div>

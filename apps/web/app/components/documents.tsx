@@ -1,3 +1,4 @@
+import { RecordJobProgress, type RecordJob } from "./record-job-progress";
 import { useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,32 +9,44 @@ import { Head, Icon, Ep } from "./console-ui";
 import type { DocumentRow, UploadState, Mode } from "./console-types";
 
 function Status({ status }: { status: string }) {
-  const label = status === "done" ? "Hazır" : ["queued", "pending"].includes(status) ? "Sırada" : ["running", "processing"].includes(status) ? "Hazırlanıyor" : "Kontrol edilmeli";
+  const label = status === "done" ? "Hazır" : ["queued", "pending"].includes(status) ? "Sırada" : ["running", "processing"].includes(status) ? "Hazırlanıyor" : status === "failed" ? "Hata" : "Kontrol edilmeli";
   return <Badge variant={status === "done" ? "onay" : ["queued", "pending", "running", "processing"].includes(status) ? "oneri" : "bekliyor"} className="h-auto whitespace-normal">{label}</Badge>;
 }
-export function Documents({ docs, open, upload, uploadState, mode }: {
-  docs: DocumentRow[]; open: (d: DocumentRow) => void; upload: (file: File) => Promise<void>; uploadState: UploadState; mode: Mode | null;
+export function Documents({ docs, open, upload, uploadState, uploadStates, retryUpload, extraction, mode }: {
+  docs: DocumentRow[]; open: (d: DocumentRow) => void; upload: (files: File[]) => void; uploadState?: UploadState; uploadStates?: UploadState[];
+  retryUpload?: (id: string) => void; mode: Mode | null;
+  extraction?: { enabled: boolean; reason: string; start: () => void; settings: () => void; job: RecordJob | null; error: string; starting: boolean; showSettings: boolean };
 }) {
   const developerMode = useDeveloperMode();
   const input = useRef<HTMLInputElement>(null);
-  const busy = mode !== "live" || ["registering", "uploading", "confirming", "queued", "running"].includes(uploadState.phase);
+  const busy = mode !== "live";
+  const uploads = uploadStates ?? (uploadState && uploadState.phase !== "idle" ? [uploadState] : []);
   return <>
     <Head title="Belgeler" sub="Belgelerinizi yükleyin, durumlarını takip edin ve içeriklerini okuyun." endpoint="GET /v1/documents" />
     <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6 px-4 pb-16 pt-6 md:gap-8 md:px-6 xl:px-10">
       <section className="flex flex-wrap items-center gap-4">
         <div className="grid size-9 shrink-0 place-items-center rounded-lg border border-line bg-paper text-muted"><Icon name="upload" className="size-5" /></div>
-        <div className="min-w-0 flex-1"><h3 className="text-base font-semibold">Yeni bir belge ekleyin</h3><p className="mt-1 max-w-[56ch] text-xs text-muted">PDF, Word, Excel, metin veya görsel dosyalarınızı ekleyin.</p>
-          {uploadState.phase !== "idle" && <div className="mt-2 flex flex-wrap items-center gap-2 text-2xs text-muted wrap-anywhere" role="status">
-            <span className={`size-2 rounded-full ${uploadState.phase === "done" ? "bg-ok" : ["partial", "failed", "error"].includes(uploadState.phase) ? "bg-danger" : "bg-muted"}`} aria-hidden="true" />
-            <b className="text-ink2">{uploadState.fileName}</b><span>{developerMode || uploadState.phase !== "error" ? uploadState.message : "Dosya yüklenemedi. Bağlantıyı kontrol edip yeniden deneyin."}</span>{developerMode && uploadState.jobId && <code className="font-mono text-faint">{uploadState.jobId}</code>}
-          </div>}
+        <div className="min-w-0 flex-1"><h3 className="text-base font-semibold">Belgeleri ekleyin</h3><p className="mt-1 max-w-[56ch] text-xs text-muted">PDF, Word, Excel, metin veya görsel dosyalarınızı ekleyin.</p>
+
         </div>
-        <input ref={input} type="file" hidden accept=".pdf,.docx,.xlsx,.txt,.png,.jpg,.jpeg" aria-label="Dosya yükle: PDF, DOCX, XLSX, TXT, PNG, JPG veya JPEG" disabled={busy} onChange={event => {
-          const file = event.target.files?.[0]; if (!file) return;
-          void upload(file).finally(() => { if (input.current) input.current.value = ""; });
+        <input ref={input} type="file" multiple hidden accept=".pdf,.docx,.xlsx,.txt,.png,.jpg,.jpeg" aria-label="Dosyaları yükle: PDF, Word, Excel, metin veya görsel" disabled={busy} onChange={event => {
+          const files = Array.from(event.target.files ?? []); event.target.value = "";
+          if (files.length) upload(files);
         }} />
         <Button variant="outline" className="h-auto min-h-[38px] max-w-full whitespace-normal" onClick={() => input.current?.click()} disabled={busy}>{mode === "demo" ? "Örnek görünüm: yükleme kapalı" : mode === null ? "Bağlanıyor…" : busy ? "İşleniyor…" : "Dosya yükle"}</Button>
       </section>
+      {uploads.length > 0 && <ul className="grid list-none gap-2 p-0" aria-label="Dosya yükleme durumları">{uploads.map((item, index) => <li key={item.id ?? index} className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-line bg-paper p-3 text-xs" role="status">
+        <strong className="min-w-0 wrap-anywhere">{item.fileName}</strong><span className={item.phase === "error" || item.phase === "failed" ? "text-danger wrap-anywhere" : "text-muted wrap-anywhere"}>{item.message}</span>
+        {item.phase === "error" && item.id && retryUpload && <Button variant="outline" size="sm" onClick={() => retryUpload(item.id!)} disabled={busy} aria-label={`${item.fileName}: yeniden yükle`}>Yeniden dene</Button>}
+        {developerMode && item.jobId && <code className="wrap-anywhere text-faint">{item.jobId}</code>}
+      </li>)}</ul>}
+      {extraction && <section className="grid gap-4 rounded-card border border-line bg-paper p-4 sm:p-5" aria-labelledby="extract-title">
+        <div><h2 id="extract-title" className="text-base font-semibold">Belgelerden bilgilerinizi derleyin</h2><p className="mt-1 text-sm text-muted">Belgenin hazır olması, bilgilerinin çıkarıldığı veya onaylandığı anlamına gelmez. Bilgi çıkarıldıktan sonra kaynakları kontrol edip Sorular'da onaylayın.</p></div>
+        {extraction.reason && <p className="text-sm text-muted" role="status">{extraction.reason}</p>}
+        <div className="flex flex-wrap gap-2"><Button className="h-auto min-h-[38px] max-w-full whitespace-normal" disabled={!extraction.enabled} onClick={extraction.start}>{extraction.starting ? "Başlatılıyor…" : "Bilgileri çıkar"}</Button>
+          {extraction.showSettings && <Button variant="outline" onClick={extraction.settings}>Ayarlar'a git</Button>}</div>
+        <RecordJobProgress job={extraction.job} error={extraction.error} />
+      </section>}
       <Card className="gap-0 border border-line p-0 ring-0">
         <CardHeader className="flex flex-wrap items-center gap-2 border-b border-line2 px-5 py-4"><CardTitle className="text-sm font-semibold">Tüm belgeler</CardTitle><CardDescription className="text-2xs">İçeriğini okumak için bir belge açın.</CardDescription><span className="ml-auto"><Ep>GET /v1/documents?limit=50</Ep></span></CardHeader>
         <Table className="w-full table-fixed text-xs [&_td]:p-2 sm:[&_td]:p-4 [&_th]:p-2 sm:[&_th]:p-4">
