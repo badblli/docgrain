@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { Icon } from "./console-ui";
+import { getFieldLabel } from "./information/labels";
 
 export type QuestionOption = {
   candidate_id: string; value: unknown; display: string; quote: string | null;
@@ -16,8 +17,12 @@ export type Question = {
   record_id: string; record_title: string; field: string; field_label: string;
   lang: string | null; allow_all?: boolean; options: QuestionOption[];
   records?: string[]; record_ids?: string[]; period_label_tr?: string; question_tr?: string;
+  duplicate_records?: {
+    id: string; title: string; fields: { key: string; label: string; value: unknown }[];
+    sources: { document_id: string | null; document_name: string; locator: string | null; quote: string | null }[];
+  }[];
 };
-export type QuestionAnswer = { candidate_id: string } | { document_id: string } | { value: unknown; note: string } | { skip: true } | { all: true };
+export type QuestionAnswer = { candidate_id: string } | { document_id: string } | { value: unknown; note: string } | { skip: true } | { all: true } | { same: boolean };
 export function groupByDocument(options: QuestionOption[]) {
   const groups = new Map<string, { id: string; documentId: string | null; name: string; options: QuestionOption[] }>();
   for (const option of options) {
@@ -41,7 +46,7 @@ export function sourceName(name: string): string {
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(display)
     ? "Kaynak belge" : display;
 }
-function optionDisplay(option: QuestionOption): string {
+function optionDisplay(option: Pick<QuestionOption, "summary_tr" | "value" | "display">): string {
   if (option.summary_tr) return option.summary_tr;
   if (typeof option.value === "boolean") return option.value ? "Evet" : "Hayır";
   if (Array.isArray(option.value)) return option.value.map(value => typeof value === "object" ? JSON.stringify(value) : String(value)).join(", ");
@@ -82,6 +87,7 @@ export function QuestionCard({ question, onAnswer, currentIndex = 1, totalCount,
   const groups = groupByDocument(question.options);
   const disabled = submitting || busy || readOnly || saved !== null;
   const schedule = question.kind === "schedule_swap" || question.kind === "schedule_conflict";
+  const duplicate = question.kind === "duplicate";
   async function submit(answer: QuestionAnswer) {
     if (disabled) return;
     setSubmitting(true); setError(""); setAttempt(answer);
@@ -100,12 +106,25 @@ export function QuestionCard({ question, onAnswer, currentIndex = 1, totalCount,
   return <article aria-labelledby={titleId} aria-busy={submitting || busy} className="min-w-0 self-start motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-3 motion-safe:duration-300">
     <Card className="gap-0 border border-line p-0 ring-0">
       <div className="px-4 pt-5 sm:px-6 sm:pt-6">
-        <p className="mb-3 flex flex-wrap items-center gap-2 text-xs text-warn"><span className="size-1.5 shrink-0 rounded-full bg-warn" aria-hidden="true" />{question.kind === "conflict" || schedule ? "Kaynaklar farklı söylüyor" : "İnceleme bekliyor"}<span className="text-muted">· {question.collection_label}</span></p>
+        <p className="mb-3 flex flex-wrap items-center gap-2 text-xs text-warn"><span className="size-1.5 shrink-0 rounded-full bg-warn" aria-hidden="true" />{duplicate ? "Benzer kayıtlar bulundu" : question.kind === "conflict" || schedule ? "Kaynaklar farklı söylüyor" : "İnceleme bekliyor"}<span className="text-muted">· {question.collection_label}</span></p>
         <h2 className="text-xl leading-snug font-semibold tracking-[-0.02em] wrap-anywhere" id={titleId} ref={heading} tabIndex={-1}>{question.question_tr || `${question.record_title} için ${question.field_label} hangisi?`}</h2>
         {schedule && <p className="mt-1 text-sm text-muted">{question.records?.join(" ve ")} · {question.period_label_tr}</p>}
-        <p className="mt-1 text-base text-muted">Güncel belgeyi seçin{question.allow_all ? '; tüm değerler geçerliyse “Hepsi doğru” deyin.' : "; koleksiyonunuz güncellensin."}</p>
+        <p className="mt-1 text-base text-muted">{duplicate ? "Aynı şeyi anlatıyorlarsa kayıtları birleştirin. Farklı bilgiler için ayrıca soracağız." : <>Güncel belgeyi seçin{question.allow_all ? '; tüm değerler geçerliyse “Hepsi doğru” deyin.' : "; koleksiyonunuz güncellensin."}</>}</p>
       </div>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,230px),1fr))] gap-3 p-4 sm:px-6 sm:pb-6 sm:pt-5">
+        {duplicate && question.duplicate_records?.map(record => <section className="flex min-w-0 flex-col gap-3 rounded-lg border border-line bg-paper p-4 sm:p-5" key={record.id}>
+          <h3 className="text-xl font-medium leading-tight wrap-anywhere">{record.title}</h3>
+          <dl className="grid gap-2">{record.fields.map(field => <div key={field.key}>
+            <dt className="text-xs text-muted">{field.label === field.key ? getFieldLabel(field.key) : field.label}</dt>
+            <dd className="text-sm wrap-anywhere">{optionDisplay({ value: field.value, display: "" })}</dd>
+          </div>)}</dl>
+          <details className="mt-auto border-t border-line2 pt-3 text-sm"><summary className="cursor-pointer text-accent">Kaynakta göster</summary>
+            {record.sources.map((source, index) => <div className="mt-3" key={index}>
+              <p className="mb-1 text-xs text-muted wrap-anywhere">{sourceName(source.document_name)}{source.locator && ` · ${source.locator}`}</p>
+              {source.quote && <SourceQuote quote={source.quote} values={record.fields.map(field => field.value)} />}
+            </div>)}
+          </details>
+        </section>)}
         {groups.map(group => {
           const chosen = selection && ("all" in selection || ("document_id" in selection && selection.document_id === group.documentId) || ("candidate_id" in selection && group.options.some(option => option.candidate_id === selection.candidate_id)));
           const values = Array.from(new Map(group.options.map(option => [option.candidate_id, option])).values());
@@ -125,8 +144,9 @@ export function QuestionCard({ question, onAnswer, currentIndex = 1, totalCount,
       {error && <p className="mx-4 mb-5 rounded-lg bg-danger-soft p-3 text-sm text-danger sm:mx-6" role="alert">{error}</p>}
       <footer className="border-t border-line2 px-4 py-3">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          {duplicate && <>{[true, false].map(same => <Button key={String(same)} variant={selection && "same" in selection && selection.same === same ? "default" : "outline"} disabled={disabled} onClick={() => void submit({ same })}>{same ? "Aynı kayıt" : "Farklı kayıtlar"}</Button>)}</>}
           {question.allow_all === true && <Button variant="outline" disabled={disabled} onClick={() => void submit({ all: true })}>Hepsi doğru</Button>}
-          {!schedule && <Button variant="ghost" className="h-auto min-h-[30px] max-w-full whitespace-normal text-left" disabled={disabled} aria-expanded={editing} aria-controls={inputId} onClick={() => setEditing(!editing)}>{groups.length === 2 ? "İkisi de yanlış, düzelt" : groups.length > 2 ? "Hiçbiri doğru değil, düzelt" : "Doğru değil, düzelt"}</Button>}
+          {!schedule && !duplicate && <Button variant="ghost" className="h-auto min-h-[30px] max-w-full whitespace-normal text-left" disabled={disabled} aria-expanded={editing} aria-controls={inputId} onClick={() => setEditing(!editing)}>{groups.length === 2 ? "İkisi de yanlış, düzelt" : groups.length > 2 ? "Hiçbiri doğru değil, düzelt" : "Doğru değil, düzelt"}</Button>}
           <Button variant="ghost" className="text-muted" disabled={disabled} onClick={() => void submit({ skip: true })}>Sonra sor</Button>
           <span className="ml-auto font-mono text-xs text-faint tabular-nums">{currentIndex} / {totalCount}</span>
         </div>

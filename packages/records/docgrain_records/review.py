@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from pydantic import JsonValue, model_validator
 
+from .duplicates import answer_duplicate, duplicate_questions
 from .export import encode, project_records
 from .merge_models import AnswerHistory, FactCandidate, MergeRevision, UserEditEvidence
 from .models import StrictModel, Text
@@ -23,6 +24,10 @@ class CandidateAnswer(StrictModel):
 
 class DocumentAnswer(StrictModel):
     document_id: Text
+
+
+class DuplicateAnswer(StrictModel):
+    same: bool
 
 
 class EditAnswer(StrictModel):
@@ -50,7 +55,7 @@ class SkipAnswer(StrictModel):
         return self
 
 
-Answer = CandidateAnswer | DocumentAnswer | EditAnswer | SkipAnswer | AllAnswer
+Answer = CandidateAnswer | DocumentAnswer | EditAnswer | SkipAnswer | AllAnswer | DuplicateAnswer
 
 
 def _label(definition, key):
@@ -71,7 +76,7 @@ def _locator(value):
 
 
 def questions(revision: MergeRevision) -> list[dict]:
-    """A question is one unresolved record/field/language slot, never a proposal."""
+    """Unresolved field slots, schedules and conservative record-pair questions."""
     runtime = revision_runtime(revision)
     definitions = {c["key"]: c for c in (runtime.schema or {}).get("collections", [])}
     rows = project_records(revision, "tr")
@@ -133,8 +138,10 @@ def questions(revision: MergeRevision) -> list[dict]:
                     question = schedule_question(question, schedules, candidates, documents)
                 result.append(question)
     result = combine_swaps(result, revision.workspace_id, revision.lineage_id or revision.id)
-    return sorted(result, key=lambda q: (q["kind"] == "needs_review", q["collection"],
-                                        q["record_id"], q["field"], q["lang"]))
+    result.extend(duplicate_questions(revision, runtime, rows, definitions, documents,
+                                      _label, _locator))
+    return sorted(result, key=lambda q: ({"duplicate": 1, "needs_review": 2}.get(q["kind"], 0),
+                                        q["collection"], q["record_id"], q["field"], q["lang"] or ""))
 
 
 def summary(revision: MergeRevision, updated_at: str) -> dict:
@@ -157,7 +164,7 @@ def summary(revision: MergeRevision, updated_at: str) -> dict:
         pending_records = {record_id for q in pending if q["collection"] == key
                            for record_id in q.get("record_ids", [q["record_id"]])}
         approved_records = sum(
-            bool(row["_meta"]["fields"]) and all(
+            row["id"] not in pending_records and bool(row["_meta"]["fields"]) and all(
                 records[row["id"]].fields[field].accepted(lang) is not None
                 for field, metadata in row["_meta"]["fields"].items()
                 for lang in metadata["i18n"])
@@ -166,7 +173,10 @@ def summary(revision: MergeRevision, updated_at: str) -> dict:
                             "records": len(rows),
                             "accepted_records": approved_records,
                             "pending_records": len(pending_records),
-                            "conflicts": sum(q["collection"] == key and q["kind"] != "needs_review"
+                            "duplicates": sum(q["collection"] == key and q["kind"] == "duplicate"
+                                              for q in pending),
+                            "conflicts": sum(q["collection"] == key and q["kind"] not in {
+                                "needs_review", "duplicate"}
                                              for q in pending),
                             "needs_review": sum(q["collection"] == key and
                                                 q["kind"] == "needs_review" for q in pending)})
@@ -175,21 +185,28 @@ def summary(revision: MergeRevision, updated_at: str) -> dict:
             "records": sum(c["records"] for c in collections),
             "unsupported_fields": unsupported,
             "conflicts": sum(c["conflicts"] for c in collections),
+            "duplicates": sum(c["duplicates"] for c in collections),
             "needs_review": sum(c["needs_review"] for c in collections),
             "accepted_ratio": accepted / total if total else 0.0,
             "updated_at": revision.updated_at or updated_at, "collections": collections}
 
 
 def answer_revision(base: MergeRevision, question_id: str,
-                    answer: CandidateAnswer | DocumentAnswer | EditAnswer | AllAnswer) -> MergeRevision:
+                    answer: CandidateAnswer | DocumentAnswer | EditAnswer | AllAnswer
+                    | DuplicateAnswer) -> MergeRevision:
     question = next((q for q in questions(base) if q["id"] == question_id), None)
     if question is None:
         raise LookupError("question unknown")
+    if (question["kind"] == "duplicate") != isinstance(answer, DuplicateAnswer):
+        raise ValueError("same answer is required only for a duplicate question")
     revision = base.model_copy(deep=True)
     revision.id = "rev_" + uuid4().hex
     revision.parent_id = base.id
     revision.lineage_id = base.lineage_id or base.id
     revision.updated_at = datetime.now(UTC).isoformat()
+    if question["kind"] == "duplicate":
+        answer_duplicate(revision, question, answer.same, revision_runtime(base))
+        return MergeRevision.model_validate_json(revision.model_dump_json(round_trip=True))
     if question["kind"] in {"schedule_swap", "schedule_conflict"}:
         _answer_schedule(revision, question, answer)
         return MergeRevision.model_validate_json(revision.model_dump_json(round_trip=True))

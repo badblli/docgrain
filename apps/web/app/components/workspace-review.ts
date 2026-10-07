@@ -3,11 +3,11 @@ import type { Question, QuestionAnswer } from "./question-card";
 
 export type CollectionSummary = {
   key: string; label: string; records: number; conflicts: number; needs_review: number;
-  accepted_records?: number; pending_records?: number;
+  accepted_records?: number; pending_records?: number; duplicates?: number;
 };
 export type SummaryData = {
   workspace_id: string; revision_id: string | null; documents: number; records: number;
-  unsupported_fields: number; conflicts: number; needs_review: number;
+  unsupported_fields: number; conflicts: number; needs_review: number; duplicates?: number;
   accepted_ratio: number; updated_at: string | null; collections: CollectionSummary[];
 };
 export type LoadState = "loading" | "ready" | "missing" | "error";

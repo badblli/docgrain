@@ -6,7 +6,7 @@ export function CollectionCard({ collection, onOpen }: { collection: CollectionS
   const accepted = collection.accepted_records ?? 0;
   const pending = collection.pending_records ?? 0;
   const percent = (count: number) => `${collection.records ? count / collection.records * 100 : 0}%`;
-  const questions = collection.conflicts + collection.needs_review;
+  const questions = collection.conflicts + collection.needs_review + (collection.duplicates ?? 0);
   return <Card className="gap-0 border border-line p-0 ring-0 transition-colors hover:border-accent">
     <button className="flex h-full min-w-0 w-full flex-col p-5 text-left" onClick={onOpen}>
       <span className="flex items-start justify-between gap-3 text-accent"><span className="grid size-9 place-items-center rounded-lg border border-line"><Icon name={["rooms", "outlets", "activities"].includes(collection.key) ? collection.key : "grid"} className="size-[18px]" /></span><Icon name="arrow" className="size-[18px] text-faint" /></span>

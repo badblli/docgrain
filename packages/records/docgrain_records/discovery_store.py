@@ -85,6 +85,8 @@ def accept_schema(proposal_path, out):
                                         for field in collection.fields):
             raise ValueError("every retained field must be accepted with conflicts resolved")
         keys = {field.key for field in collection.fields}
+        collection.identity = next((key for key in ("name", "title", "question", "term", "label")
+                                    if key in keys), collection.fields[0].key)
         for example in collection.examples:
             example.values = [value for value in example.values if value.key in keys]
         collection.examples = [example for example in collection.examples if example.values]

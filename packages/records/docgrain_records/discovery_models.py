@@ -83,6 +83,14 @@ class CollectionField(Definition):
 class Collection(CollectionProposal):
     fields: list[CollectionField] = Field(min_length=1)
     review_state: ReviewState = "proposed"
+    # Missing in legacy versions: retain their name/first-field behaviour.
+    identity: Key | None = None
+
+    @model_validator(mode="after")
+    def identity_field(self):
+        if self.identity is not None and self.identity not in {f.key for f in self.fields}:
+            raise ValueError("identity must be a retained collection field")
+        return self
 
 
 class DiscoverySource(SourceMetadata):

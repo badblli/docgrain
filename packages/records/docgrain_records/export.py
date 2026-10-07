@@ -120,6 +120,10 @@ def project_records(revision: MergeRevision, lang: str | None = None,
             meta["workspace_id"] = revision.workspace_id
             meta["revision_id"] = revision.id
             meta["schema_version"] = runtime.schema["version"]
+            definition = next(c for c in runtime.schema["collections"]
+                              if c["key"] == runtime.collections[record.type])
+            if definition.get("identity"):
+                meta["identity"] = definition["identity"]
         result[runtime.collections[record.type]].append(row)
     return result
 
