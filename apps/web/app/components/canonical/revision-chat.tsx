@@ -9,7 +9,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { EvidenceView, type Evidence, type Node, type Snapshot } from "./inspector";
 
 
-const chatShell = "grid max-w-220 text-ink bg-paper text-base leading-[1.5] [&_h2]:mt-1 [&_h2]:mb-0 [&_h2]:text-lg [&_h2]:font-semibold [&_code]:text-xs [&_button:focus-visible]:[outline:2px_solid_var(--accent)] [&_button:focus-visible]:[outline-offset:2px] [&_textarea:focus-visible]:[outline:2px_solid_var(--accent)] [&_textarea:focus-visible]:[outline-offset:2px] [&_input:focus-visible]:[outline:2px_solid_var(--accent)] [&_input:focus-visible]:[outline-offset:2px] [&_summary:focus-visible]:[outline:2px_solid_var(--accent)] [&_summary:focus-visible]:[outline-offset:2px] gap-3 my-0 mx-auto [&_h2]:mx-0 p-4 [&_p]:m-0";
+const chatShell = "grid max-w-220 text-ink bg-paper text-base leading-[1.5] [&_h2]:mt-1 [&_h2]:mb-0 [&_h2]:text-lg [&_h2]:font-semibold [&_code]:text-xs [&_button:focus-visible]:[outline:2px_solid_var(--accent)] [&_button:focus-visible]:[outline-offset:2px] [&_textarea:focus-visible]:[outline:2px_solid_var(--accent)] [&_textarea:focus-visible]:[outline-offset:2px] [&_input:focus-visible]:[outline:2px_solid_var(--accent)] [&_input:focus-visible]:[outline-offset:2px] [&_summary:focus-visible]:[outline:2px_solid_var(--accent)] [&_summary:focus-visible]:[outline-offset:2px] gap-3 m-0 [&_h2]:mx-0 p-4 [&_p]:m-0";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const MAX_IMAGES = 3;

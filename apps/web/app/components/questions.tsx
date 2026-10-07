@@ -7,7 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { Head, Icon } from "./console-ui";
+import { Head, Icon, pageBody } from "./console-ui";
 import { QuestionCard } from "./question-card";
 import { ReviewNotice, ReviewState } from "./review-states";
 import type { WorkspaceReview } from "./workspace-review";
@@ -31,7 +31,7 @@ export function QuestionsView({ review, focusedId, onCollections, readOnly = fal
   const done = completed.some(item => item.id === question?.id);
   const denominator = review.total + review.answered;
   return <><Head title="Sorular" sub="Belgeleriniz bazı konularda farklı şeyler söylüyor. Doğru olanı seçin; koleksiyonlarınız buna göre güncellenir." endpoint="" />
-    <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6 px-4 pb-16 pt-6 md:gap-8 md:px-6 xl:px-10">
+    <div className={pageBody}>
       <div className="flex flex-wrap items-end justify-between gap-4 md:gap-8">
         <div className="min-w-[180px] flex-1 text-sm text-muted"><span>{review.questionState === "ready" ? `${denominator} sorudan ${review.answered}'i cevaplandı` : "Sorular hazırlanıyor…"}</span><Progress aria-label="Cevaplanan sorular" value={denominator ? review.answered / denominator * 100 : 0} className="mt-3 h-1 bg-sunken [&_[data-slot=progress-indicator]]:bg-ok" /></div>
         <div className="grid w-full gap-2 sm:w-auto"><Label htmlFor="collection-filter" className="text-xs font-normal text-muted">Koleksiyon</Label>
@@ -43,7 +43,7 @@ export function QuestionsView({ review, focusedId, onCollections, readOnly = fal
       </div>
       {!question && <ReviewNotice notice={review.notice} />}
       {readOnly && <p className="text-xs text-muted">Örnek görünümde cevaplar kaydedilemez.</p>}
-      {review.questionState !== "ready" ? <><ReviewNotice notice={review.notice} /><ReviewState state={review.questionState} subject="Sorular" retry={() => void review.reload()} /></> : <div className={cn("grid min-w-0 items-start gap-4 xl:gap-6", filtered.length > 0 && "md:grid-cols-[180px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)]")}>
+      {review.questionState !== "ready" ? <><ReviewNotice notice={review.notice} /><ReviewState state={review.questionState} subject="Sorular" retry={() => void review.reload()} /></> : <div className={cn("grid min-w-0 items-start gap-4 xl:gap-6", filtered.length > 0 && "md:grid-cols-[180px_minmax(0,1fr)] xl:grid-cols-[240px_minmax(0,1fr)] 2xl:grid-cols-[300px_minmax(0,1fr)]")}>
         {filtered.length > 0 && <ScrollArea className="h-[220px] min-w-0 md:h-[min(70vh,800px)]"><ul className="m-0 grid list-none gap-1 p-0" aria-label="Soru listesi">{filtered.map(item => {
           const state = completed.some(done => done.id === item.id) ? "done" : review.deferred.includes(item.id) ? "later" : "open";
           return <li key={item.id}><Button variant="ghost" className="h-auto w-full items-start justify-start gap-2 rounded-lg border border-transparent text-left text-sm whitespace-normal aria-[current=true]:border-accent-line aria-[current=true]:bg-accent-soft p-3" disabled={review.busy} aria-current={question?.id === item.id ? "true" : undefined} onClick={() => setSelectedId(item.id)}>

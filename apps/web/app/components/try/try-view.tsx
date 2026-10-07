@@ -116,11 +116,11 @@ function TrySession({ apiUrl, workspaceId, mode }: TryProps) {
     });
   }
 
-  return <section aria-label="Dene" className="mx-auto w-full max-w-4xl px-4 py-8 font-sans text-ink sm:px-8 sm:py-10">
+  return <section aria-label="Dene" className="w-full min-w-0 px-4 pb-16 pt-6 font-sans text-ink md:px-6 md:pt-10 xl:px-10">
     <header className="mb-8">
       <p className="mb-2 text-xs text-muted">Onaylı bilgilerden cevap</p>
       <h1 className="text-2xl font-semibold tracking-tight">Dene</h1>
-      <p className="mt-2 max-w-xl text-base text-ink2">Bir soru sorun. Cevabı, geldiği belge ve alıntıyla birlikte görün.</p>
+      <p className="mt-2 max-w-[74ch] text-base text-ink2">Bir soru sorun. Cevabı, geldiği belge ve alıntıyla birlikte görün.</p>
     </header>
     <form onSubmit={submit} className="rounded-xl border border-line bg-paper p-5 sm:p-6" aria-busy={state === "asking"}>
       <label htmlFor={questionId} className="mb-3 block text-base font-medium">Ne öğrenmek istiyorsunuz?</label>
@@ -128,7 +128,7 @@ function TrySession({ apiUrl, workspaceId, mode }: TryProps) {
         placeholder="Örneğin: Bahçe Odası kaç kişilik?" maxLength={2000} required disabled={!canAsk}
         aria-describedby={hintId} className={`min-h-28 resize-y text-base ${focus}`} />
       <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
-        <p id={hintId} className="max-w-md text-xs text-muted">Yalnız onayladığınız bilgiler kullanılır. Her soru ayrı değerlendirilir.</p>
+        <p id={hintId} className="max-w-[60ch] text-xs text-muted">Yalnız onayladığınız bilgiler kullanılır. Her soru ayrı değerlendirilir.</p>
         <Button type="submit" disabled={!canAsk || !question.trim()} className={`h-[38px] min-w-24 ${focus}`}>
           {state === "asking" ? "Yanıt hazırlanıyor…" : "Sor"}
         </Button>
@@ -136,19 +136,22 @@ function TrySession({ apiUrl, workspaceId, mode }: TryProps) {
     </form>
     <div aria-live="polite" aria-atomic="true" className="mt-5">
       {message && <div role="status" className="rounded-xl border border-dashed border-line-strong bg-paper p-5 text-base text-ink2">
-        <p>{message}</p>
+        <p className="max-w-[72ch]">{message}</p>
         {mode === "live" && ["model-off", "empty", "no-publication"].includes(state) &&
           <Button variant="outline" onClick={() => setReload(value => value + 1)} className={`mt-4 h-[38px] ${focus}`}>Yeniden kontrol et</Button>}
       </div>}
       {state === "asking" && <p role="status" className="border-l-2 border-accent py-3 pl-4 text-base text-muted">Onaylı kaynaklar okunuyor…</p>}
       {state === "error" && <div role="alert" className="rounded-xl border border-danger-line bg-danger-soft p-5 text-base text-danger">
-        <p>{error}</p><Button variant="outline" className={`mt-4 h-[38px] ${focus}`} onClick={() => setReload(value => value + 1)}>Bağlantıyı yeniden kontrol et</Button>
+        <p className="max-w-[72ch]">{error}</p><Button variant="outline" className={`mt-4 h-[38px] ${focus}`} onClick={() => setReload(value => value + 1)}>Bağlantıyı yeniden kontrol et</Button>
       </div>}
       {answer && (answer.abstained ? <p className="rounded-xl border border-line bg-paper p-6 text-lg">Bilmiyorum.</p>
-        : <article className="rounded-xl border border-line bg-paper p-5 sm:p-6">
-          <h2 className="mb-3 text-xs font-medium text-muted">Cevap</h2>
-          <p className="whitespace-pre-wrap wrap-anywhere text-lg leading-relaxed">{answerText()}</p>
-          <div className="mt-6 border-t border-line2 pt-4">
+        : <article className="rounded-xl border border-line bg-paper p-5 sm:p-6 xl:grid xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] xl:items-start xl:gap-8">
+          {/* Wide screens: the answer reads on the left, its sources stay visible on the right. */}
+          <div className="min-w-0">
+            <h2 className="mb-3 text-xs font-medium text-muted">Cevap</h2>
+            <p className="max-w-[68ch] whitespace-pre-wrap wrap-anywhere text-lg leading-relaxed">{answerText()}</p>
+          </div>
+          <div className="mt-6 min-w-0 border-t border-line2 pt-4 xl:mt-0 xl:border-t-0 xl:border-l xl:pt-0 xl:pl-8">
             <h3 className="mb-2 text-sm font-medium text-ink2">Kaynakta göster</h3>
             {answer.sources.map((source, index) => <details key={source.id} id={`${questionId}-source-${index}`}
               className="mt-2 rounded-lg border border-line2 bg-sheet p-3">

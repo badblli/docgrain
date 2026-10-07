@@ -90,11 +90,13 @@ function SettingsForm({ apiUrl, workspaceId, mode, onSaved }: WorkspaceSettingsP
     }
   }
 
-  return <section className="min-w-0 max-w-3xl font-sans text-ink" aria-labelledby={`${id}-title`}>
+  return <section className="w-full min-w-0 px-4 pb-16 pt-6 font-sans text-ink md:px-6 md:pt-10 xl:px-10" aria-labelledby={`${id}-title`}>
+    {/* The form keeps a comfortable width but stays left-aligned with the header. */}
+    <div className="min-w-0 max-w-3xl">
     <header className="mb-6">
       <p className="mb-1 text-xs text-muted">Çalışma alanı</p>
       <h1 id={`${id}-title`} className="text-2xl font-semibold tracking-tight">Ayarlar</h1>
-      <p className="mt-2 text-base text-ink2">Bu çalışma alanının bilgi çıkarma ve soru yanıtlama bağlantısı.</p>
+      <p className="mt-2 max-w-[74ch] text-base text-ink2">Bu çalışma alanının bilgi çıkarma ve soru yanıtlama bağlantısı.</p>
     </header>
     {state === "loading" && <Card className="gap-4 border border-line p-5 ring-0" role="status" aria-live="polite">
       <p>Ayarlar yükleniyor.</p><Skeleton className="h-9 w-full" /><Skeleton className="h-9 w-2/3" />
@@ -169,5 +171,6 @@ function SettingsForm({ apiUrl, workspaceId, mode, onSaved }: WorkspaceSettingsP
         </div>
       </form>
     </Card>}
+    </div>
   </section>;
 }
