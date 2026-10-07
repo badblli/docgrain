@@ -63,6 +63,9 @@ mobile apps and websites.
 16. Lead focus 2026-10-07 (from the Notion review): measure before new features — field accuracy against
     the independent key, run-to-run stability and coverage on all four companies; then D3 file versions;
     then the first real consumer through the AI access layer.
+17. User decision 2026-10-07: when a workspace turns its model on, pages the local parser cannot read well
+    (low OCR confidence, image-only pages, JPG/PNG, broken columns or tables) are also sent as page images
+    to that model by default. Model off → nothing leaves the machine (decision 15 still holds).
 
 ## Phases
 
