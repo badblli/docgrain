@@ -2,12 +2,12 @@
 
 - Özet: Bilgileri çıkar düğmesi mevcut keşif, çıkarım, birleştirme ve yayın adımlarını arka planda çalıştırsın; ilerleme ve onay bekleyen bilgiler web'de görünsün.
 - Model: derin
-- Engine: agy
+- Engine: codex
 - Phase: U1
 - Branch: `codex/wp91-u1-pipeline` (base: `origin/dev`)
 - Depends on: wp92-u1-settings runtime sözleşmesi; Docker entegrasyonunda wp94-u1-try
 - Role: implementer
-- Owner: Bora (agy)
+- Owner: Porygon (codex) — second attempt; Alakazam's first (agy) attempt was rejected
 
 ## Goal
 
@@ -101,3 +101,35 @@ ile kayıt → worker → publication read ve önceki yayının korunmasını ö
 Oku: AGENTS.md, ROADMAP, [U1](../U1.md), wp47/wp51/wp52/wp59/wp68,
 `packages/records/README.md`, `docs/examples/records-read.md`.
 Merge sırası WP92 → WP94 → **WP91** → WP93 → WP95. Ürün kodu dışında ek refaktör yok.
+
+## Lead review of attempt 1 (2026-10-07) — read before you start
+
+Attempt 1 was rejected: `records_pipeline.py` imported names that do not exist (`extract_workspace`,
+`WorkspaceMatcher`, `ChatSession`, `merge_collection` with another meaning), kept a stub
+`resolve_workspace_model` in `settings.py` that always returned "disabled", invented a
+`DOCGRAIN_MODEL_PROFILES_DIR` setting, copied raw exception text into job messages, and its tests asserted
+nothing (conditional asserts, an empty integration test). Start from `origin/dev`; do not reuse it.
+
+Facts on dev now:
+- WP92 is merged: use `docgrain_api.workspace_settings.resolve_workspace_model(ws, expected_version)`
+  (returns `ResolvedWorkspaceModel`, raises `ModelSettingsError` with a public message and `status_code`).
+  Credentials come from `DOCGRAIN_MODEL_CREDENTIAL_PROFILES`; pass that variable and the profile key
+  variables to the worker in Compose. Never put the key in Redis, the DB, logs or job messages.
+- WP94 is merged: `packages/access` already exists; the API image needs it (keep that Dockerfile change).
+- The proven step sequence is the CLI in `packages/records/docgrain_records/cli.py` and
+  `discovery_cli.py` — reuse those functions (`run_discovery`/`load_workspace_documents`,
+  `extract`/`extraction_plan`, the `match` module, `merge_matches`, `export.load_revision`,
+  `RecordsRepository.publish`). The lead runs today, per workspace:
+  1. `discover` → `schema.proposed.json`; review; `accept-schema --proposal … --out <schema dir>`
+  2. per document: `extract --document <id> --schema <schema> --api <api> --out <records>/<doc>`
+  3. `match --records <records> --schema <schema> --out <match> --auto-accept strong`
+  4. `merge --records <records> --schema <schema> --matches <match>/match_proposals.json --out <merged>
+     --workspace <ws> --auto-accept strong`
+  5. `RecordsRepository(root).publish(load_revision(<merged>/merge_revision.json))`
+  Call the same Python functions in-process (or the module CLI via subprocess) — do not reimplement them.
+- Before you import a name, grep that it exists. Job messages are fixed Turkish strings; error details go
+  to a server log without secrets.
+- Tests must assert real behavior with fake model transports (no network): job states and stages, one job
+  per workspace under concurrent starts, model off → 409 with zero model calls, a synthetic two-document
+  run that reaches `done` and publishes a revision, a failing step → `failed` with a fixed message.
+  Name the integration test `tests/integration/test_u1_pipeline_live.py` (unique basename).

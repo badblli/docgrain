@@ -8,7 +8,7 @@
 - Branch: `codex/wp93-u1-web-flow` (base: `origin/dev`)
 - Depends on: wp91-u1-pipeline, wp92-u1-settings, wp94-u1-try sözleşmeleri; paralel geliştirilebilir
 - Role: implementer
-- Owner: Duru (codex)
+- Owner: Jigglypuff (codex)
 
 ## Goal
 
