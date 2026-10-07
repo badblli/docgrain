@@ -48,9 +48,26 @@ class RecordsRepository:
     def stage(self, revision: MergeRevision):
         """Immutable source preparation shared by offline and review publication."""
         path = self._path(revision.workspace_id, revision.id)
+        source = path / "source.json"
+        # A fresh ingestion can start another lineage with the same stable record IDs.
+        # Carry workspace-level "different" decisions into its immutable snapshot too.
+        # For a retry use the staged snapshot, never decisions made after it was staged.
+        previous = ([MergeRevision.model_validate_json(source.read_bytes())] if source.exists()
+                    else [self._source(revision.workspace_id, key)
+                          for key in self.list_revisions(revision.workspace_id)])
+        known = {tuple(sorted(d.record_ids)) for d in revision.duplicate_decisions if not d.same}
+        inherited = {}
+        for old in previous:
+            for decision in old.duplicate_decisions:
+                pair = tuple(sorted(decision.record_ids))
+                if not decision.same and pair not in known:
+                    inherited.setdefault(pair, decision)
+        if inherited:
+            revision = revision.model_copy(deep=True)
+            revision.duplicate_decisions.extend(inherited[key].model_copy(deep=True)
+                                                for key in sorted(inherited))
         body = revision.model_dump_json(round_trip=True).encode()
         path.mkdir(parents=True, exist_ok=True)
-        source = path / "source.json"
         descriptor, name = tempfile.mkstemp(dir=path)
         temporary = Path(name)
         try:
@@ -241,7 +258,8 @@ class RecordsRepository:
             items = questions(source)
             skipped = state["skipped"].get(source.id, [])
             ranks = {key: rank for rank, key in enumerate(skipped)}
-            items.sort(key=lambda q: (q["kind"] == "needs_review", q["id"] in ranks,
+            items.sort(key=lambda q: ({"duplicate": 1, "needs_review": 2}.get(q["kind"], 0),
+                                      q["id"] in ranks,
                                       ranks.get(q["id"], -1)))
             page = items[offset:offset + limit]
             # Remember the revision served with each stable ID for the body-only write contract.

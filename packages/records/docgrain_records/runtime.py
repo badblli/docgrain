@@ -70,9 +70,9 @@ class RuntimeRecords:
                     raise ValueError("collection schema uses a reserved record field")
                 annotations = {key: (FieldValue[_scalar(node["anyOf"][0]["properties"]["value"])]
                                      | None, None) for key, node in properties.items()}
-                # Discovery does not require a field called name. Its first field is the
-                # identity fallback; it must have evidence, just like hospitality names.
-                identity = "name" if "name" in properties else next(iter(properties))
+                # New acceptances pin the choice; legacy schema versions keep their fallback.
+                identity = collection.identity or (
+                    "name" if "name" in properties else next(iter(properties)))
                 fields = create_model(collection.key + "Fields", __base__=StrictModel, **annotations)
                 if identity != "name":
                     fields.name = property(lambda item, key=identity: _identity(item, key))

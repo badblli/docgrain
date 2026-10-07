@@ -164,6 +164,14 @@ class AnswerHistory(StrictModel):
     note: str
 
 
+class DuplicateDecision(StrictModel):
+    question_id: Text
+    record_ids: list[Text] = Field(min_length=2, max_length=2)
+    same: bool
+    actor: Literal["local"] = "local"
+    at: Text
+
+
 class MergeRevision(StrictModel):
     workspace_id: Text
     id: Text
@@ -178,6 +186,7 @@ class MergeRevision(StrictModel):
     lineage_id: Text | None = None
     updated_at: Text | None = None
     history: list[AnswerHistory] = Field(default_factory=list)
+    duplicate_decisions: list[DuplicateDecision] = Field(default_factory=list)
 
 
 class FieldChange(StrictModel):

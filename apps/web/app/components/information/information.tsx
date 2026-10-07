@@ -22,12 +22,13 @@ type FieldMeta = {
   i18n?: Record<string, Evidence[]>; i18n_review_state?: Record<string, string>;
 };
 type RecordRow = {
-  id: string; _meta?: { review_state?: string; fields?: Record<string, FieldMeta>; conflicts?: { field: string; lang: string }[] };
+  id: string; _meta?: { identity?: string; review_state?: string; fields?: Record<string, FieldMeta>; conflicts?: { field: string; lang: string }[] };
   i18n?: Record<string, Record<string, unknown>>; [field: string]: unknown;
 };
 type CollectionResult = { rows: RecordRow[]; failed: boolean };
 const visibleFields = (row: RecordRow) => Object.keys(row).filter(key => !["id", "_meta", "i18n"].includes(key));
 function recordTitle(row: RecordRow) {
+  if (row._meta?.identity) return valueText(row[row._meta.identity]);
   return [row.name, row.title, ...visibleFields(row).map(key => row[key])].find(value => typeof value === "string" && value.trim()) as string || "Kayıt detayı";
 }
 function valueText(value: unknown): string {

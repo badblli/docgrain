@@ -317,3 +317,43 @@ test("schedule swaps show both records, precise period and two short source prog
   assert.match(card, /data-state="chosen"/);
   assert.doesNotMatch(card, /için Kapasite hangisi|Hepsi doğru|yanlış, düzelt|Sizin düzeltmeniz/);
 });
+
+test("duplicate card compares records and sources with three clear actions", () => {
+  const q = { ...question(0), kind: "duplicate", question_tr: "Bu iki kayıt aynı mı?", options: [],
+    duplicate_records: ["Cedar Suite", "Cedar Suit Oda"].map((title, index) => ({
+      id: `room-${index}`, title,
+      fields: [{ key: "capacity", label: "Kapasite", value: 4 }, { key: "size_m2", label: "size_m2", value: 60 }],
+      sources: [{ document_id: `doc-${index}`, document_name: `Örnek belge ${index + 1}`, locator: "s. 2", quote: "<script>Kaynak verisi</script> 4 kişi" }],
+    })) };
+  const card = html(QuestionCard, { question: q, totalCount: 1, onAnswer: noop });
+  assert.match(card, /Bu iki kayıt aynı mı\?/);
+  assert.match(card, /Cedar Suite/); assert.match(card, /Cedar Suit Oda/);
+  assert.match(card, /Kapasite/); assert.match(card, /Büyüklük \(m²\)/);
+  assert.match(card, /Örnek belge 1/); assert.match(card, /Örnek belge 2/);
+  assert.equal((card.match(/Kaynakta göster/g) || []).length, 2);
+  assert.match(card, /&lt;script&gt;Kaynak verisi&lt;\/script&gt;/);
+  assert.match(card, /Aynı kayıt/); assert.match(card, /Farklı kayıtlar/); assert.match(card, /Sonra sor/);
+  assert.doesNotMatch(card, /Bu belge güncel|Doğru değil, düzelt|Hepsi doğru/);
+  const saved = html(QuestionCard, { question: q, totalCount: 1, onAnswer: noop, savedAnswer: { same: false } });
+  assert.equal((saved.match(/disabled=""/g) || []).length, 3);
+  assert.match(saved, /Kaydedildi/);
+});
+
+for (const same of [true, false]) test(`duplicate answer ${same} is sent once with the pinned revision`, async () => {
+  let submitted;
+  let saved = false;
+  const q = { ...question(0), kind: "duplicate", options: [] };
+  const app = host(async (url, init) => {
+    if (init.method === "POST") {
+      submitted = { body: JSON.parse(init.body), revision: new URL(url).searchParams.get("revision_id") };
+      saved = true;
+      return response({ revision_id: "rev2", remaining: 0 });
+    }
+    return url.endsWith("/summary") ? response({ ...summary, revision_id: saved ? "rev2" : "rev1" }) : response({ total: saved ? 0 : 1, items: saved ? [] : [q] });
+  });
+  app.render(); let review = await app.settle();
+  assert.equal(await review.answer(review.questions[0], { same }), true);
+  review = app.render();
+  assert.deepEqual(submitted, { body: { same }, revision: "rev1" });
+  assert.equal(review.questionAnswers.q0.same, same);
+});

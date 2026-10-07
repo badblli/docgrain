@@ -56,7 +56,7 @@ def test_summary_counts_published_fields_and_questions(setup):
     result = client.get(BASE + "/summary").json()
     assert set(result) == {"workspace_id", "revision_id", "documents", "records",
                            "unsupported_fields", "conflicts", "needs_review", "accepted_ratio",
-                           "updated_at", "collections"}
+                           "updated_at", "collections", "duplicates"}
     assert result["workspace_id"] == "workspace-example" and result["revision_id"] == "r1"
     assert result["documents"] == 1 and result["records"] == 2
     assert result["conflicts"] == result["needs_review"] == 1
@@ -65,7 +65,7 @@ def test_summary_counts_published_fields_and_questions(setup):
     rooms = next(c for c in result["collections"] if c["key"] == "rooms")
     assert rooms == {"key": "rooms", "label": "rooms", "records": 2,
                      "conflicts": 1, "needs_review": 1,
-                     "accepted_records": 0, "pending_records": 1}
+                     "accepted_records": 0, "pending_records": 1, "duplicates": 0}
     assert next(c for c in result["collections"] if c["key"] == "outlets")["records"] == 0
     assert result["updated_at"]
 
@@ -222,6 +222,7 @@ def test_concurrent_answers_from_separate_repository_instances_have_one_winner(s
 
 
 @pytest.mark.parametrize("body", [{}, {"skip": False}, {"skip": 1},
+                                 {"same": True}, {"same": False},
                                  {"document_id": "unknown"}, {"document_id": ""},
                                  {"document_id": None},
                                  {"document_id": "doc-example", "all": True},
