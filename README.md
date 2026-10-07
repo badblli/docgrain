@@ -28,7 +28,7 @@
 
 > **Pre-alpha, honestly.** Docgrain already ingests a company's folder, discovers its collections,
 > extracts source-linked records, asks people about real conflicts and publishes preview and approved
-> JSON. File versioning, the AI access layer and auth are not built yet. The list below says exactly
+> JSON. File versioning and auth are not built yet. The list below says exactly
 > what works.
 
 ## Why
@@ -56,7 +56,8 @@ Markers are literal: ✅ works in code today, 🚧 in progress, 🗺 planned.
    ("talimatlar.txt says … / factsheet says …"). Recurring schedules are recognised, so two parties that
    swapped Saturdays become one question, not 32 dates. ✅ Each answer publishes a new immutable revision.
 4. **Feeds AI and apps.** ✅ Read-only JSON per collection in `preview` and `approved` modes, with ETags,
-   plus a compact Markdown context. 🗺 Tool specs for any OpenAI-compatible model; embeddings optional.
+   plus a compact Markdown context. ✅ OpenAI-compatible tool specs and an MCP stdio adapter;
+   embeddings optional.
 5. **Versions without reprocessing.** 🗺 Upload a new file version and carry accepted answers forward.
 
 Docgrain is not a chatbot. It produces packs, APIs and tool specs that your own assistant uses. The
@@ -130,6 +131,22 @@ cd apps/web && npm ci && npm run build
 CI also installs `pymupdf>=1.24`; add it if missing. The same three steps run as `make quality`
 (`make test`, `make lint`, `make web-build` also work alone). Docling, EasyOCR, PostgreSQL and MinIO
 integration tests run inside the worker Docker image.
+
+## Use with your AI
+
+Your own model can read approved collections through
+`GET /v1/workspaces/{workspace}/ai/tools` and
+`POST /v1/workspaces/{workspace}/ai/call`. The four tools are `list_collections`,
+`search_records`, `get_record` and `get_context`; each result includes its publication
+mode, revision and document sources. `approved` is the default; `preview` requires
+an explicit request. Search is deterministic and uses no embeddings or model calls.
+
+[`docs/examples/ask.py`](docs/examples/ask.py) is a small OpenAI-compatible reference
+loop. Model calls are off until `--enable-model` is supplied; configure `AI_BASE_URL`,
+`AI_MODEL` and `AI_API_KEY` through the environment. It asks for source citations and
+returns “Bilmiyorum.” when no valid citation is available. For setup, synthetic
+tool/call examples and Claude Desktop or other MCP client configuration, see
+[`AI access`](docs/examples/ai-access.md). The MCP adapter lives in `packages/access`.
 
 ## Measured, not claimed
 
