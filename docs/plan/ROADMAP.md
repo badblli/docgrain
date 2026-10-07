@@ -56,6 +56,14 @@ mobile apps and websites.
     review; fixed domain packs are examples only. Each company is ingested as one bundle into its
     own workspace so consistency can be compared across companies.
 
+14. User decision 2026-10-07: two audiences. Non-technical company staff use the default screens
+    (upload, answer questions, approve); integrators use Geliştirici modu and the API/MCP access layer.
+15. User decision 2026-10-07: the model for extraction and questions is chosen per workspace (cloud or
+    local); default is off, so no document leaves the machine until a workspace chooses a model.
+16. Lead focus 2026-10-07 (from the Notion review): measure before new features — field accuracy against
+    the independent key, run-to-run stability and coverage on all four companies; then D3 file versions;
+    then the first real consumer through the AI access layer.
+
 ## Phases
 
 - **D1 Measurement** — golden corpus, ≥40 golden questions (incl. unanswerable), table goldens,

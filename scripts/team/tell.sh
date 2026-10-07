@@ -20,6 +20,13 @@ wp="${1:?usage: tell.sh <wp-id> \"<message>\"}"
 message="${2:?message required}"
 run="$(ls -d "$root/.lead/runs/$wp"/2*/ 2>/dev/null | tail -1)"
 run="${run%/}"
+
+# One writer per agent thread: a message sent while the agent still runs is rejected by the engine and
+# would mark the run failed. Wait until the current turn ends (status is not "running").
+if [[ "$(cat "$run/status" 2>/dev/null)" == running* ]]; then
+  echo "$wp is still running; send the message after it finishes." >&2
+  exit 2
+fi
 [[ -n "$run" ]] || { echo "no run for $wp; start it with run-wp.sh" >&2; exit 1; }
 workdir="$(cat "$run/workdir")"
 
