@@ -4,6 +4,7 @@ import json
 import re
 import time
 from copy import deepcopy
+from dataclasses import dataclass, field
 
 import httpx
 
@@ -21,10 +22,11 @@ caller; disclose preview and uncertainty, and never treat conflicts as establish
 
 
 class OpenAICompatibleClient:
-    def __init__(self, base_url, model, api_key, *, transport=None):
+    def __init__(self, base_url, model, api_key, *, transport=None, timeout=60):
         self.model = model
-        self.client = httpx.Client(base_url=base_url.rstrip("/") + "/", timeout=60,
-                                   headers={"Authorization": "Bearer " + api_key},
+        self._api_key = api_key
+        self.client = httpx.Client(base_url=base_url.rstrip("/") + "/", timeout=timeout,
+                                   headers={"Authorization": "Bearer " + api_key} if api_key else {},
                                    transport=transport)
 
     def close(self):
@@ -32,6 +34,7 @@ class OpenAICompatibleClient:
 
     def complete(self, messages, tools, *, attempts=3):
         # Providers return 429/5xx and time out under load; retry those, never other errors.
+        attempts = min(3, max(1, attempts))
         for attempt in range(attempts):
             try:
                 response = self.client.post("chat/completions", json={
@@ -40,42 +43,90 @@ class OpenAICompatibleClient:
                 if response.status_code in (429, 500, 502, 503, 504) and attempt + 1 < attempts:
                     time.sleep(2 ** attempt)
                     continue
+                if response.status_code in (408, 504):
+                    raise ModelTimeout("Model service timed out")
                 response.raise_for_status()
-                return response.json()["choices"][0]["message"]
+                message = response.json()["choices"][0]["message"]
+                if not isinstance(message, dict) or (
+                        self._api_key and self._api_key in json.dumps(message)):
+                    raise ModelUnavailable("Model service unavailable")
+                return message
             except httpx.TimeoutException:
                 if attempt + 1 == attempts:
-                    raise
+                    raise ModelTimeout("Model service timed out") from None
                 time.sleep(2 ** attempt)
+            except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
+                raise ModelUnavailable("Model service unavailable") from None
         raise RuntimeError("unreachable")
 
 
-def ask(question, access, model, *, preview=False, max_turns=8):
+class ModelUnavailable(RuntimeError):
+    """Sanitized transport/protocol error; never contains provider output."""
+
+
+class ModelTimeout(ModelUnavailable):
+    pass
+
+
+@dataclass
+class AskResult:
+    answer: str = UNKNOWN
+    abstained: bool = True
+    sources: list[dict] = field(default_factory=list)
+
+
+def _safe_tools(specs, mode):
+    tools = deepcopy(specs["tools"])
+    # Accepted schema descriptions can originate in documents. They remain in tool
+    # results as DATA; never promote them into function instruction descriptions.
+    def strip_descriptions(value):
+        if isinstance(value, dict):
+            value.pop("description", None)
+            for child in value.values():
+                strip_descriptions(child)
+        elif isinstance(value, list):
+            for child in value:
+                strip_descriptions(child)
+    strip_descriptions(tools)
+    for tool in tools:
+        tool["function"]["description"] = "Read published data with " + tool["function"]["name"]
+        tool["function"]["parameters"]["properties"]["mode"] = {
+            "type": "string", "enum": [mode], "default": mode,
+        }
+    return tools
+
+
+def ask_result(question, access, model, *, preview=False, max_turns=8,
+               strict_errors=True):
     """Fake clients can implement specs/call and complete; no model is constructed here.
 
     Citation presence is checked mechanically; relevance is the consuming model's responsibility.
     """
-    tools = deepcopy(access.specs()["tools"])
     mode = "preview" if preview else "approved"
-    for tool in tools:
-        tool["function"]["parameters"]["properties"]["mode"] = {
-            "type": "string", "enum": [mode], "default": mode,
-        }
+    tools = _safe_tools(access.specs(), mode)
     messages = [{"role": "system", "content": SYSTEM + "\nEnabled mode: " + mode},
                 {"role": "user", "content": question}]
     sources = {}
-    for _ in range(max_turns):
+    for _ in range(min(8, max_turns)):
         message = model.complete(messages, tools)
         calls = message.get("tool_calls") or []
         if not calls:
             answer = message.get("content") or ""
+            if not isinstance(answer, str):
+                return AskResult()
             citations = set(re.findall(r"\[(src_[a-zA-Z0-9_]+)\]", answer))
             if not citations or not citations <= sources.keys():
-                return UNKNOWN
-            references = "\n".join("[" + key + "] " + json.dumps({
-                field: sources[key][field] for field in ("document_name", "locator", "quote")
-            }, ensure_ascii=False) for key in sorted(citations))
-            return (("Önizleme (onaylanmamış bilgiler içerebilir):\n" if preview else "") +
-                    answer + "\n\n" + references)
+                return AskResult()
+            if strict_errors and any(
+                    part.strip() and not re.search(r"\[src_[a-zA-Z0-9_]+\]", part)
+                    for part in re.split(r"(?<=[.!?])\s+|\n+", answer)):
+                return AskResult()
+            return AskResult(answer, False, [sources[key] for key in sorted(citations)])
+        if not isinstance(calls, list) or len(calls) > 8:
+            return AskResult()
+        if any(not isinstance(call, dict) or not isinstance(call.get("id"), str)
+               or not isinstance(call.get("function"), dict) for call in calls):
+            return AskResult()
         messages.append({"role": "assistant", "content": message.get("content"),
                          "tool_calls": calls})
         for call in calls:
@@ -90,8 +141,25 @@ def ask(question, access, model, *, preview=False, max_turns=8):
                 sources.update({source["id"]: source for source in result.get("sources", [])
                                 if source.get("document_name") and source.get("locator")
                                 and source.get("quote")})
-            except (ValueError, TypeError, AccessError):
+            except AccessError:
+                if strict_errors:
+                    raise ModelUnavailable("Knowledge service unavailable") from None
+                result = {"error": "Tool unavailable or arguments invalid; no supporting source."}
+            except (ValueError, TypeError, KeyError):
                 result = {"error": "Tool unavailable or arguments invalid; no supporting source."}
             messages.append({"role": "tool", "tool_call_id": call["id"],
                              "content": json.dumps(result, ensure_ascii=False)})
-    return UNKNOWN
+    return AskResult()
+
+
+def ask(question, access, model, *, preview=False, max_turns=8):
+    """Keep the reference CLI's string result and explicit preview behavior."""
+    result = ask_result(question, access, model, preview=preview, max_turns=max_turns,
+                        strict_errors=False)
+    if result.abstained:
+        return UNKNOWN
+    references = "\n".join("[" + source["id"] + "] " + json.dumps({
+        key: source[key] for key in ("document_name", "locator", "quote")
+    }, ensure_ascii=False) for source in result.sources)
+    return (("Önizleme (onaylanmamış bilgiler içerebilir):\n" if preview else "") +
+            result.answer + "\n\n" + references)

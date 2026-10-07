@@ -6,8 +6,10 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from ..ai_access import AIAccess, ToolInvalid
 from ..records_repository import PackMissing, PackUnpublished
 from .records import repository
+from .try_ai import router as ask_router
 
 router = APIRouter(prefix="/v1/workspaces/{workspace_id}/ai", tags=["ai-access"])
+router.include_router(ask_router)
 
 
 class ToolCall(BaseModel):
