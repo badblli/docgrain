@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { Icon } from "./console-ui";
-import { getFieldLabel } from "./information/labels";
+import { displayCollectionLabel, getFieldLabel } from "./information/labels";
 
 export type QuestionOption = {
   candidate_id: string; value: unknown; display: string; quote: string | null;
@@ -106,7 +106,7 @@ export function QuestionCard({ question, onAnswer, currentIndex = 1, totalCount,
   return <article aria-labelledby={titleId} aria-busy={submitting || busy} className="min-w-0 self-start motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-3 motion-safe:duration-300">
     <Card className="gap-0 border border-line p-0 ring-0">
       <div className="px-4 pt-5 sm:px-6 sm:pt-6">
-        <p className="mb-3 flex flex-wrap items-center gap-2 text-xs text-warn"><span className="size-1.5 shrink-0 rounded-full bg-warn" aria-hidden="true" />{duplicate ? "Benzer kayıtlar bulundu" : question.kind === "conflict" || schedule ? "Kaynaklar farklı söylüyor" : "İnceleme bekliyor"}<span className="text-muted">· {question.collection_label}</span></p>
+        <p className="mb-3 flex flex-wrap items-center gap-2 text-xs text-warn"><span className="size-1.5 shrink-0 rounded-full bg-warn" aria-hidden="true" />{duplicate ? "Benzer kayıtlar bulundu" : question.kind === "conflict" || schedule ? "Kaynaklar farklı söylüyor" : "İnceleme bekliyor"}<span className="text-muted">· {displayCollectionLabel(question.collection, question.collection_label)}</span></p>
         <h2 className="text-xl leading-snug font-semibold tracking-[-0.02em] wrap-anywhere" id={titleId} ref={heading} tabIndex={-1}>{question.question_tr || `${question.record_title} için ${question.field_label} hangisi?`}</h2>
         {schedule && <p className="mt-1 text-sm text-muted">{question.records?.join(" ve ")} · {question.period_label_tr}</p>}
         <p className="mt-1 text-base text-muted">{duplicate ? "Aynı şeyi anlatıyorlarsa kayıtları birleştirin. Farklı bilgiler için ayrıca soracağız." : <>Güncel belgeyi seçin{question.allow_all ? '; tüm değerler geçerliyse “Hepsi doğru” deyin.' : "; koleksiyonunuz güncellensin."}</>}</p>

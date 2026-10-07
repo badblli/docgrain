@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { displayCollectionLabel } from "./information/labels";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -21,8 +22,8 @@ export function QuestionsView({ review, focusedId, onCollections, readOnly = fal
   const completed = review.answeredQuestions ?? [];
   const all = [...review.questions, ...completed];
   if (review.questionOrder) all.sort((a, b) => review.questionOrder.indexOf(a.id) - review.questionOrder.indexOf(b.id));
-  const labels = new Map(review.summary?.collections.map(item => [item.key, item.label]) ?? []);
-  all.forEach(item => labels.set(item.collection, item.collection_label));
+  const labels = new Map(review.summary?.collections.map(item => [item.key, displayCollectionLabel(item.key, item.label)]) ?? []);
+  all.forEach(item => labels.set(item.collection, displayCollectionLabel(item.collection, item.collection_label)));
   const filtered = all.filter(item => !filter || item.collection === filter);
   const pending = filtered.filter(item => !completed.some(done => done.id === item.id));
   const question = filtered.find(item => item.id === selectedId) ??
@@ -47,7 +48,7 @@ export function QuestionsView({ review, focusedId, onCollections, readOnly = fal
           const state = completed.some(done => done.id === item.id) ? "done" : review.deferred.includes(item.id) ? "later" : "open";
           return <li key={item.id}><Button variant="ghost" className="h-auto w-full items-start justify-start gap-2 rounded-lg border border-transparent text-left text-sm whitespace-normal aria-[current=true]:border-accent-line aria-[current=true]:bg-accent-soft p-3" disabled={review.busy} aria-current={question?.id === item.id ? "true" : undefined} onClick={() => setSelectedId(item.id)}>
             <span className={cn("mt-1 size-2 shrink-0 rounded-full bg-warn", state === "later" && "border border-faint bg-transparent", state === "done" && "size-3.5 bg-ok-soft text-ok")} role="img" aria-label={state === "done" ? "Cevaplandı" : state === "later" ? "Sonraya bırakıldı" : "Cevap bekliyor"}>{state === "done" && <Icon name="check" className="size-3.5" />}</span>
-            <span className="min-w-0 wrap-anywhere">{item.record_title} · {item.field_label}<small className="mt-1 block text-2xs font-normal text-muted">{item.collection_label}{state === "later" ? " · sonraya bırakıldı" : state === "done" ? " · Onaylandı" : ""}</small></span>
+            <span className="min-w-0 wrap-anywhere">{item.record_title} · {item.field_label}<small className="mt-1 block text-2xs font-normal text-muted">{displayCollectionLabel(item.collection, item.collection_label)}{state === "later" ? " · sonraya bırakıldı" : state === "done" ? " · Onaylandı" : ""}</small></span>
           </Button></li>;
         })}</ul></ScrollArea>}
         {question ? <QuestionCard key={question.id} question={question} focusOnEnter={Boolean(focusedId) || review.answered > 0 || review.deferred.length > 0} totalCount={denominator} currentIndex={all.findIndex(item => item.id === question.id) + 1} busy={review.busy} readOnly={readOnly || done} notice={done ? "Kaydedildi" : review.notice} savedAnswer={review.questionAnswers?.[question.id]} onAnswer={async body => {

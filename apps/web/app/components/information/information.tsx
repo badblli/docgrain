@@ -11,7 +11,7 @@ import { useEffect, useState } from "react";
 import { useDeveloperMode } from "../developer-mode";
 import { Head, Ep, Icon } from "../console-ui";
 import { CollectionCard } from "../collection-card";
-import { getCollectionLabel, getFieldLabel } from "./labels";
+import { displayCollectionLabel, getFieldLabel } from "./labels";
 import { SourceQuote, type Question } from "../question-card";
 import type { CollectionSummary, LoadState } from "../workspace-review";
 
@@ -106,7 +106,7 @@ export function InformationView({ apiUrl, workspaceId, initialCollection, summar
     return () => controller.abort();
   }, [base, mode, refreshKey]);
 
-  const labelFor = (key: string) => summaries.find(item => item.key === key)?.label || getCollectionLabel(key);
+  const labelFor = (key: string) => displayCollectionLabel(key, summaries.find(item => item.key === key)?.label);
   const questionFor = (field: string, lang?: string) => questions.find(item => item.collection === selectedCollection && (item.record_id === selectedRecord?.id || item.record_ids?.includes(selectedRecord?.id ?? "")) && item.field === field && (!lang || item.lang === lang));
   const questionButton = (question?: Question) => question && <Button variant="ghost" className="inline-flex align-[middle] border-0 bg-transparent rounded-sm [&:hover]:bg-warn-soft p-1" onClick={() => onQuestion(question)} aria-label={`${question.field_label}: açık soruyu cevapla`} title="Bu bilgi için bir soru var"><span className="inline-block w-[6px] h-[6px] rounded-pill bg-warn flex-none" aria-hidden="true" /></Button>;
   const retry = () => setRefreshKey(value => value + 1);
