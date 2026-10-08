@@ -74,6 +74,13 @@ mobile apps and websites.
     knowledge API/MCP. Parser work is frozen until the build-vs-reuse study and benchmark decide what to replace.
     Positioning: "Docgrain turns scattered company documents into one trusted, versioned source of knowledge
     for AI and applications."
+19. User decision 2026-10-08: accounts. A user belongs to one or more organizations (an agency such as the first
+    consumer, or a hotel group); an organization owns workspaces; a workspace is exactly one business (one hotel)
+    and its single approved knowledge source. A group with several hotels is one organization with one workspace
+    per hotel, never one shared workspace. Documents, collections, questions, revisions, model settings and API
+    keys belong to the workspace; matching and conflicts never cross workspaces. Roles: owner, editor (upload,
+    answer, approve), viewer, integrator (API/MCP keys). Authentication and membership come after U1; today's
+    workspace model is already compatible.
 
 ## Phases
 
