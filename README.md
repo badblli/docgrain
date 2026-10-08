@@ -105,7 +105,7 @@ Gemini calls are off by default.
 Serves synthetic, read-only data; uploads return `409`; no worker needed.
 
 ```powershell
-python -m pip install -e 'packages/domain[validation]' -e 'apps/api[dev]'
+python -m pip install -e 'packages/domain[validation]' -e packages/evaluation -e packages/records -e 'apps/api[dev]'
 $env:USE_FIXTURES = "true"
 python -m uvicorn docgrain_api.main:app --port 8000
 ```
@@ -123,15 +123,17 @@ npm run dev
 ### Tests
 
 ```sh
-python -m pip install -e 'packages/domain[validation]' -e 'apps/api[dev]'
+python -m pip install -e 'packages/domain[validation]' -e packages/evaluation -e packages/records -e 'apps/api[dev]' 'pymupdf>=1.24'
 python -m pytest -q
 ruff check apps packages tests benchmarks docs/examples
-cd apps/web && npm ci && npm run build
+npm --prefix apps/web ci
+node --test tests/web/test_u1_upload.mjs apps/web/app/components/workspace-review.test.cjs
+npm --prefix apps/web run build
 ```
 
-CI also installs `pymupdf>=1.24`; add it if missing. The same three steps run as `make quality`
-(`make test`, `make lint`, `make web-build` also work alone). Docling, EasyOCR, PostgreSQL and MinIO
-integration tests run inside the worker Docker image.
+The Python installation above matches CI. `make quality` runs Python tests, lint and the web build
+(`make test`, `make lint`, `make web-build` also work alone); run the Node tests above separately.
+Docling, EasyOCR, PostgreSQL and MinIO integration tests run inside the worker Docker image.
 
 ## Use with your AI
 

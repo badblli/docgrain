@@ -26,7 +26,7 @@ export function Documents({ docs, open, upload, uploadState, uploadStates, retry
     <div className={pageBody}>
       <section className="flex flex-wrap items-center gap-4">
         <div className="grid size-9 shrink-0 place-items-center rounded-lg border border-line bg-paper text-muted"><Icon name="upload" className="size-5" /></div>
-        <div className="min-w-0 flex-1"><h3 className="text-base font-semibold">Belgeleri ekleyin</h3><p className="mt-1 max-w-[56ch] text-xs text-muted">PDF, Word, Excel, metin veya görsel dosyalarınızı ekleyin.</p>
+        <div className="min-w-0 flex-1"><h3 className="text-base font-semibold">Belgeleri ekleyin</h3><p className="mt-1 max-w-[56ch] text-xs text-muted">PDF, Word, Excel, metin veya görsel dosyalarınızı ekleyin. Birden fazla dosyayı birlikte seçebilirsiniz.</p>
 
         </div>
         <input ref={input} type="file" multiple hidden accept=".pdf,.docx,.xlsx,.txt,.png,.jpg,.jpeg" aria-label="Dosyaları yükle: PDF, Word, Excel, metin veya görsel" disabled={busy} onChange={event => {

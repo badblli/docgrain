@@ -102,7 +102,7 @@ yalnızca geliştirme içindir. Harici Vision ve Gemini çağrıları varsayıla
 Sentetik, salt okunur veri gösterir; yükleme istekleri `409` döner, worker gerekmez.
 
 ```powershell
-python -m pip install -e 'packages/domain[validation]' -e 'apps/api[dev]'
+python -m pip install -e 'packages/domain[validation]' -e packages/evaluation -e packages/records -e 'apps/api[dev]'
 $env:USE_FIXTURES = "true"
 python -m uvicorn docgrain_api.main:app --port 8000
 ```
@@ -120,15 +120,18 @@ npm run dev
 ### Testler
 
 ```sh
-python -m pip install -e 'packages/domain[validation]' -e 'apps/api[dev]'
+python -m pip install -e 'packages/domain[validation]' -e packages/evaluation -e packages/records -e 'apps/api[dev]' 'pymupdf>=1.24'
 python -m pytest -q
 ruff check apps packages tests benchmarks docs/examples
-cd apps/web && npm ci && npm run build
+npm --prefix apps/web ci
+node --test tests/web/test_u1_upload.mjs apps/web/app/components/workspace-review.test.cjs
+npm --prefix apps/web run build
 ```
 
-CI ayrıca `pymupdf>=1.24` kurar; yoksa ekleyin. Aynı üçü `make quality` ile çalışır (`make test`,
-`make lint`, `make web-build` ayrı da çalışır). Docling, EasyOCR, PostgreSQL ve MinIO entegrasyon
-testleri worker Docker imajında koşar.
+Yukarıdaki Python kurulumu CI ile aynıdır. `make quality` Python testlerini, lint ve web build'i
+çalıştırır (`make test`, `make lint`, `make web-build` ayrı da çalışır); Node testlerini yukarıdaki
+komutla ayrıca çalıştırın. Docling, EasyOCR, PostgreSQL ve MinIO entegrasyon testleri worker Docker
+imajında koşar.
 
 ## Ölçülür, iddia edilmez
 
