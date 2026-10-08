@@ -15,6 +15,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from .canonical_repository import CanonicalRepository
+from .records_jobs_repository import initialize as initialize_record_jobs
 from .repository import initialize
 from .routers import (
     ai,
@@ -30,6 +31,7 @@ from .routers import (
     local_visuals,
     outputs,
     providers,
+    record_jobs,
     records,
     retrieval,
     reviews,
@@ -43,6 +45,8 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     initialize()
+    if not settings.use_fixtures:
+        initialize_record_jobs()
     if not settings.use_fixtures and settings.canonical_persistence_enabled:
         CanonicalRepository(lambda: psycopg.connect(
             settings.database_url.replace("postgresql+psycopg://", "postgresql://")
@@ -101,6 +105,7 @@ app.include_router(documents.workspaces_router)
 app.include_router(reviews.router)
 app.include_router(records.router)
 app.include_router(records.workspace_router)
+app.include_router(record_jobs.router)
 app.include_router(ai.router)
 app.include_router(chat.router)
 app.include_router(local_visuals.router)

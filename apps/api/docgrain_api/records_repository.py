@@ -38,8 +38,9 @@ class AnswerInvalid(ValueError):
 
 
 class RecordsRepository:
-    def __init__(self, root: str | Path):
+    def __init__(self, root: str | Path, before_answer=None):
         self.root = Path(root)
+        self.before_answer = before_answer
 
     def _path(self, workspace, revision=None):
         path = self.root / sha256(workspace.encode()).hexdigest()
@@ -83,13 +84,17 @@ class RecordsRepository:
         finally:
             temporary.unlink()
 
-    def publish(self, revision: MergeRevision):
+    def publish(self, revision: MergeRevision, check=None, complete=None, job_id=None):
         with self._workspace_lock(revision.workspace_id):
-            self._publish(revision)
+            if check:
+                check()
+            self._publish(revision, before_commit=check, complete=complete, job_id=job_id)
 
-    def _publish(self, revision: MergeRevision):
+    def _publish(self, revision: MergeRevision, before_commit=None, complete=None, job_id=None):
         self.stage(revision)
         path = self._path(revision.workspace_id, revision.id)
+        # Project the exact staged snapshot, including inherited review decisions.
+        revision = MergeRevision.model_validate_json((path / "source.json").read_bytes())
         published = path / "published"
         if published.exists():
             return  # Never regenerate an old publication.
@@ -101,6 +106,10 @@ class RecordsRepository:
                     "modes": {mode: {"files": {name: sha256(body).hexdigest()
                                                for name, body in artifacts.items()}}
                               for mode, artifacts in files.items()}}
+        if job_id:
+            # The durable terminal transition is the visibility commit. A child killed
+            # after directory rename cannot replace the previous publication head.
+            manifest["record_job_id"] = job_id
         if runtime.schema:
             manifest["workspace_schema_version"] = runtime.schema["version"]
         temporary = Path(tempfile.mkdtemp(dir=path))
@@ -117,16 +126,35 @@ class RecordsRepository:
                 output.write(encode(manifest))
                 output.flush()
                 os.fsync(output.fileno())
+            if before_commit:
+                before_commit()  # Deadline/settings/source/head fence after disk preparation.
             try:
                 temporary.rename(published)
             except OSError:
                 if not published.exists():
                     raise
+            if complete:
+                try:
+                    complete()
+                except Exception:
+                    # The workspace lock still excludes answers/publishers. Failed output
+                    # remains staged; every older immutable publication keeps its bytes.
+                    published.rename(temporary)
+                    raise
         finally:
             if temporary.exists():
                 shutil.rmtree(temporary)
 
-    def manifest(self, workspace, revision):
+    def _publication_ready(self, manifest, pending_job=None):
+        job_id = manifest.get("record_job_id")
+        if not job_id or job_id == pending_job:
+            return True
+        from . import records_jobs_repository
+
+        job = records_jobs_repository.get(manifest["workspace_id"], job_id)
+        return bool(job and job["status"] == "done" and job["revision_id"] == manifest["revision_id"])
+
+    def manifest(self, workspace, revision, pending_job=None):
         path = self._path(workspace, revision)
         if not path.is_dir():
             raise PackMissing("workspace or revision unknown")
@@ -136,6 +164,8 @@ class RecordsRepository:
         manifest = json.loads(publication.read_bytes())
         if (manifest["workspace_id"], manifest["revision_id"]) != (workspace, revision):
             raise PackMissing("publication outside workspace/revision")
+        if not self._publication_ready(manifest, pending_job):
+            raise PackUnpublished("revision not published")
         source = MergeRevision.model_validate_json((path / "source.json").read_bytes())
         if (source.workspace_id, source.id) != (workspace, revision):
             raise ValueError("record source outside workspace/revision")
@@ -163,7 +193,7 @@ class RecordsRepository:
             manifest_path = d / "published" / "manifest.json"
             try:
                 manifest = json.loads(manifest_path.read_bytes())
-                if manifest["workspace_id"] == workspace:
+                if manifest["workspace_id"] == workspace and self._publication_ready(manifest):
                     published.append((manifest.get("published_at") or datetime.fromtimestamp(
                         manifest_path.stat().st_mtime, UTC).isoformat(), manifest["revision_id"]))
             except (OSError, ValueError, KeyError):
@@ -270,6 +300,8 @@ class RecordsRepository:
 
     def answer_question(self, workspace, question_id, answer, revision=None):
         with self._workspace_lock(workspace):
+            if self.before_answer:
+                self.before_answer(workspace)
             newest = self._source(workspace)
             state = self._review_state(workspace)
             expected = revision or state["issued"].get(question_id)
@@ -296,10 +328,10 @@ class RecordsRepository:
             return {"revision_id": updated.id, "remaining": len(questions(updated))}
 
     def read(self, workspace, revision, collection, lang=None, compact=False,
-             mode="preview"):
+             mode="preview", pending_job=None):
         if mode not in MODES:
             raise ValueError("unknown publication mode")
-        manifest = self.manifest(workspace, revision)
+        manifest = self.manifest(workspace, revision, pending_job)
         if collection not in manifest["collections"]:
             raise PackMissing("collection unknown")
         extension = "context.md" if compact else "json"
