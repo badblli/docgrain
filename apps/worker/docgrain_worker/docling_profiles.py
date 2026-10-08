@@ -94,7 +94,8 @@ def default_full_page(source, fmt) -> bool:
 
 
 def build_converter(fmt, *, profile: str, full_page: bool = False,
-                    remote: RemoteOptions | None = None):
+                    remote: RemoteOptions | None = None, images_scale: float = 2,
+                    raster_events: list | None = None):
     validate_profile(profile, remote)
     from .docling_models import verify_artifacts
 
@@ -130,7 +131,7 @@ def build_converter(fmt, *, profile: str, full_page: bool = False,
     pipeline.accelerator_options = AcceleratorOptions(device="cpu", num_threads=2)
     pipeline.generate_parsed_pages = True
     pipeline.generate_page_images = True
-    pipeline.images_scale = 2
+    pipeline.images_scale = images_scale
     pipeline.enable_remote_services = False
     if profile == "B_docling":
         from .ocr import options
@@ -149,9 +150,11 @@ def build_converter(fmt, *, profile: str, full_page: bool = False,
         pipeline.picture_description_options = PictureDescriptionApiOptions(
             url=remote.endpoint, headers=remote.headers(), params={"model": remote.model},
             prompt=DATA_PROMPT, timeout=120, concurrency=1)
-    options = {InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline)} if fmt.value == "pdf" else {}
+    from .image_budget import budgeted_pipeline
+    pipeline_class = budgeted_pipeline(raster_events if raster_events is not None else []) if fmt.value == "pdf" or is_image else None
+    options = {InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline, pipeline_cls=pipeline_class)} if fmt.value == "pdf" else {}
     if is_image:
-        options[InputFormat.IMAGE] = ImageFormatOption(pipeline_options=pipeline)
+        options[InputFormat.IMAGE] = ImageFormatOption(pipeline_options=pipeline, pipeline_cls=pipeline_class)
     return DocumentConverter(allowed_formats=[input_format], format_options=options), input_format
 
 

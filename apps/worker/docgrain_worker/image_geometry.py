@@ -8,6 +8,8 @@ from io import BytesIO
 from docgrain_domain.canonical import NormalizedBox
 from PIL import Image, ImageOps
 
+from .image_budget import ImageBudget
+
 
 def orient_point(x: float, y: float, orientation: int) -> tuple[float, float]:
     transforms = {
@@ -40,13 +42,18 @@ def transform_box(
     return NormalizedBox(x=left, y=top, width=right - left, height=bottom - top)
 
 
-def prepare_image(data: bytes) -> tuple[bytes, dict]:
+def prepare_image(data: bytes, *, budget: ImageBudget | None = None) -> tuple[bytes, dict]:
+    budget = budget or ImageBudget.from_env()
     with Image.open(BytesIO(data)) as original:
         width, height = original.size
         orientation = original.getexif().get(274, 1)
         if orientation not in range(1, 9):
             raise ValueError("invalid EXIF orientation")
-        # Composite transparent pixels on white, preserving the untouched original separately.
+        # JPEG draft decoding avoids allocating the full RGB map before shrinking.
+        target = budget.size(width, height)
+        original.draft("RGB", target)
+        original.thumbnail(target, Image.Resampling.LANCZOS, reducing_gap=3.0)
+        # Composite only the reduced pixels; retain the untouched source separately.
         oriented = ImageOps.exif_transpose(original).convert("RGBA")
         rgb = Image.new("RGB", oriented.size, "white")
         rgb.paste(oriented, mask=oriented.getchannel("A"))
@@ -59,9 +66,13 @@ def prepare_image(data: bytes) -> tuple[bytes, dict]:
             "exif_orientation": orientation,
             "input_width_px": rgb.width,
             "input_height_px": rgb.height,
+            "scale_x": rgb.width / (height if orientation >= 5 else width),
+            "scale_y": rgb.height / (width if orientation >= 5 else height),
+            "downscaled": target != (width, height),
+            "budget": {"longest_side": budget.longest_side, "max_pixels": budget.max_pixels},
             "source_sha256": sha256(data).hexdigest(),
             "input_sha256": sha256(prepared).hexdigest(),
-            "transform": "exif-transpose-rgba-white-rgb-v1",
+            "transform": "budget-lanczos-exif-transpose-rgba-white-rgb-v2",
             "coordinate_frame": "original_encoded_pixels",
             "input_coordinate_frame": "exif_transposed_pixels",
         }
