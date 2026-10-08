@@ -1,5 +1,9 @@
 """Adapt Docling confidence grades to the existing reading-report issue codes."""
 
+# Karar 18 (2026-10-08): eski OCR/kalite eşikleri (sorun kodları artık Docling güven raporundan geliyor) artık kullanılmıyor; okuma Docling + Tesseract ile yapılıyor.
+# Eski kod silinmedi, başvuru için duruyor: unused/quality_before_docling.py
+# (ayrıca native_office.py, pdf_fidelity.py, pdf_reading.py, vision.py — hiçbiri import edilmiyor).
+
 from .structural import _issue
 
 LOW_GRADES = {"poor", "fair", "low"}
