@@ -136,7 +136,7 @@ def test_real_worker_automatically_publishes_same_ai_contract(worker_store,real_
         monkeypatch.delenv("DOCGRAIN_REMOTE_VISION_ENABLED", raising=False)
         def forbid_remote(*_args, **_kwargs):
             raise AssertionError("remote extraction must require explicit opt-in")
-        monkeypatch.setattr(worker,"gemini_extraction",forbid_remote)
+        monkeypatch.setattr("docgrain_worker.docling_profiles.run_hard_page_vlm",forbid_remote)
     data = path.read_bytes()
     client.put_object(bucket,"uploads/doc-test/version-test/original",io.BytesIO(data),len(data),content_type=mime)
     from docgrain_domain import JobStage

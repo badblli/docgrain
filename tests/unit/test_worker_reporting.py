@@ -39,7 +39,7 @@ def test_success_does_not_claim_unimplemented_stages_or_measured_timing(worker):
         assert "finished_at" not in by_stage[stage]
         assert "attempt" not in by_stage[stage]
     assert "no canonical manifest or index" in by_stage["publish"]["summary"]
-    assert "not measured" in by_stage["quality"]["summary"]
+    assert "do not certify" in by_stage["quality"]["summary"]
 
 
 @pytest.mark.parametrize("failed_stage", ["render", "extract", "publish"])
@@ -62,3 +62,30 @@ def test_published_output_reports_real_normalize_and_chunk_but_no_embeddings(wor
     assert by_stage["chunk"]["attributes"]["chunk_count"] == 3
     assert by_stage["embed"]["status"] == by_stage["enrich"]["status"] == "skipped"
     assert "ai.json" in by_stage["publish"]["summary"]
+
+
+def test_docling_page_images_and_dpi_reach_the_source_review_api(worker, monkeypatch):
+    import json
+    from io import BytesIO
+    from types import SimpleNamespace
+
+    from docgrain_api.routers import versions
+    from PIL import Image
+
+    buffer = BytesIO()
+    Image.new("RGB", (40, 20), "white").save(buffer, format="PNG")
+    data = buffer.getvalue()
+    stored = {}
+    def put(bucket, key, stream, size, **kwargs):
+        stored[key] = stream.read()
+        assert len(stored[key]) == size
+    monkeypatch.setattr(worker, "storage", lambda: SimpleNamespace(put_object=put))
+    worker.publish_page_images(SimpleNamespace(page_images={1: data}), "artifacts/doc/ver", "bucket")
+    assert stored["artifacts/doc/ver/pages/0001.png"] == data
+    manifest = json.loads(stored["artifacts/doc/ver/pages.json"])
+    assert manifest["pages"] == [{"page_number": 1, "width": 40, "height": 20}]
+    monkeypatch.setattr(versions, "get_text", lambda key: stored[key].decode())
+    version = SimpleNamespace(id="ver", document_id="doc", page_count=1, parser="docling")
+    page = versions._live_page(version, 1, versions._page_manifest(version))
+    assert (page.width, page.height, page.dpi) == (40, 20, 144)
+    assert versions._live_page(version, 1, {1: {"width": 40, "height": 20}}).dpi == 200

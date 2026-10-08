@@ -10,7 +10,6 @@ from hashlib import sha256
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Literal
-from zipfile import ZipFile
 
 from docgrain_domain.source_format import SourceFormat, verify_format
 
@@ -67,6 +66,8 @@ class StructuralParseResult:
     legacy_markdown: bytes | None = None
     legacy_json: bytes | None = None
     reading_profile: dict[str, Any] | None = None
+    docling_artifact_uri: str | None = None
+    page_images: dict[int, bytes] = field(default_factory=dict)
 
     @property
     def coverage(self) -> dict[str, Any]:
@@ -139,33 +140,33 @@ def _txt(source: VerifiedSource) -> StructuralParseResult:
                                   "line_count": line_count})
 
 
-def _docling(source: VerifiedSource, fmt: SourceFormat, *, ocr_enabled: bool = False,
-             image_metadata: dict | None = None, native_fidelity: bool = False,
-             profile: str = "A_current", remote: Any = None) -> StructuralParseResult:
+def _docling(source: VerifiedSource, fmt: SourceFormat, *,
+             image_metadata: dict | None = None,
+             profile: str = "C_tesseract", remote: Any = None) -> StructuralParseResult:
     from .docling_profiles import (
         build_converter,
         confidence_report,
+        default_full_page,
         identity,
         safe_options,
     )
 
     is_image = fmt in (SourceFormat.PNG, SourceFormat.JPEG)
-    native_fidelity = native_fidelity if profile == "A_current" else False
-    ocr_enabled = ocr_enabled if profile == "A_current" else fmt is SourceFormat.PDF or is_image
-    converter, input_format = build_converter(fmt, profile=profile, ocr_enabled=ocr_enabled, remote=remote)
+    ocr_enabled = fmt is SourceFormat.PDF or is_image
+    full_page = default_full_page(source, fmt) if profile == "C_tesseract" else False
+    converter, input_format = build_converter(fmt, profile=profile, full_page=full_page, remote=remote)
     processing_options = {
         "pipeline": safe_options(converter.format_to_options[input_format].pipeline_options.model_dump(mode="json")),
-        "adapter_version": "m1b-1", "formula_evaluation": False,
+        "adapter_version": "docling-2", "canonical_schema_version": "0.6.0",
+        "formula_evaluation": False, "ocr_routing": "file-text-layer-v1",
+        "xlsx_display_format": "number-date-percent-v1",
     }
     if ocr_enabled or is_image:
-        processing_options["adapter_version"] = "n1-1"
-        processing_options["canonical_schema_version"] = "0.5.0"
         if ocr_enabled:
             from .ocr import verified_profile
-            if profile in {"A_current", "B_docling"}:
+            if profile == "B_docling":
                 processing_options["ocr_profile"] = verified_profile()
-                if profile == "B_docling":
-                    processing_options["ocr_profile"]["recognition_threshold"] = 0.5
+                processing_options["ocr_profile"]["recognition_threshold"] = 0.5
             else:
                 import subprocess
                 probe = subprocess.run(["tesseract", "--version"], capture_output=True,
@@ -174,7 +175,7 @@ def _docling(source: VerifiedSource, fmt: SourceFormat, *, ocr_enabled: bool = F
                 processing_options["ocr_profile"] = {"engine": "tesseract", "version": tesseract_version,
                                                      "languages": ["tur", "eng", "deu", "rus"]}
             # Installation path is operational, not part of semantic configuration identity.
-            if profile in {"A_current", "B_docling"}:
+            if profile == "B_docling":
                 processing_options["pipeline"]["ocr_options"]["model_storage_directory"] = "pinned-checkpoints"
         if image_metadata:
             processing_options["image_preparation"] = image_metadata
@@ -218,104 +219,74 @@ def _docling(source: VerifiedSource, fmt: SourceFormat, *, ocr_enabled: bool = F
     lookup = {entry["self_ref"]: entry for collection in ("texts", "tables", "pictures")
               for entry in raw.get(collection, [])}
     if fmt is SourceFormat.XLSX:
-        items.extend(_xlsx_items(source, raw, issues, native_fidelity=native_fidelity,
-                                 docling_only=profile != "A_current"))
-    else:
-        for ref in _reading_refs(raw.get("body", {}), raw, lookup):
-            item = lookup[ref]
-            label = item.get("label", "")
-            kind = {"section_header": "heading", "title": "heading", "list_item": "list_item",
-                    "table": "table", "picture": "picture"}.get(label, "paragraph")
-            if kind == "paragraph" and not item.get("text"):
-                continue
-            locator = None
-            page_size = None
-            if fmt is SourceFormat.PDF or is_image:
-                provenance = item.get("prov") or []
-                if provenance:
-                    p = provenance[0]
-                    n = str(p["page_no"])
-                    locator = {"kind": "pdf_raw", "page_number": int(n), "bbox": p.get("bbox")}
-                    if native_fidelity and fmt is SourceFormat.PDF:
-                        locator["frame"] = "visible"
-                    size = pages.get(n, {}).get("size", {})
-                    page_size = (float(size.get("width", 0)), float(size.get("height", 0)))
-                    if is_image and image_metadata:
-                        from .image_geometry import image_locator
-                        try:
-                            locator = image_locator(p.get("bbox") or {}, page_size, image_metadata)
-                        except (ValueError, KeyError):
-                            locator = None
-                            issues.append(_issue(fmt, "image_bbox_unresolved", "Cannot map parser geometry to original pixels", item_ref=ref))
-                else:
-                    issues.append(_issue(fmt, "missing_bbox", "Docling item has no provenance", item_ref=ref))
-            else:
-                locator = {"kind": "docx_raw", "ref": ref}
-            cells: list[list[dict[str, Any]]] = []
-            if kind == "table":
-                cells = _docling_cells(item)
-                if native_fidelity:
-                    for original in item.get("data", {}).get("table_cells", []):
-                        r, c = original["start_row_offset_idx"], original["start_col_offset_idx"]
-                        if r < len(cells) and c < len(cells[r]):
-                            cell = cells[r][c]
-                            cell["source_attributes"] = {"parser_text": cell["value"],
-                                "column_header": original.get("column_header", False), "row_header": original.get("row_header", False)}
-                            if original.get("bbox") and locator and (fmt is SourceFormat.PDF or is_image):
-                                cell["locator"] = {"kind": "pdf_raw", "page_number": provenance[0]["page_no"], "bbox": original["bbox"]}
-                                if fmt is SourceFormat.PDF:
-                                    cell["locator"]["frame"] = "visible"
-                                if is_image and image_metadata:
-                                    from .image_geometry import image_locator
-                                    cell["locator"] = image_locator(original["bbox"], page_size, image_metadata)
-            asset_bytes = None
-            asset_mime = None
-            if kind == "picture":
-                image = item.get("image") or {}
-                uri = image.get("uri", "")
-                if uri.startswith("data:") and ";base64," in uri:
+        items.extend(_xlsx_items(source, raw, issues))
+    for ref in (_reading_refs(raw.get("body", {}), raw, lookup)
+                + _reading_refs(raw.get("furniture", {}), raw, lookup)):
+        item = lookup[ref]
+        label = item.get("label", "")
+        kind = {"section_header": "heading", "title": "heading", "list_item": "list_item",
+                "table": "table", "picture": "picture"}.get(label, "paragraph")
+        if fmt is SourceFormat.XLSX and kind != "picture":
+            continue
+        if kind == "paragraph" and not item.get("text"):
+            continue
+        locator = None
+        page_size = None
+        if fmt is SourceFormat.PDF or is_image:
+            provenance = item.get("prov") or []
+            if provenance:
+                p = provenance[0]
+                n = str(p["page_no"])
+                locator = {"kind": "pdf_raw", "page_number": int(n), "bbox": p.get("bbox")}
+                size = pages.get(n, {}).get("size", {})
+                page_size = (float(size.get("width", 0)), float(size.get("height", 0)))
+                if is_image and image_metadata:
+                    from .image_geometry import image_locator
                     try:
-                        asset_bytes = base64.b64decode(uri.split(",", 1)[1], validate=True)
-                        asset_mime = image.get("mimetype") or uri[5:].split(";", 1)[0]
-                    except (ValueError, base64.binascii.Error):
-                        pass
-                if not asset_bytes:
-                    issues.append(_issue(fmt, "unextracted_picture", "Picture has no binary asset", item_ref=ref))
-            items.append(StructuralItem(kind=kind, anchor=ref, locator=locator, text=item.get("text", ""),
-                                        level=int(item.get("level", 1)), cells=cells, page_size=page_size,
-                                        asset_bytes=asset_bytes, asset_mime=asset_mime))
-    if fmt is SourceFormat.DOCX:
-        if native_fidelity:
-            from .native_office import docx_items
-            # Native parts own literal content/locators; Docling layout is auxiliary.
-            items, office_metadata = docx_items(source, issues)
+                        locator = image_locator(p.get("bbox") or {}, page_size, image_metadata)
+                    except (ValueError, KeyError):
+                        locator = None
+                        issues.append(_issue(fmt, "image_bbox_unresolved", "Cannot map parser geometry to original pixels", item_ref=ref))
+            else:
+                issues.append(_issue(fmt, "missing_bbox", "Docling item has no provenance", item_ref=ref))
+        elif fmt is SourceFormat.XLSX:
+            from openpyxl.utils import get_column_letter
+            groups = {g["self_ref"]: g for g in raw.get("groups", [])}
+            parent = groups.get((item.get("parent") or {}).get("$ref"), {})
+            prov = item.get("prov") or []
+            box = prov[0].get("bbox") if prov else None
+            if parent.get("label") == "sheet" and box and box.get("coord_origin") == "TOPLEFT":
+                row, col = int(box["t"]) + 1, int(box["l"]) + 1
+                if row > 0 and col > 0:
+                    locator = {"kind": "spreadsheet_range", "sheet": parent["name"],
+                               "a1_range": f"{get_column_letter(col)}{row}"}
+            if locator is None:
+                issues.append(_issue(fmt, "image_anchor_missing", "Docling picture has no sheet anchor", item_ref=ref))
         else:
-            _docx_paths(source, items, issues)
-    ocr_cells = []
-    if ocr_enabled:
-        ocr_cells = _tag_ocr(converted, raw, items, fmt, issues, image_metadata)
-    if native_fidelity and fmt is SourceFormat.PDF:
-        for item in items:
-            for loc in [item.locator, *(c.get("locator") for row in item.cells for c in row)]:
-                if loc and loc.get("kind") == "pdf_raw":
-                    loc["frame"] = "visible"
-        for literal in ocr_cells:
-            literal["locator"]["frame"] = "visible"
-    if fmt is SourceFormat.PDF:
-        if native_fidelity:
-            from .pdf_fidelity import reconcile_pdf_tables
-            pdf_metadata = reconcile_pdf_tables(source, items, issues, pages)
-            from .pdf_reading import reconcile_reading
-            pdf_metadata["reading"] = reconcile_reading(source, items, issues)
-        elif profile == "A_current":
-            _pdf_missing_tables(source, items, issues, pages)
-        for area in expected:
-            if area not in processed:
-                issues.append(_issue(fmt, "missing_page", "Docling page geometry is unavailable", location=area, impact="page"))
-            elif not any(i.locator and i.locator.get("page_number") == int(area.split(":")[1]) and i.kind != "picture" for i in items):
-                reason = ("No structural text/table on page; OCR/visual review required" if ocr_enabled
-                          else "No structural text/table on page; OCR is outside M1b")
-                issues.append(_issue(fmt, "low_text_page", reason, location=area, impact="page"))
+            locator = {"kind": "docx_raw", "ref": ref}
+        cells: list[list[dict[str, Any]]] = []
+        if kind == "table":
+            cells = _docling_cells(item)
+        asset_bytes = None
+        asset_mime = None
+        if kind == "picture":
+            image = item.get("image") or {}
+            uri = image.get("uri", "")
+            if uri.startswith("data:") and ";base64," in uri:
+                try:
+                    asset_bytes = base64.b64decode(uri.split(",", 1)[1], validate=True)
+                    asset_mime = image.get("mimetype") or uri[5:].split(";", 1)[0]
+                except (ValueError, base64.binascii.Error):
+                    pass
+            if not asset_bytes:
+                issues.append(_issue(fmt, "unextracted_picture", "Picture has no binary asset", item_ref=ref))
+        items.append(StructuralItem(kind=kind, anchor=ref, locator=locator, text=item.get("text", ""),
+                                    level=int(item.get("level", 1)), cells=cells, page_size=page_size,
+                                    asset_bytes=asset_bytes, asset_mime=asset_mime))
+    ocr_cells = _bind_ocr_provenance(converted, raw, items, fmt, issues, image_metadata) if ocr_enabled else []
+    for area in expected:
+        if fmt is SourceFormat.PDF and area not in processed:
+            issues.append(_issue(fmt, "missing_page", "Docling page geometry is unavailable", location=area, impact="page"))
     if is_image:
         # Always preserve the exact original binary independently of Docling picture detection.
         original = source.path.read_bytes()
@@ -323,8 +294,6 @@ def _docling(source: VerifiedSource, fmt: SourceFormat, *, ocr_enabled: bool = F
                    "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}}
         items.append(StructuralItem("picture", "original-image", locator,
             asset_bytes=original, asset_mime="image/png" if fmt is SourceFormat.PNG else "image/jpeg"))
-        if not any(i.kind in {"paragraph", "heading", "list_item", "table"} for i in items):
-            issues.append(_issue(fmt, "no_ocr_text", "No OCR text found; visual content is not interpreted", location="image"))
     if str(converted.status).lower().endswith("partial_success"):
         issues.append(_issue(fmt, "docling_partial", str(converted.errors)[:1000], impact="document"))
     status = "partial" if issues else "complete"
@@ -332,33 +301,33 @@ def _docling(source: VerifiedSource, fmt: SourceFormat, *, ocr_enabled: bool = F
                                    {"docling_status": str(converted.status), "pages": pages},
                                    processing_options=processing_options)
     if ocr_enabled or is_image:
-        import json
         result.source_metadata.update({"ocr_cells": ocr_cells, "image_preparation": image_metadata})
-        result.legacy_markdown = converted.document.export_to_markdown().encode()
-        result.legacy_json = json.dumps(raw, ensure_ascii=False).encode()
-    if native_fidelity:
-        result.processing_options.update({"adapter_version": "n2-1", "canonical_schema_version": "0.6.0",
-                                          "native_source_fidelity": "ooxml+pdf-native-geometry-v1"})
-        if fmt is SourceFormat.DOCX:
-            result.source_metadata["ooxml"] = office_metadata
-            result.expected_areas = result.processed_areas = office_metadata["parts"]
-        if fmt is SourceFormat.PDF:
-            result.source_metadata["pdf_fidelity"] = pdf_metadata
-    result.reading_profile = identity(profile, processing_options, native_fidelity=native_fidelity, remote=remote)
+    result.reading_profile = identity(profile, processing_options, remote=remote)
     report = confidence_report(converted)
     if report is not None:
+        from .quality import confidence_issues
         result.source_metadata["docling_confidence"] = report
-    if profile != "A_current":
-        import json
-        result.legacy_markdown = converted.document.export_to_markdown().encode()
-        result.legacy_json = json.dumps(raw, ensure_ascii=False).encode()
+        issues.extend(confidence_issues(report, fmt))
+        result.status = "partial" if issues else "complete"
+    import json
+    result.legacy_markdown = converted.document.export_to_markdown().encode()
+    result.legacy_json = json.dumps(raw, ensure_ascii=False).encode()
+    if fmt is SourceFormat.PDF:
+        from io import BytesIO
+        for page in converted.pages:
+            image = getattr(page, "image", None)
+            if image is not None:
+                buffer = BytesIO()
+                # Docling's Page.image is a PIL image; ImageRef-style objects wrap it in pil_image.
+                getattr(image, "pil_image", image).save(buffer, format="PNG")
+                result.page_images[page.page_no] = buffer.getvalue()
     if profile == "E_vlm":
         from .docling_profiles import run_hard_page_vlm
         run_hard_page_vlm(source, result, remote)
     return result
 
 
-def _tag_ocr(converted, raw: dict, items: list[StructuralItem], fmt: SourceFormat,
+def _bind_ocr_provenance(converted, raw: dict, items: list[StructuralItem], fmt: SourceFormat,
              issues: list[ParseIssue], image_metadata: dict | None) -> list[dict]:
     """Bind literal OCR cells/scores to content; scores never certify source acceptance."""
     from docling_core.types.doc import BoundingBox
@@ -375,8 +344,6 @@ def _tag_ocr(converted, raw: dict, items: list[StructuralItem], fmt: SourceForma
         area = f"page:{page.page_no}" if fmt is SourceFormat.PDF else "image"
         if ocr:
             issues.append(_issue(fmt, "ocr_needs_review", "OCR transcription is unreviewed, regardless of recognition score", location=area, impact="page"))
-        if any(c.confidence < 0.8 for c in ocr):
-            issues.append(_issue(fmt, "ocr_low_confidence", "OCR recognition confidence below 0.8; literal retained", location=area, impact="page"))
         for cell in ocr:
             box = cell.rect.to_bounding_box().model_dump(mode="json")
             locator = {"kind": "pdf_raw", "page_number": page.page_no, "bbox": box}
@@ -455,100 +422,7 @@ def _docling_cells(item: dict[str, Any]) -> list[list[dict[str, Any]]]:
     return rows
 
 
-def _pdf_missing_tables(source: VerifiedSource, items: list[StructuralItem],
-                        issues: list[ParseIssue], pages: dict[str, Any]) -> None:
-    """Narrow deterministic fallback when Docling omits a ruled PDF table."""
-    import pymupdf
-
-    document = pymupdf.open(source.path)
-    try:
-        for page_number, page in enumerate(document, start=1):
-            if page.rotation or any(item.kind == "table" and item.locator and
-                                    item.locator.get("page_number") == page_number for item in items):
-                continue
-            size = pages.get(str(page_number), {}).get("size", {})
-            width, height = float(size.get("width", 0)), float(size.get("height", 0))
-            if width <= 0 or height <= 0:
-                continue
-            for found in page.find_tables().tables:
-                x0, y0, x1, y1 = found.bbox
-                if not (0 <= x0 < x1 <= width and 0 <= y0 < y1 <= height):
-                    issues.append(_issue(SourceFormat.PDF, "table_fallback_geometry", "PyMuPDF table cannot be aligned to Docling page", location=f"page:{page_number}"))
-                    continue
-                rows = [[{"value": value or ""} for value in row] for row in found.extract()]
-                if not rows:
-                    continue
-                indices = []
-                for index, item in enumerate(items):
-                    raw = (item.locator or {}).get("bbox") or {}
-                    if (item.locator or {}).get("page_number") != page_number or not raw:
-                        continue
-                    cx = (raw["l"] + raw["r"]) / 2
-                    cy = height - (raw["t"] + raw["b"]) / 2 if raw.get("coord_origin") == "BOTTOMLEFT" else (raw["t"] + raw["b"]) / 2
-                    if x0 <= cx <= x1 and y0 <= cy <= y1 and item.kind == "paragraph":
-                        indices.append(index)
-                insert_at = min(indices) if indices else len(items)
-                for index in reversed(indices):
-                    items.pop(index)
-                locator = {"kind": "pdf_raw", "page_number": page_number,
-                           "bbox": {"l": x0, "t": height - y0, "r": x1, "b": height - y1,
-                                    "coord_origin": "BOTTOMLEFT"}}
-                items.insert(insert_at, StructuralItem("table", f"pdf-table:{page_number}:{x0}:{y0}:{x1}:{y1}",
-                                                       locator, cells=rows, page_size=(width, height)))
-                issues.append(_issue(SourceFormat.PDF, "docling_missed_table",
-                                     "Docling omitted a ruled table; PyMuPDF recovered its cells",
-                                     location=f"page:{page_number}", impact="table"))
-    finally:
-        document.close()
-
-
-def _docx_paths(source: VerifiedSource, items: list[StructuralItem], issues: list[ParseIssue]) -> None:
-    """Narrow OOXML locator pass; Docling still supplies all structural content."""
-    from xml.etree import ElementTree as ET
-    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
-    with ZipFile(source.path) as package:
-        root = ET.fromstring(package.read("word/document.xml"))
-    body = root.find("w:body", ns)
-    if body is None:
-        issues.append(_issue(SourceFormat.DOCX, "missing_body", "OOXML document body missing", impact="document"))
-        return
-    blocks: list[tuple[str, str, bool]] = []
-    for n, block in enumerate(body):
-        tag = block.tag.rsplit("}", 1)[-1]
-        if tag not in {"p", "tbl"}:
-            continue
-        text = "".join(t.text or "" for t in block.findall(".//w:t", ns))
-        path = f"/document/body/{tag}[{n + 1}]"
-        paragraph_id = block.attrib.get("{http://schemas.microsoft.com/office/word/2010/wordml}paraId")
-        if paragraph_id:
-            path += f"#paraId={paragraph_id}"
-        blocks.append((text, path, block.find(".//{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}inline") is not None))
-    cursor = 0
-    for item in items:
-        if item.kind == "picture":
-            found = next((i for i in range(cursor, len(blocks)) if blocks[i][2]), None)
-            if found is None:
-                issues.append(_issue(SourceFormat.DOCX, "picture_locator_unresolved", "Cannot align Docling picture with OOXML drawing", item_ref=item.anchor))
-                item.locator = None
-            else:
-                item.locator = {"kind": "docx_block", "part": "word/document.xml", "path": blocks[found][1]}
-                item.anchor = f"word/document.xml:{blocks[found][1]}"
-                cursor = found + 1
-            continue
-        candidate = item.text if item.kind != "table" else "".join(str(c.get("value", "")) for row in item.cells for c in row)
-        found = next((i for i in range(cursor, len(blocks)) if candidate and
-                      (candidate == blocks[i][0] or candidate in blocks[i][0])), None)
-        if found is None:
-            issues.append(_issue(SourceFormat.DOCX, "locator_unresolved", "Cannot align Docling item with OOXML block", item_ref=item.anchor))
-            item.locator = None
-        else:
-            item.locator = {"kind": "docx_block", "part": "word/document.xml", "path": blocks[found][1]}
-            item.anchor = f"word/document.xml:{blocks[found][1]}"
-            cursor = found + 1
-
-
-def _xlsx_items(source: VerifiedSource, raw: dict[str, Any], issues: list[ParseIssue], *, native_fidelity: bool = False,
-                docling_only: bool = False) -> list[StructuralItem]:
+def _xlsx_items(source: VerifiedSource, raw: dict[str, Any], issues: list[ParseIssue]) -> list[StructuralItem]:
     from openpyxl import load_workbook
     workbook = load_workbook(source.path, read_only=False, data_only=False)
     cached = load_workbook(source.path, read_only=False, data_only=True)
@@ -558,10 +432,10 @@ def _xlsx_items(source: VerifiedSource, raw: dict[str, Any], issues: list[ParseI
     for sheet in workbook:
         if sheet.title not in docling_sheets:
             issues.append(_issue(SourceFormat.XLSX, "sheet_missing_in_docling", "Docling omitted workbook sheet", location=sheet.title, impact="sheet"))
+            continue
         items.append(StructuralItem("heading", f"sheet:{sheet.title}",
                                     {"kind": "spreadsheet_range", "sheet": sheet.title, "a1_range": "A1"},
                                     text=sheet.title, level=1))
-        covered: set[str] = set()
         docling_tables = [table for table in raw.get("tables", [])
                           if groups.get((table.get("parent") or {}).get("$ref")) == sheet.title]
         for table in docling_tables:
@@ -575,67 +449,28 @@ def _xlsx_items(source: VerifiedSource, raw: dict[str, Any], issues: list[ParseI
             if first_row < 1 or first_col < 1 or last_row < first_row or last_col < first_col or (last_row-first_row+1)*(last_col-first_col+1) > 100_000:
                 issues.append(_issue(SourceFormat.XLSX, "table_range_invalid", "Docling table range is invalid or exceeds 100000 cells", location=sheet.title, item_ref=table.get("self_ref")))
                 continue
-            rows = []
-            grid = table.get("data", {}).get("grid", [])
-            for row_number in range(first_row, last_row + 1):
-                row = []
-                for column_number in range(first_col, last_col + 1):
-                    cell = sheet.cell(row_number, column_number)
-                    covered.add(cell.coordinate)
-                    grid_row = row_number - first_row
-                    grid_col = column_number - first_col
-                    display = (grid[grid_row][grid_col].get("text")
-                               if grid_row < len(grid) and grid_col < len(grid[grid_row]) else None)
-                    row.append(_xlsx_cell(sheet, cached[sheet.title], cell, issues, display, native_fidelity=native_fidelity))
-                rows.append(row)
+            rows = _docling_cells(table)
+            for parsed in table.get("data", {}).get("table_cells", []):
+                r, c = parsed["start_row_offset_idx"], parsed["start_col_offset_idx"]
+                if not (0 <= r < len(rows) and 0 <= c < len(rows[r])
+                        and first_row + r <= last_row and first_col + c <= last_col):
+                    issues.append(_issue(SourceFormat.XLSX, "table_range_invalid",
+                        "Docling cell offset is outside its sheet range", item_ref=table.get("self_ref")))
+                    continue
+                cell = sheet.cell(first_row + r, first_col + c)
+                rows[r][c] = _xlsx_cell(sheet, cached[sheet.title], cell, issues, parsed.get("text"))
             start = sheet.cell(first_row, first_col).coordinate
             end = sheet.cell(last_row, last_col).coordinate
             a1 = start if start == end else f"{start}:{end}"
             items.append(StructuralItem("table", f"sheet:{sheet.title}:{a1}",
                                         {"kind": "spreadsheet_range", "sheet": sheet.title, "a1_range": a1}, cells=rows))
-        # Docling can omit isolated formulas/cells. Preserve each as a small
-        # source-fidelity fallback and mark the omission explicitly.
-        for cell in ([] if docling_only else list(sheet._cells.values())):
-            if cell.value is None or cell.coordinate in covered:
-                continue
-            issues.append(_issue(SourceFormat.XLSX, "cell_missing_in_docling", "Source cell was absent from Docling table ranges", location=f"{sheet.title}!{cell.coordinate}"))
-            items.append(StructuralItem("table", f"sheet:{sheet.title}:{cell.coordinate}",
-                                        {"kind": "spreadsheet_range", "sheet": sheet.title, "a1_range": cell.coordinate},
-                                        cells=[[_xlsx_cell(sheet, cached[sheet.title], cell, issues, native_fidelity=native_fidelity)]]))
-        for chart in ([] if native_fidelity or docling_only else sheet._charts):
-            anchor = getattr(chart, "anchor", None)
-            origin = getattr(anchor, "_from", None)
-            if origin is None:
-                issues.append(_issue(SourceFormat.XLSX, "chart_anchor_missing", "Chart has no source anchor", location=sheet.title))
-                continue
-            coordinate = sheet.cell(origin.row + 1, origin.col + 1).coordinate
-            locator = {"kind": "spreadsheet_range", "sheet": sheet.title, "a1_range": coordinate}
-            items.append(StructuralItem("chart", f"chart:{sheet.title}:{coordinate}", locator))
-            issues.append(_issue(SourceFormat.XLSX, "chart_not_interpreted", "Chart binary/data is not extracted", location=sheet.title))
-        for image in ([] if docling_only else sheet._images):
-            anchor = getattr(image.anchor, "_from", None)
-            if anchor is None:
-                issues.append(_issue(SourceFormat.XLSX, "image_anchor_missing", "Image has no source anchor", location=sheet.title))
-                continue
-            coordinate = sheet.cell(anchor.row + 1, anchor.col + 1).coordinate
-            locator = {"kind": "spreadsheet_range", "sheet": sheet.title, "a1_range": coordinate}
-            try:
-                data = image._data()
-            except (OSError, ValueError):
-                issues.append(_issue(SourceFormat.XLSX, "image_not_extracted", "Image binary could not be read", location=sheet.title))
-                continue
-            items.append(StructuralItem("picture", f"image:{sheet.title}:{coordinate}", locator,
-                                        asset_bytes=data, asset_mime=f"image/{image.format}"))
-    if native_fidelity:
-        from .native_office import xlsx_charts
-        items.extend(xlsx_charts(source, workbook, cached, issues))
     workbook.close()
     cached.close()
     return items
 
 
 def _xlsx_cell(sheet: Any, cached_sheet: Any, cell: Any, issues: list[ParseIssue],
-               display_text: str | None = None, *, native_fidelity: bool = False) -> dict[str, Any]:
+               display_text: str | None = None) -> dict[str, Any]:
     value = cell.value
     cache = cached_sheet[cell.coordinate].value
     formula = value if cell.data_type == "f" else None
@@ -644,21 +479,19 @@ def _xlsx_cell(sheet: Any, cached_sheet: Any, cell: Any, issues: list[ParseIssue
     merged = next((area for area in sheet.merged_cells.ranges if cell.coordinate in area), None)
     def json_value(item: Any) -> Any:
         return item.isoformat() if hasattr(item, "isoformat") else item
+    from .xlsx_format import display_value
+    literal = cache if formula else value
+    display_text = display_value(literal, cell.number_format, fallback=display_text)
     result = {"value": json_value(cache if formula else value), "formula": formula,
             "cached_value": json_value(cache) if formula else None, "display_text": display_text,
             "locator": {"kind": "spreadsheet_range", "sheet": sheet.title, "a1_range": cell.coordinate},
             "row_span": (merged.max_row - merged.min_row + 1) if merged and cell.row == merged.min_row and cell.column == merged.min_col else 1,
             "col_span": (merged.max_col - merged.min_col + 1) if merged and cell.row == merged.min_row and cell.column == merged.min_col else 1}
-    if native_fidelity:
-        result["source_attributes"] = {"data_type": cell.data_type, "number_format": cell.number_format,
-            "raw_value": json_value(value), "merged_range": str(merged) if merged else None,
-            "merge_covered": bool(merged and (cell.row != merged.min_row or cell.column != merged.min_col))}
     return result
 
 
 class DocumentParser:
-    def __init__(self, *, ocr_enabled: bool = False, native_fidelity: bool = False,
-                 profile: str = "A_current", remote: Any = None, bbox_tolerance: float = 0):
+    def __init__(self, *, profile: str = "C_tesseract", remote: Any = None, bbox_tolerance: float = 0):
         import math
 
         from .docling_profiles import validate_profile
@@ -668,8 +501,6 @@ class DocumentParser:
         self.profile = profile
         self.remote = remote
         self.bbox_tolerance = bbox_tolerance
-        self.ocr_enabled = ocr_enabled
-        self.native_fidelity = native_fidelity
 
     def parse(self, source: VerifiedSource, source_format: SourceFormat) -> StructuralParseResult:
         data = source.path.read_bytes()
@@ -683,21 +514,19 @@ class DocumentParser:
                 path = Path(directory) / "input.png"
                 path.write_bytes(prepared)
                 result = _docling(VerifiedSource(path, sha256(prepared).hexdigest(), len(prepared)), source_format,
-                                  ocr_enabled=self.ocr_enabled, image_metadata=metadata, native_fidelity=self.native_fidelity, profile=self.profile, remote=self.remote)
+                                  image_metadata=metadata, profile=self.profile, remote=self.remote)
             # Original binary is authoritative; prepared PNG is only OCR input.
             if result.status != "failed":
                 picture = next(i for i in result.items if i.anchor == "original-image")
                 picture.asset_bytes = data
         else:
             result = _txt(source) if source_format is SourceFormat.TXT else _docling(
-                source, source_format, ocr_enabled=self.ocr_enabled and source_format is SourceFormat.PDF,
-                native_fidelity=self.native_fidelity, profile=self.profile, remote=self.remote)
+                source, source_format, profile=self.profile, remote=self.remote)
         if source_format is SourceFormat.TXT:
             result.processing_options = {"encoding": "utf-8-sig", "paragraph_strategy": "exact-spans-v1"}
         if self.bbox_tolerance:
             result.processing_options["bbox_tolerance_points"] = self.bbox_tolerance
         from .docling_profiles import identity
         result.reading_profile = identity(self.profile, result.processing_options,
-                                          native_fidelity=self.native_fidelity and self.profile == "A_current",
                                           remote=self.remote)
         return result

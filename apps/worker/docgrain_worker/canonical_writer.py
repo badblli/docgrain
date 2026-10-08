@@ -34,8 +34,10 @@ def processing_spec(result: StructuralParseResult) -> ProcessingSpec:
             dependencies[package] = importlib.metadata.version(package)
         except importlib.metadata.PackageNotFoundError:
             dependencies[package] = "unavailable"
+    adapter = result.processing_options.get("adapter_version")
+    mapper = "docling-2" if adapter == "docling-2" else "n2-1" if adapter == "n2-1" else "m2a-1"
     return ProcessingSpec(parser=result.parser, parser_version=result.parser_version,
-                          mapper_version="n2-1" if result.processing_options.get("adapter_version") == "n2-1" else "m2a-1",
+                          mapper_version=mapper,
                           schema_version=result.processing_options.get("canonical_schema_version", "0.3.0"),
                           dependencies=dependencies,
                           options={"source_format": result.source_format.value, **result.processing_options,

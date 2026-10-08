@@ -1,5 +1,8 @@
 # ADR 0023 — Local CPU visual proposals and preserved uncertainty
 
+General document reader direction superseded by [ADR 0024 — Docling reads documents](0024-docling-reads-documents.md).
+This optional proposal API and human review/uncertainty contract remain; their transport migration is separate work.
+
 - Date: 2026-10-03
 - Status: experimental local runtime implemented; automatic semantic acceptance remains open.
 - Extends ADR 0020–0022. Normalization remains local; embedding follows N5.

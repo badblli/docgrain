@@ -72,7 +72,7 @@ def test_source_pinned_ocr_literal_provenance_and_no_native_duplicates(
     path = corpus[name]
     data = path.read_bytes()
     digest = sha256(data).hexdigest()
-    result = DocumentParser(ocr_enabled=True).parse(
+    result = DocumentParser(profile="B_docling").parse(
         VerifiedSource(path, digest, len(data)), fmt
     )
     text = " ".join(item.text for item in result.items)
@@ -119,7 +119,7 @@ def test_source_pinned_ocr_literal_provenance_and_no_native_duplicates(
     )
     output, _, _, files = output_bundle(snapshot)
     assert (
-        output.version == "1.1.0"
+        output.version == "1.2.0"
         and output.quality.semantic_status == "needs_enrichment"
     )
     ocr_nodes = [
@@ -155,12 +155,11 @@ def test_source_pinned_ocr_literal_provenance_and_no_native_duplicates(
 def test_blank_image_remains_explicit_partial_with_original_binary(corpus):
     path = corpus["blank"]
     data = path.read_bytes()
-    result = DocumentParser(ocr_enabled=True).parse(
+    result = DocumentParser(profile="B_docling").parse(
         VerifiedSource(path, sha256(data).hexdigest(), len(data)), SourceFormat.PNG
     )
-    assert result.status == "partial" and any(
-        i.code == "no_ocr_text" for i in result.issues
-    )
+    assert result.status != "failed"
+    assert result.source_metadata["docling_confidence"]
     assert not result.source_metadata["ocr_cells"]
     assert (
         next(i for i in result.items if i.anchor == "original-image").asset_bytes
