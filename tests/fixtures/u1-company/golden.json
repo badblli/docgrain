@@ -1,0 +1,102 @@
+{
+  "sources": {
+    "odalar.txt": {
+      "sha256": "AA66A42FB531E5F1BDDBC8235B5E4F2910F8D17762937F7DC38DD706506EC569"
+    },
+    "hizmetler.txt": {
+      "sha256": "528C43BC1509E873111C51B6FD7A5BA1711ABA8556949EB17C37B49DB09A6102"
+    }
+  },
+  "records": {
+    "bahce_odasi": {
+      "collection": "rooms",
+      "fields": {
+        "name": {
+          "expected": "Bahçe Odası",
+          "evidence": [
+            {
+              "document_name": "odalar.txt",
+              "locator": "line:2",
+              "quote": "Bahçe Odası"
+            },
+            {
+              "document_name": "hizmetler.txt",
+              "locator": "line:6",
+              "quote": "Bahçe Odası"
+            }
+          ]
+        },
+        "size": {
+          "expected": "32 m2",
+          "rejected": "36 m2",
+          "evidence": [
+            {
+              "document_name": "odalar.txt",
+              "locator": "line:3",
+              "quote": "Büyüklük: 32 m2"
+            }
+          ],
+          "rejected_evidence": [
+            {
+              "document_name": "hizmetler.txt",
+              "locator": "line:7",
+              "quote": "Büyüklük: 36 m2"
+            }
+          ]
+        },
+        "capacity": {
+          "expected": "2",
+          "evidence": [
+            {
+              "document_name": "odalar.txt",
+              "locator": "line:4",
+              "quote": "Kapasite: 2 kişi"
+            },
+            {
+              "document_name": "hizmetler.txt",
+              "locator": "line:8",
+              "quote": "Kapasite: 2 kişi"
+            }
+          ]
+        }
+      }
+    },
+    "danisma": {
+      "collection": "services",
+      "fields": {
+        "name": {
+          "expected": "Danışma",
+          "evidence": [
+            {
+              "document_name": "hizmetler.txt",
+              "locator": "line:2",
+              "quote": "Danışma"
+            }
+          ]
+        },
+        "hours": {
+          "expected": "08:00–20:00",
+          "evidence": [
+            {
+              "document_name": "hizmetler.txt",
+              "locator": "line:3",
+              "quote": "Çalışma saatleri: 08:00–20:00"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "questions": [
+    {
+      "question": "Bahçe Odası kaç metrekare ve kaç kişilik?",
+      "expected_answers": ["32 m2", "2 kişi"],
+      "expected_evidence_quotes": ["Büyüklük: 32 m2", "Kapasite: 2 kişi"]
+    },
+    {
+      "question": "2035 gecelik fiyatı nedir?",
+      "expected_answers": ["Bilmiyorum."],
+      "expected_evidence_quotes": []
+    }
+  ]
+}

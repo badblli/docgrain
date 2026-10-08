@@ -1,2 +1,4 @@
 # Shell scripts must keep LF so bash runs them in every checkout and worktree.
 *.sh text eol=lf
+# Golden fixtures are pinned by SHA-256: keep their bytes identical on every checkout.
+tests/fixtures/u1-company/** -text
