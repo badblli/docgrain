@@ -71,6 +71,7 @@ class CanonicalMapper:
         section_stack: list[SectionNode] = []
         previous_list: ListNode | None = None
         previous_part = None
+        ocr_engine = result.processing_options.get("ocr_profile", {}).get("engine", "easyocr")
         native_profile = result.processing_options.get("adapter_version") == "n2-1"
         native_office = native_profile and result.source_format.value in {"docx", "xlsx"}
         native_pdf = native_profile and result.source_format.value == "pdf"
@@ -84,7 +85,8 @@ class CanonicalMapper:
                     previous_part = part
                 if item.kind == "picture" and (not item.asset_bytes or not item.asset_path):
                     continue
-                locator = _locator(item.locator, item.page_size, pdf)
+                tolerance = result.processing_options.get("bbox_tolerance_points", 0)
+                locator = _locator(item.locator, item.page_size, pdf, tolerance_points=tolerance)
                 if item.locator and locator is None:
                     issues.append(asdict(ParseIssue("locator_unresolved", "canonical_mapping", result.source_format,
                                                     str(item.locator.get("page_number") or item.locator.get("sheet")),
@@ -108,7 +110,7 @@ class CanonicalMapper:
                     issues.append(asdict(ParseIssue("identity_unresolved", "canonical_mapping", result.source_format,
                                                     None, item.anchor, "No stable source anchor", "item")))
                     continue
-                annotation = _extraction_annotation(item.text_origin, item.ocr_confidence, [evidence_id] if evidence_id else [])
+                annotation = _extraction_annotation(item.text_origin, item.ocr_confidence, [evidence_id] if evidence_id else [], engine=ocr_engine)
                 if native_office:
                     annotation.provenance.producer_id = "producer-native-ooxml"
                     annotation.provenance.method = "source"
@@ -160,7 +162,7 @@ class CanonicalMapper:
                             mapped_row = []
                             for cell in row:
                                 cell_evidence_id = None
-                                cell_locator = _locator(cell.get("locator"), item.page_size, pdf)
+                                cell_locator = _locator(cell.get("locator"), item.page_size, pdf, tolerance_points=tolerance)
                                 if cell_locator is not None:
                                     cell_key = f"{source.id}:{cell_locator.model_dump_json()}"
                                     cell_evidence_id = f"evidence_{sha256(cell_key.encode()).hexdigest()[:32]}"
@@ -173,7 +175,7 @@ class CanonicalMapper:
                                     row_span=cell.get("row_span", 1), col_span=cell.get("col_span", 1),
                                     source_attributes=cell.get("source_attributes"),
                                     annotation=_extraction_annotation(cell.get("text_origin", "native"), cell.get("ocr_confidence"),
-                                                                      [cell_evidence_id]) if cell_evidence_id else None,
+                                                                      [cell_evidence_id], engine=ocr_engine) if cell_evidence_id else None,
                                 ))
                                 if native_office and mapped_row[-1].annotation:
                                     mapped_row[-1].annotation.provenance.producer_id = "producer-native-ooxml"
@@ -212,7 +214,9 @@ class CanonicalMapper:
         producers = [Producer(id=producer_id, name=result.parser, version=result.parser_version,
                               configuration_digest=processing.digest if processing else None)]
         if result.processing_options.get("ocr_profile"):
-            producers.append(Producer(id="producer-easyocr", name="Docling + EasyOCR (literal OCR / mixed native+OCR)", version="1.7.2",
+            producers.append(Producer(id=f"producer-{ocr_engine}",
+                                      name="Docling + EasyOCR (literal OCR / mixed native+OCR)" if ocr_engine == "easyocr" else "Docling + Tesseract (literal OCR / mixed native+OCR)",
+                                      version="1.7.2" if ocr_engine == "easyocr" else result.processing_options["ocr_profile"].get("version", "system"),
                                       configuration_digest=processing.digest if processing else None))
         if native_office:
             producers.append(Producer(id="producer-native-ooxml", name="Native OOXML (literal parts/cells/chart references)",
@@ -234,7 +238,9 @@ class CanonicalMapper:
             metadata={"structural_parse": {"coverage": coverage, "issues": issues,
                                            "source_format": result.source_format.value,
                                            "parser": result.parser, "parser_version": result.parser_version},
-                      **({"source_extraction": result.source_metadata} if result.processing_options.get("adapter_version") in {"n1-1", "n2-1"} else {})},
+                      **({"source_extraction": result.source_metadata} if result.processing_options.get("adapter_version") in {"n1-1", "n2-1"} else {}),
+                      **({"docling_confidence": result.source_metadata["docling_confidence"]}
+                         if "docling_confidence" in result.source_metadata else {})},
         )
 
 
@@ -243,23 +249,24 @@ def _annotation(producer_id: str, evidence_ids: list[str]) -> Annotation:
                                             evidence_ids=evidence_ids))
 
 
-def _extraction_annotation(origin: str, confidence: float | None, evidence_ids: list[str]) -> Annotation:
-    annotation = _annotation("producer-easyocr" if origin in {"ocr", "mixed"} else "producer-structural-parser", evidence_ids)
+def _extraction_annotation(origin: str, confidence: float | None, evidence_ids: list[str], *, engine: str = "easyocr") -> Annotation:
+    annotation = _annotation(f"producer-{engine}" if origin in {"ocr", "mixed"} else "producer-structural-parser", evidence_ids)
     if origin in {"ocr", "mixed"}:
         annotation.provenance.confidence = confidence
-        annotation.provenance.confidence_method = f"easyocr-recognition-min:{origin}"
+        annotation.provenance.confidence_method = f"{engine}-recognition-min:{origin}"
     return annotation
 
 
 def _locator(raw: dict[str, Any] | None, size: tuple[float, float] | None,
-             pdf: pymupdf.Document | None) -> Any | None:
+             pdf: pymupdf.Document | None, *, tolerance_points: float = 0) -> Any | None:
     if raw is None:
         return None
     if raw["kind"] == "pdf_raw":
         number = raw["page_number"]
         if pdf is None or number < 1 or number > len(pdf):
             return None
-        box = normalized_pdf_box(raw.get("bbox"), size or (0, 0), pdf[number - 1], frame=raw.get("frame"))
+        box = normalized_pdf_box(raw.get("bbox"), size or (0, 0), pdf[number - 1], frame=raw.get("frame"),
+                                 tolerance_points=tolerance_points)
         return PdfPageLocator(page_number=number, bbox=box)
     if raw["kind"] == "pdf_native":
         if pdf is None or not 1 <= raw["page_number"] <= len(pdf):
