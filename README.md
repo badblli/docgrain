@@ -7,8 +7,9 @@
 
 <p align="center">
   <b>Your company's shared memory, with every source attached.</b><br>
-  Docgrain turns company documents into versioned, source-linked collections that your AI, apps and
-  website can trust. Conflicts are asked, never guessed.
+  Docgrain turns scattered company documents into one trusted, versioned source of knowledge for AI
+  and applications. Conflicts are asked, never guessed. Reading documents is left to
+  <a href="https://github.com/docling-project/docling">Docling</a>; Docgrain is the knowledge layer on top.
 </p>
 
 <p align="center">

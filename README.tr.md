@@ -7,8 +7,9 @@
 
 <p align="center">
   <b>Şirketinizin ortak hafızası, kaynağıyla birlikte.</b><br>
-  Docgrain şirket belgelerini yapay zekanızın, uygulamalarınızın ve web sitenizin güvenebileceği,
-  sürümlü ve kaynağa bağlı koleksiyonlara dönüştürür. Çelişki sorulur, tahmin edilmez.
+  Docgrain dağınık şirket belgelerini yapay zeka ve uygulamalar için güvenilir, sürümlü ve ortak bir
+  bilgi kaynağına dönüştürür. Çelişki sorulur, tahmin edilmez. Belgeleri okumak
+  <a href="https://github.com/docling-project/docling">Docling</a>'in işi; Docgrain üstündeki bilgi katmanıdır.
 </p>
 
 <p align="center">
