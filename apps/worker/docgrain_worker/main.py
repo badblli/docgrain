@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from contextlib import closing
 from dataclasses import dataclass
@@ -436,9 +437,19 @@ def process(job_id: str) -> None:
 
 
 def run() -> None:
+    from docgrain_api.records_jobs import QUEUE_NAME as RECORDS_QUEUE
+
+    from .records_pipeline import supervise
+
     client = redis.Redis.from_url(os.environ["REDIS_URL"], decode_responses=True, socket_timeout=None)
     while True:
-        _, job_id = client.brpop(QUEUE_NAME, timeout=0)
+        queue, job_id = client.brpop([QUEUE_NAME, RECORDS_QUEUE], timeout=0)
+        if queue == RECORDS_QUEUE:
+            try:
+                supervise(job_id)
+            except Exception:  # noqa: BLE001 - GET fences stale jobs when storage is available again.
+                logging.getLogger(__name__).error("record supervisor stopped (worker_stale)")
+            continue
         with closing(psycopg.connect(db_url())) as conn, conn.cursor() as cur:
             cur.execute("UPDATE jobs SET status='running', started_at=COALESCE(started_at, NOW()) WHERE id=%s AND status='queued'", (job_id,))
             claimed = cur.rowcount == 1

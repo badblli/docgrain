@@ -15,6 +15,7 @@ COPY apps/api/pyproject.toml /srv/apps/api/pyproject.toml
 COPY packages/domain/pyproject.toml /srv/packages/domain/pyproject.toml
 COPY packages/evaluation/pyproject.toml /srv/packages/evaluation/pyproject.toml
 COPY packages/records/pyproject.toml /srv/packages/records/pyproject.toml
+COPY packages/access /srv/packages/access
 COPY packages/records/taxonomy.json /srv/packages/records/taxonomy.json
 RUN mkdir -p /srv/packages/evaluation/docgrain_eval     && touch /srv/packages/evaluation/docgrain_eval/__init__.py     && mkdir -p /srv/packages/records/docgrain_records     && touch /srv/packages/records/docgrain_records/__init__.py     && mkdir -p /srv/apps/worker/docgrain_worker \
     && touch /srv/apps/worker/docgrain_worker/__init__.py \
@@ -23,7 +24,7 @@ RUN mkdir -p /srv/packages/evaluation/docgrain_eval     && touch /srv/packages/e
     && mkdir -p /srv/packages/domain/docgrain_domain \
     && touch /srv/packages/domain/docgrain_domain/__init__.py
 RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch torchvision \
-    && pip install --no-cache-dir -e /srv/packages/domain -e /srv/packages/evaluation -e /srv/packages/records -e /srv/apps/api -e /srv/apps/worker
+    && pip install --no-cache-dir -e /srv/packages/domain -e /srv/packages/evaluation -e /srv/packages/records -e /srv/packages/access -e /srv/apps/api -e /srv/apps/worker
 
 # Keep application code in a separate layer so source edits reuse the heavy
 # Torch and Docling dependency layer above.

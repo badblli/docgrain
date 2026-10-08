@@ -68,6 +68,10 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+    # Optional local server credentials, including arbitrary profile api_key_env names.
+    env_file:
+      - path: .env
+        required: false
     environment:
       DOCGRAIN_ENV: ${DOCGRAIN_ENV:-development}
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://docgrain:change-me-locally@postgres:5432/docgrain}
@@ -84,6 +88,8 @@ services:
       USE_FIXTURES: ${USE_FIXTURES:-false}
       CANONICAL_PERSISTENCE_ENABLED: ${CANONICAL_PERSISTENCE_ENABLED:-true}
       RECORDS_PUBLICATION_ROOT: ${RECORDS_PUBLICATION_ROOT:-/srv/storage/records}
+      # Inherit when supplied; otherwise Settings keeps its empty {} default.
+      DOCGRAIN_MODEL_CREDENTIAL_PROFILES:
     volumes:
       - ./storage/records:/srv/storage/records:rw
     ports:
@@ -122,6 +128,9 @@ services:
     build:
       context: .
       dockerfile: apps/worker/Dockerfile
+    env_file:
+      - path: .env
+        required: false
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://docgrain:change-me-locally@postgres:5432/docgrain}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
@@ -135,6 +144,12 @@ services:
       DOCGRAIN_OCR_ENABLED: ${DOCGRAIN_OCR_ENABLED:-true}
       DOCGRAIN_NATIVE_FIDELITY_ENABLED: ${DOCGRAIN_NATIVE_FIDELITY_ENABLED:-true}
       DOCGRAIN_REMOTE_VISION_ENABLED: ${DOCGRAIN_REMOTE_VISION_ENABLED:-false}
+      USE_FIXTURES: ${USE_FIXTURES:-false}
+      DOCGRAIN_INTERNAL_API_URL: http://api:8000
+      RECORDS_PUBLICATION_ROOT: ${RECORDS_PUBLICATION_ROOT:-/srv/storage/records}
+      DOCGRAIN_MODEL_CREDENTIAL_PROFILES:
+    volumes:
+      - ./storage/records:/srv/storage/records:rw
     restart: unless-stopped
     depends_on:
       api:

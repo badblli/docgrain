@@ -26,10 +26,12 @@ def list_revisions(workspace_id: str):
 
 
 def repository():
+    from ..records_jobs import block_answer
+
     root = get_settings().records_publication_root
     if not root:
         raise HTTPException(404, "record publications unavailable")
-    return RecordsRepository(root)
+    return RecordsRepository(root, before_answer=block_answer)
 
 
 def _review_response(operation, workspace_id, *args, **kwargs):
