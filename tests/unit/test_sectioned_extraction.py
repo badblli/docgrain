@@ -324,7 +324,7 @@ def test_repeated_table_header_cannot_manufacture_a_source_quotation():
         # this combined quote never occurs in the original block.
         first = int(re.search(r"\| Service (\d+) \|", context).group(1))
         return response([candidate("service_price", name=[fact(f"Service {first}", "§1")],
-                                   conditions=[fact("stated conditions", "§1", header + rows[first])])])
+                                   conditions=[fact(f"Service {first}", "§1", header + rows[first])])])
 
     result = run(source, handler, focused_passes=False)
     assert len(result.records) > 1 and not result.failures

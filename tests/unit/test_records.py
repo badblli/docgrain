@@ -215,7 +215,7 @@ def test_nfkc_whitespace_and_locator_variants(locator):
     result = run_fake([candidate(name=[fact("Standard room")],
                                  size_m2=[fact(32, "32 m2", locator=locator)])], context=context)
     assert result.records[0].size_m2.value == 32
-    assert result.records[0].size_m2.evidence[0].quote == "32 m2"
+    assert result.records[0].size_m2.evidence[0].quote == "Standard room: 32 m2"
     assert not result.rejected
 
 

@@ -176,7 +176,8 @@ class RejectedField(StrictModel):
     record_type: str
     field: str
     lang: str
-    reason: Literal["quote_not_found", "document_mismatch", "locator_not_found", "duplicate_language"]
+    reason: Literal["quote_not_found", "document_mismatch", "locator_not_found", "duplicate_language",
+                    "bare_value_quote", "value_not_in_quote"]
     evidence: list[Evidence]
 
 
