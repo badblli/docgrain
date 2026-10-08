@@ -99,6 +99,30 @@ test("a second-file error preserves the successful document and retries only tha
   assert.equal(backend.calls.filter(call => call.url.endsWith("/content/1")).length, 1);
   assert.equal(backend.calls.filter(call => call.url.endsWith("/content/2")).length, 2);
 });
+test("a first-file failure releases the serial queue and retry leaves successful files alone", async () => {
+  let broken = true;
+  const backend = server(url => broken && url.endsWith("/content/1")), worker = queue(backend, { concurrency: 1 });
+  worker.add([file("rooms.txt"), file("services.txt"), file("policies.txt")]);
+  await until(() => worker.uploaded.length === 2);
+  const failed = worker.states.get("upload-1");
+  assert.equal(failed.phase, "error");
+  assert.equal(failed.fileName, "rooms.txt");
+  assert.deepEqual(worker.uploaded.map(item => item.document.filename), ["services.txt", "policies.txt"]);
+  assert.equal(worker.states.get("upload-2").phase, "queued");
+  assert.equal(worker.states.get("upload-3").phase, "queued");
+  assert.equal(backend.calls.filter(call => call.url.endsWith("/documents")).length, 3);
+  assert.equal(backend.calls.some(call => call.url.includes("/doc-1/") && call.url.endsWith("/uploaded")), false);
+
+  broken = false; worker.retry(failed.id); worker.retry(failed.id);
+  await until(() => worker.uploaded.length === 3);
+  assert.equal(worker.states.get(failed.id).phase, "queued");
+  assert.equal(backend.records.size, 3);
+  assert.equal(backend.calls.filter(call => call.url.endsWith("/documents")).length, 3);
+  assert.equal(backend.calls.filter(call => call.url.endsWith("/content/1")).length, 2);
+  assert.equal(backend.calls.filter(call => call.url.endsWith("/content/2")).length, 1);
+  assert.equal(backend.calls.filter(call => call.url.endsWith("/content/3")).length, 1);
+});
+
 test("confirmation retry reuses registration and already stored bytes", async () => {
   let broken = true;
   const backend = server(url => broken && url.endsWith("/uploaded")), worker = queue(backend);
@@ -352,6 +376,14 @@ test("localized discovered labels take priority and known/unknown key fallbacks 
   assert.equal(labels.getFieldLabel("capacity", "capacity"), "Kapasite");
   assert.equal(labels.getFieldLabel("example_field").includes("_"), false);
 });
+test("empty and unknown keys have readable labels even with repeated separators", () => {
+  assert.equal(labels.humanizeKey(""), "");
+  assert.equal(labels.getFieldLabel("  CUSTOM__field--name  "), "Custom field name");
+  assert.equal(labels.getCollectionLabel("custom-collection"), "Custom collection");
+  assert.equal(labels.displayCollectionLabel("rooms", "  "), "Odalar");
+  assert.equal(labels.getFieldLabel("capacity", null), "Kapasite");
+});
+
 test("stage counts, schema review and timeout are honest terminal presentations", () => {
   const { RecordJobProgress } = evaluate("../../apps/web/app/components/record-job-progress.tsx", { react: React, "@/components/ui/card": { Card: element("section") } });
   const markup = status => renderToStaticMarkup(React.createElement(RecordJobProgress, { job: { ...job("ws-a", status), error_code: "stage_timeout" }, error: "" }));
