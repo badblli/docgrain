@@ -2,6 +2,7 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 ENV DOCGRAIN_OCR_MODEL_DIR=/opt/docgrain/easyocr OMP_NUM_THREADS=2 MKL_NUM_THREADS=2
+ENV DOCGRAIN_DOCLING_MODEL_DIR=/opt/docling-models
 WORKDIR /srv
 
 RUN apt-get update \
@@ -27,6 +28,11 @@ RUN mkdir -p /srv/packages/evaluation/docgrain_eval     && touch /srv/packages/e
 RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch torchvision \
     && pip install --no-cache-dir -e /srv/packages/domain -e /srv/packages/evaluation -e /srv/packages/records -e /srv/packages/access -e /srv/apps/api -e /srv/apps/worker
 
+# Download only the pinned CPU artifacts used by the local reading profiles.
+# Keep this layer independent of other application edits and runtime HF caches.
+COPY apps/worker/docgrain_worker/docling_models.py /srv/apps/worker/docgrain_worker/docling_models.py
+RUN python -m docgrain_worker.docling_models --download
+
 # Keep application code in a separate layer so source edits reuse the heavy
 # Torch and Docling dependency layer above.
 COPY apps/worker/docgrain_worker /srv/apps/worker/docgrain_worker
@@ -37,5 +43,7 @@ COPY packages/records /srv/packages/records
 
 # Fetch verified CRAFT/Latin checkpoints at build time; runtime never downloads OCR weights.
 RUN python -m docgrain_worker.ocr --download
+
+ENV HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 
 CMD ["python", "-m", "docgrain_worker.main"]
