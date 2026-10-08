@@ -70,3 +70,16 @@ nothing leaves the machine.
       ruff clean; `tsc` 0; existing web tests green.
 - [ ] Report (Turkish): files changed, the env variables the lead must wire, how to run `reread` on a real
       workspace, risks.
+
+## Rescope after decision 18 (lead, 2026-10-08) — read before you continue
+
+WP100 made Docling + Tesseract the default reader and deleted `vision.py`. The Docling confidence report now
+drives hard-page codes. Rework this WP on top of `origin/dev`:
+- Keep: the per-document reading report and its Belgeler display; hard-page selection, page budget and resume.
+- Signal: hard pages come from the Docling confidence report (low/poor grade) plus image files and text-less pages.
+- Transport: no own HTTP client. Use Docling's remote options with the workspace model
+  (`resolve_workspace_model`): `PictureDescriptionApiOptions` for pictures and the VLM pipeline with
+  `ApiVlmOptions` (`page_range` per hard page) for hard pages; `enable_remote_services` only when the workspace
+  model is on (decision 17). Gemini returns Markdown, so provenance stays page-level.
+- Results stay separate, unapproved page-level content with provenance (model, page, image hash) until review.
+- Measure with `benchmarks/docling_profiles.py` profile `E_vlm` (the lead runs it with a real key).
