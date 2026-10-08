@@ -158,13 +158,20 @@ def _docling(source: VerifiedSource, fmt: SourceFormat, *,
     is_image = fmt in (SourceFormat.PNG, SourceFormat.JPEG)
     ocr_enabled = fmt is SourceFormat.PDF or is_image
     full_page = default_full_page(source, fmt) if profile == "C_tesseract" else False
-    converter, input_format = build_converter(fmt, profile=profile, full_page=full_page, remote=remote)
+    from .image_budget import render_settings
+    images_scale, raster_budget = render_settings(source, fmt, image_metadata)
+    raster_events = []
+    converter, input_format = build_converter(fmt, profile=profile, full_page=full_page,
+                                             remote=remote, images_scale=images_scale,
+                                             raster_events=raster_events)
     processing_options = {
         "pipeline": safe_options(converter.format_to_options[input_format].pipeline_options.model_dump(mode="json")),
         "adapter_version": "docling-2", "canonical_schema_version": "0.6.0",
         "formula_evaluation": False, "ocr_routing": "file-text-layer-v1",
         "xlsx_display_format": "number-date-percent-v1",
     }
+    if raster_budget:
+        processing_options["image_budget"] = raster_budget
     if ocr_enabled or is_image:
         if ocr_enabled:
             from .docling_models import LAYOUT, MODELS, TABLEFORMER
@@ -197,6 +204,20 @@ def _docling(source: VerifiedSource, fmt: SourceFormat, *,
     raw = converted.document.export_to_dict()
     pages = raw.get("pages", {})
     issues: list[ParseIssue] = []
+    for event in raster_events:
+        # Image inputs: capping Docling's 3x OCR upscale is not a loss against the source
+        # pixels; only the source downscale below is reported for them.
+        if is_image and image_metadata and max(event["used_size"]) >= max(
+                image_metadata["input_width_px"], image_metadata["input_height_px"]) - 1:
+            continue
+        issues.append(_issue(fmt, "image_downscaled",
+            f"Okuma görseli küçültüldü: özgün {event['original_size']} piksel; kullanılan {event['used_size']} piksel",
+            location=f"page:{event['page_number']}" if fmt is SourceFormat.PDF else "image", impact="page"))
+    if image_metadata and image_metadata.get("downscaled"):
+        issues.append(_issue(fmt, "image_downscaled",
+            f"Görsel küçültüldü: özgün {image_metadata['width_px']}x{image_metadata['height_px']} piksel; "
+            f"kullanılan {image_metadata['input_width_px']}x{image_metadata['input_height_px']} piksel",
+            location="image", impact="document"))
     items: list[StructuralItem] = []
     expected: list[str] = []
     if fmt is SourceFormat.PDF:
@@ -309,6 +330,7 @@ def _docling(source: VerifiedSource, fmt: SourceFormat, *,
     result = StructuralParseResult(fmt, "docling", version, status, items, expected, processed, issues,
                                    {"docling_status": str(converted.status), "pages": pages},
                                    processing_options=processing_options)
+    result.source_metadata["raster_preparation"] = raster_events
     if ocr_enabled or is_image:
         result.source_metadata.update({"ocr_cells": ocr_cells, "image_preparation": image_metadata})
     result.reading_profile = identity(profile, processing_options, remote=remote)
@@ -528,6 +550,24 @@ class DocumentParser:
             if result.status != "failed":
                 picture = next(i for i in result.items if i.anchor == "original-image")
                 picture.asset_bytes = data
+        elif source_format is SourceFormat.PDF:
+            from .image_budget import prepare_pdf, restore_pdf_geometry
+            with TemporaryDirectory(prefix="docgrain-pdf-") as directory:
+                path = Path(directory) / "input.pdf"
+                geometry = prepare_pdf(source.path, path)
+                parse_source = source
+                if geometry:
+                    prepared = path.read_bytes()
+                    parse_source = VerifiedSource(path, sha256(prepared).hexdigest(), len(prepared))
+                result = _docling(parse_source, source_format, profile=self.profile, remote=self.remote)
+                if geometry:
+                    restore_pdf_geometry(result, geometry)
+                    for number, transform in geometry.items():
+                        result.issues.append(_issue(source_format, "image_downscaled",
+                            f"Sayfa küçültüldü: özgün boyut {transform['original_size']}; kullanılan boyut {transform['used_size']}",
+                            location=f"page:{number}", impact="page"))
+                    if result.status != "failed":
+                        result.status = "partial"
         else:
             result = _txt(source) if source_format is SourceFormat.TXT else _docling(
                 source, source_format, profile=self.profile, remote=self.remote)

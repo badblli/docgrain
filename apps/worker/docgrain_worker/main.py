@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
+import time
 from contextlib import closing
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -19,18 +21,19 @@ from urllib.parse import urlparse
 
 import psycopg
 import redis
+from docgrain_api import document_jobs
 from docgrain_api.canonical_repository import CanonicalRepository
 from docgrain_domain.canonical import SourceVersion
 from docgrain_domain.canonical.lifecycle import source_revision_id
-from docgrain_domain.source_format import SourceFormat, declared_format, verify_format
+from docgrain_domain.source_format import SourceFormat, declared_format
 from minio import Minio
 
 from .canonical_assets import store_asset
 from .canonical_writer import persist_structural, processing_spec
+from .conversion_guard import WorkerCrash, convert
 from .output_writer import publish_outputs
 from .quality import page_failures
 from .structural import (
-    DocumentParser,
     VerifiedSource,
 )
 
@@ -115,10 +118,17 @@ def stage_update(
     return stages
 
 
-def fail(job_id: str, message: str, failed_stage: str = "extract") -> None:
+def fail(job_id: str, message: str, failed_stage: str = "extract", *,
+         code: str | None = None, token: str | None = None) -> None:
     with closing(psycopg.connect(db_url())) as conn, conn.cursor() as cur:
-        cur.execute("SELECT document_version_id, stages FROM jobs WHERE id = %s", (job_id,))
-        version_id, stages = cur.fetchone()
+        cur.execute("""SELECT document_version_id, stages FROM jobs WHERE id = %s AND status='running'
+            AND (%s IS NULL OR run_token=%s) FOR UPDATE""", (job_id, token, token))
+        row = cur.fetchone()
+        if row is None:
+            return
+        version_id, stages = row
+        if code:
+            stages = document_jobs.failure_stages(stages, code, message, failed_stage)
         cur.execute("UPDATE jobs SET status='failed', stages=%s::jsonb, finished_at=NOW() WHERE id=%s", (json.dumps(stage_update(stages, message, failed_stage=failed_stage)), job_id))
         cur.execute("UPDATE document_versions SET status='failed' WHERE id=%s", (version_id,))
         conn.commit()
@@ -140,13 +150,39 @@ def publish_page_images(result, prefix: str, bucket: str) -> None:
                       content_type="application/json")
 
 
-def process(job_id: str) -> None:
+def _progress(job_id: str, token: str) -> None:
+    with psycopg.connect(db_url()) as conn:
+        if not document_jobs.progress(conn, job_id, token):
+            raise WorkerCrash("Bu okuma denemesi sona erdi.")
+
+
+def _lease_active(job_id: str, token: str) -> None:
+    with psycopg.connect(db_url()) as conn, conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM jobs WHERE id=%s AND status='running' AND run_token=%s", (job_id, token))
+        if cur.fetchone() is None:
+            raise WorkerCrash("Bu okuma denemesi sona erdi.")
+
+
+def _lease_tick(job_id: str, token: str, every: float = 30.0):
+    """Check the lease while the child converts, at most every `every` seconds."""
+    last = time.monotonic()
+
+    def tick() -> None:
+        nonlocal last
+        if time.monotonic() - last >= every:
+            last = time.monotonic()
+            _lease_active(job_id, token)
+
+    return tick
+
+
+def process(job_id: str, token: str) -> None:
     with closing(psycopg.connect(db_url())) as conn, conn.cursor() as cur:
         cur.execute("""SELECT j.document_version_id, j.document_id, j.stages,
                              d.filename, d.mime_type, d.workspace_id, v.byte_size, v.content_sha256, v.source_uri
                       FROM jobs j JOIN documents d ON d.id=j.document_id
                       JOIN document_versions v ON v.id=j.document_version_id
-                      WHERE j.id=%s AND j.status='running'""", (job_id,))
+                      WHERE j.id=%s AND j.status='running' AND j.run_token=%s""", (job_id, token))
         row = cur.fetchone()
     if row is None:
         return
@@ -172,14 +208,15 @@ def process(job_id: str) -> None:
                 raise ValueError("source byte size differs from registration")
             if expected_sha != "0" * 64 and expected_sha != content_hash:
                 raise ValueError("source SHA-256 differs from registration")
-            verify_format(source_bytes, source_format)
+            _progress(job_id, token)
             canonical_repository = CanonicalRepository(lambda: psycopg.connect(db_url()))
             expected_head = None
             if os.getenv("CANONICAL_PERSISTENCE_ENABLED", "false").lower() == "true":
                 heads = canonical_repository.get_heads(document_id)
                 expected_head = heads[0] if heads else None
-            structural = DocumentParser().parse(
-                VerifiedSource(source, content_hash, len(source_bytes)), source_format)
+            structural = convert(VerifiedSource(source, content_hash, len(source_bytes)), source_format,
+                                 tick=_lease_tick(job_id, token))
+            _progress(job_id, token)
             prefix = f"artifacts/{document_id}/{version_id}"
             if structural.status == "failed":
                 raise ValueError("structural parser failed: " + "; ".join(i.reason for i in structural.issues))
@@ -244,6 +281,7 @@ def process(job_id: str) -> None:
                         raise ValueError("Docling extraction artifact unavailable")
                     client.put_object(bucket, f"{prefix}/{name}", BytesIO(data), len(data), content_type=mime)
             if canonical_persisted:
+                _progress(job_id, token)
                 active_stage = "publish"
                 output, publication, _ = publish_outputs(canonical_repository,snapshot,client,bucket)
                 outputs_published = True
@@ -251,6 +289,10 @@ def process(job_id: str) -> None:
                 output_revision_id = publication.revision.id
             final_status = "partial" if failures or structural_issues or not canonical_persisted else "done"
         with closing(psycopg.connect(db_url())) as conn, conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM jobs WHERE id=%s AND status='running' AND run_token=%s FOR UPDATE",
+                        (job_id, token))
+            if cur.fetchone() is None:
+                return
             cur.execute(
                 """UPDATE document_versions
                 SET status=%s, parser=%s, vision_provider=%s, content_sha256=%s,
@@ -296,8 +338,28 @@ def process(job_id: str) -> None:
                 ),
             )
             conn.commit()
+    except WorkerCrash as exc:
+        fail(job_id, str(exc), active_stage, code="worker_crash", token=token)
     except Exception as exc:  # noqa: BLE001 - pipeline must persist unexpected provider failures.
-        fail(job_id, str(exc)[:1000], active_stage)
+        fail(job_id, str(exc)[:1000], active_stage, token=token)
+
+
+def recover_jobs(client) -> None:
+    with psycopg.connect(db_url()) as conn:
+        queued = document_jobs.recover(conn, stale_seconds=int(os.getenv("DOCGRAIN_JOB_STALE_SECONDS", "900")))
+    for job_id in queued:
+        client.lpush(QUEUE_NAME, job_id)
+
+
+def recovery_loop(client, stop):
+    interval = float(os.getenv("DOCGRAIN_JOB_RECOVERY_INTERVAL_SECONDS", "60"))
+    if interval <= 0:
+        raise ValueError("recovery interval must be positive")
+    while not stop.wait(interval):
+        try:
+            recover_jobs(client)
+        except Exception:  # noqa: BLE001 - leave durable recovery pending; do not log credentials.
+            logging.getLogger(__name__).error("document job recovery deferred")
 
 
 def run() -> None:
@@ -309,6 +371,15 @@ def run() -> None:
     from .records_pipeline import supervise
 
     client = redis.Redis.from_url(os.environ["REDIS_URL"], decode_responses=True, socket_timeout=None)
+    with psycopg.connect(db_url()) as conn:
+        document_jobs.initialize(conn)
+    if float(os.getenv("DOCGRAIN_CONVERSION_TIMEOUT_SECONDS", "600")) >= float(
+            os.getenv("DOCGRAIN_JOB_STALE_SECONDS", "900")):
+        logging.getLogger(__name__).warning(
+            "conversion timeout should stay below the stale job limit; long conversions may be re-queued")
+    recover_jobs(client)
+    stop = threading.Event()
+    threading.Thread(target=recovery_loop, args=(client, stop), daemon=True).start()
     while True:
         queue, job_id = client.brpop([QUEUE_NAME, RECORDS_QUEUE], timeout=0)
         if queue == RECORDS_QUEUE:
@@ -317,12 +388,14 @@ def run() -> None:
             except Exception:  # noqa: BLE001 - GET fences stale jobs when storage is available again.
                 logging.getLogger(__name__).error("record supervisor stopped (worker_stale)")
             continue
-        with closing(psycopg.connect(db_url())) as conn, conn.cursor() as cur:
-            cur.execute("UPDATE jobs SET status='running', started_at=COALESCE(started_at, NOW()) WHERE id=%s AND status='queued'", (job_id,))
-            claimed = cur.rowcount == 1
+        with closing(psycopg.connect(db_url())) as conn:
+            token = document_jobs.claim(conn, job_id)
             conn.commit()
-        if claimed:
-            process(job_id)
+        if token:
+            try:
+                process(job_id, token)
+            except Exception:  # noqa: BLE001 - storage outage leaves a recoverable lease.
+                logging.getLogger(__name__).error("document job stopped; recovery pending")
 
 
 if __name__ == "__main__":

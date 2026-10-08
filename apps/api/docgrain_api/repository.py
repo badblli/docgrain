@@ -77,6 +77,8 @@ def initialize() -> None:
             CREATE INDEX IF NOT EXISTS jobs_version_idx ON jobs(document_version_id);
             """
         )
+        from .document_jobs import initialize as initialize_document_jobs
+        initialize_document_jobs(connection)
         from .workspace_settings_repository import initialize as initialize_workspace_settings
 
         initialize_workspace_settings(connection)
@@ -114,7 +116,9 @@ def add(document: Document, version: DocumentVersion, job: Job) -> None:
         values["stages"] = json.dumps(values["stages"])
         values["page_failures"] = json.dumps(values["page_failures"])
         cursor.execute(
-            """INSERT INTO jobs VALUES (%(id)s, %(document_id)s, %(document_version_id)s,
+            """INSERT INTO jobs (id, document_id, document_version_id, workspace_id, status,
+            stages, page_failures, queued_at, started_at, finished_at, duration_ms, correlation_id)
+            VALUES (%(id)s, %(document_id)s, %(document_version_id)s,
             %(workspace_id)s, %(status)s, %(stages)s::jsonb, %(page_failures)s::jsonb, %(queued_at)s,
             %(started_at)s, %(finished_at)s, %(duration_ms)s, %(correlation_id)s)""",
             values,
