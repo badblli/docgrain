@@ -66,6 +66,14 @@ mobile apps and websites.
 17. User decision 2026-10-07: when a workspace turns its model on, pages the local parser cannot read well
     (low OCR confidence, image-only pages, JPG/PNG, broken columns or tables) are also sent as page images
     to that model by default. Model off → nothing leaves the machine (decision 15 still holds).
+18. User decision 2026-10-08: whatever the Docling ecosystem already does (parsing, OCR, layout, tables,
+    picture description/VLM, chunking, per-document schema extraction with grounding via Docling Graph) is
+    left to it — configured and wrapped, not rebuilt. Docgrain builds only the knowledge layer Docling does
+    not provide: per-company collection discovery, cross-document matching and merge, conflict questions to a
+    human, review and approved revisions, file versions that keep approved decisions, and the approved
+    knowledge API/MCP. Parser work is frozen until the build-vs-reuse study and benchmark decide what to replace.
+    Positioning: "Docgrain turns scattered company documents into one trusted, versioned source of knowledge
+    for AI and applications."
 
 ## Phases
 
