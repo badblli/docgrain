@@ -3,7 +3,7 @@
 ## Implemented
 
 - Six admitted formats: PDF, DOCX, TXT, XLSX, PNG, JPEG. `.jpg` and `.jpeg` share JPEG; extension/MIME/signature and full image decode must agree. Corrupt images return 422; format mismatch/animated images return 415.
-- EasyOCR 1.7.2 TR/EN CPU through Docling 2.130.0, CRAFT/Latin SHA-256s pinned in `docgrain_worker/ocr.py`. Checkpoints are built into the worker; runtime never downloads OCR weights. Docling layout/table weights have the existing Docling acquisition behavior; the offline claim applies specifically to OCR checkpoints.
+- EasyOCR 1.7.2 TR/EN CPU through Docling 2.130.0, CRAFT/Latin SHA-256s pinned in `docgrain_worker/ocr.py`. Checkpoints are built into the worker; runtime never downloads OCR weights. WP104 also bakes pinned Docling layout/table/picture-classifier artifacts into the worker; see [offline setup and verification](guides/offline-docling-models.md).
 - Original bytes retained, EXIF 1–8 reversible geometry, source/input hashes and dimensions. Canonical image evidence has original-pixel boxes, not invented PDF pages. Browser overlays apply EXIF orientation to the source bbox.
 - Native PDF text wins overlapping OCR; literal OCR and mixed native/OCR blocks retain producer, confidence method and unreviewed state. All OCR requests source review, including high scores. Low scores and no text are explicit gaps.
 - Canonical 0.5.0 / AI document 1.1.0 for the new processing profile. Historical schema/output parity is tested. JSON/ZIP contain the original source-image asset. Legacy PDF export reuses the same conversion.

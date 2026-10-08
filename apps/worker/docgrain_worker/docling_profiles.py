@@ -96,6 +96,10 @@ def default_full_page(source, fmt) -> bool:
 def build_converter(fmt, *, profile: str, full_page: bool = False,
                     remote: RemoteOptions | None = None):
     validate_profile(profile, remote)
+    from .docling_models import verify_artifacts
+
+    artifacts = (verify_artifacts(pictures=profile in {"D_fullpage", "E_vlm"})
+                 if fmt.value in {"pdf", "png", "jpeg"} else None)
     verify_installed_options(remote=profile == "E_vlm")
     from docling.datamodel.base_models import InputFormat
     from docling.datamodel.pipeline_options import (
@@ -110,7 +114,8 @@ def build_converter(fmt, *, profile: str, full_page: bool = False,
 
     is_image = fmt.value in {"png", "jpeg"}
     input_format = InputFormat.IMAGE if is_image else InputFormat(fmt.value)
-    pipeline = PdfPipelineOptions(do_ocr=True, generate_picture_images=True)
+    pipeline = PdfPipelineOptions(do_ocr=True, generate_picture_images=True,
+                                  artifacts_path=artifacts)
     from docling.datamodel.pipeline_options import (
         OcrMode,
         TableFormerMode,

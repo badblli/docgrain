@@ -119,6 +119,18 @@ def test_real_benchmark_cli(corpus, tmp_path):
     assert "sn/sayfa" in (tmp_path / "profiles.md").read_text(encoding="utf-8")
 
 
+@pytest.mark.parametrize("profile", ["B_docling", "C_tesseract", "D_fullpage"])
+def test_pipeline_uses_baked_artifacts(profile):
+    from docgrain_worker.docling_models import model_directory
+
+    converter, fmt = build_converter(SourceFormat.PDF, profile=profile)
+    options = converter.format_to_options[fmt].pipeline_options
+    assert options.artifacts_path == model_directory()
+    assert options.layout_options.model_spec.repo_id == "docling-project/docling-layout-heron"
+    if options.do_picture_classification:
+        assert options.picture_classification_options.repo_id == "docling-project/DocumentFigureClassifier-v2.5"
+
+
 def test_e_uses_verified_api_options_and_only_hard_pages(monkeypatch, corpus):
     from types import SimpleNamespace
 

@@ -163,6 +163,11 @@ def _docling(source: VerifiedSource, fmt: SourceFormat, *,
     }
     if ocr_enabled or is_image:
         if ocr_enabled:
+            from .docling_models import LAYOUT, MODELS, TABLEFORMER
+
+            models = MODELS if profile in {"D_fullpage", "E_vlm"} else (LAYOUT, TABLEFORMER)
+            processing_options["docling_models"] = {m.repo_id: m.revision for m in models}
+            processing_options["pipeline"]["artifacts_path"] = "pinned-docling-models"
             from .ocr import verified_profile
             if profile == "B_docling":
                 processing_options["ocr_profile"] = verified_profile()

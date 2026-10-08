@@ -281,6 +281,9 @@ def test_adapter_disables_native_passes_and_stores_confidence(monkeypatch, tmp_p
     result = _docling(verified, SourceFormat.PDF, profile=profile)
     assert result.processing_options.get("native_source_fidelity") is None
     assert result.reading_profile["id"] == profile
+    assert result.processing_options["pipeline"]["artifacts_path"] == "pinned-docling-models"
+    assert len(result.processing_options["docling_models"]) == (3 if profile == "D_fullpage" else 2)
+    assert all(len(revision) == 40 for revision in result.processing_options["docling_models"].values())
     assert result.source_metadata["docling_confidence"]["pages"]["1"]["ocr_score"] == 0.3
     source = SourceVersion(id=source_revision_id("w", "d", verified.content_sha256),
         document_id="d", workspace_id="w", content_sha256=verified.content_sha256,

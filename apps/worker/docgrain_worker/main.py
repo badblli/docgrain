@@ -297,6 +297,9 @@ def process(job_id: str) -> None:
 
 
 def run() -> None:
+    from .docling_models import startup_check
+
+    startup_check()
     from docgrain_api.records_jobs import QUEUE_NAME as RECORDS_QUEUE
 
     from .records_pipeline import supervise
