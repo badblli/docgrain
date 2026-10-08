@@ -13,10 +13,10 @@ from pathlib import Path
 
 from docgrain_records.api import SourceMetadata
 from docgrain_records.export import load_revision, project_records
-from docgrain_records.extractor import _blocks, _source_key, normalize_quote
 from docgrain_records.match import load_records
 from docgrain_records.match_merge import load_merge_documents, runtime_for_results
 from docgrain_records.runtime import revision_runtime
+from docgrain_records.verify import _blocks, _source_key, normalize_quote
 
 
 def encode(value):

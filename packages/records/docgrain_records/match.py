@@ -10,10 +10,10 @@ from typing import Literal
 
 from pydantic import Field, ValidationError, model_validator
 
-from .extractor import normalize_quote
 from .model import ChatClient, ModelResponseError
 from .models import ExtractionResult, StrictModel, Text
 from .runtime import HOSPITALITY, RuntimeRecords
+from .verify import normalize_quote
 
 _CYRILLIC = dict(zip(
     "абвгдеёжзийклмнопрстуфхцчшщъыьэюя",

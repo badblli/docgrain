@@ -5,9 +5,9 @@ import re
 from datetime import date
 from typing import get_args, get_origin
 
-from .extractor import normalize_quote
 from .merge_models import FactCandidate, VersionedEvidence
 from .schedule import document_dates, same_recurrence
+from .verify import normalize_quote
 
 
 def list_field(runtime, kind, field):

@@ -10,8 +10,6 @@ from uuid import NAMESPACE_URL, uuid5
 
 from docgrain_eval.scoring import normalized_value
 
-from .extractor import _blocks, normalize_quote
-from .extractor import _source_key as evidence_source_key
 from .merge_models import (
     AliasDecision,
     FactCandidate,
@@ -29,6 +27,8 @@ from .merge_models import (
 )
 from .models import Text
 from .runtime import HOSPITALITY
+from .verify import _blocks, normalize_quote
+from .verify import _source_key as evidence_source_key
 
 
 def _json(value) -> str:
