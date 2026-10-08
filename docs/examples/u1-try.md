@@ -47,6 +47,10 @@ Boş onaylı içerikte model istemcisi bile kurulmaz; sonuç dış çağrısız 
 Uydurma/okunmamış kaynak ID'si, atıfsız cevap, boş yanıt veya sekiz tur sınırı da
 “Bilmiyorum.” üretir. Yapılandırılmış döngü her cümle/satırda atıf bulunmasını
 mekanik olarak denetler; noktalama biçimleri nedeniyle temkinli çekimserlik olabilir.
+Yalnız tanınan olgusuz geçiş cümleleri için bir kez, araçsız yeniden yazma istenir;
+olgusal cümleler ve kaynakları aynen korunmalıdır. Bu çağrı da sekiz tur sınırına
+dahildir. Atıfsız olgular veya değişen/okunmamış kaynaklar yine reddedilir.
+Tekrarlı ölçüm ve liderin canlı komutu: [Dene çekimserlik ölçümü](dene-abstain.md).
 Bir tur en fazla sekiz araç çağrısı kabul eder. Model transport'u 20 saniyelik
 HTTP timeout ve en fazla üç denemeyle sınırlıdır; yalnız timeout/429/seçili 5xx
 yeniden denenir, beklemeler 1 ve 2 saniyedir. Bağlantı veya bozuk araç/model sonucu
