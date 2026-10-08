@@ -7,7 +7,7 @@ from .discovery_models import (
     discovery_schema,
 )
 from .discovery_store import accept_schema
-from .extractor import build_messages, extract, verify_response
+from .extractor import build_messages, extract
 from .merge import JsonMergeStore, compare_revisions
 from .merge_models import (
     AliasDecision,
@@ -41,6 +41,7 @@ from .models import (
     hospitality_schema,
 )
 from .runtime import RuntimeRecords, load_runtime
+from .verify import verify_response
 
 __all__ = [
     "Activity",

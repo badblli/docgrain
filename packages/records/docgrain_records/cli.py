@@ -28,6 +28,7 @@ from .runtime import HOSPITALITY, load_runtime
 
 def run(args):
     runtime = load_runtime(args.schema) if args.schema else HOSPITALITY
+    engine = getattr(args, "engine", "docgrain")
     if not 1 <= args.concurrency <= 4:
         raise ValueError("concurrency must be between 1 and 4")
     if not 1000 <= args.section_chars <= 10000:
@@ -45,6 +46,14 @@ def run(args):
     if runtime.schema and (source is None or source.workspace_id != runtime.schema["workspace_id"]):
         raise ValueError("collection schema belongs to another workspace")
     if args.dry_run:
+        if engine == "docling-graph":
+            from .graph_adapter import build_template
+
+            size = len(context) + len(json.dumps(build_template(
+                runtime, args.graph_variant).model_json_schema(), ensure_ascii=False))
+            print(f"İstek boyutu: {size} karakter, yaklaşık {(size + 3) // 4} belirteç; "
+                  "motorun yeniden denemeleri ve ek istekleri bu tahmine dahil değil")
+            return 0
         plan = extraction_plan(context, args.section_chars, not args.no_focused_passes, runtime=runtime)
         size = sum(len(message["content"]) for section, collection in plan
                    for message in build_messages(section.context, args.document, lang, collection,
@@ -52,14 +61,22 @@ def run(args):
         print(f"İstek boyutu: {size} karakter, yaklaşık {(size + 3) // 4} belirteç; "
               f"{len(plan)} istek (yeniden denemeler hariç)")
         return 0
-    chat = ChatClient(args.base_url, args.model, key, args.timeout, args.retries)
     usage = ExtractionUsage()
-    try:
-        result = extract(context, args.document, lang, chat, section_chars=args.section_chars,
-                         concurrency=args.concurrency, focused_passes=not args.no_focused_passes,
-                         usage=usage, runtime=runtime)
-    finally:
-        chat.close()
+    if engine == "docling-graph":
+        from .graph_adapter import extract_graph
+
+        result = extract_graph(context, args.document, lang, base_url=args.base_url,
+                               model=args.model, api_key=key, timeout=args.timeout,
+                               retries=args.retries, variant=args.graph_variant,
+                               runtime=runtime, usage=usage)
+    else:
+        chat = ChatClient(args.base_url, args.model, key, args.timeout, args.retries)
+        try:
+            result = extract(context, args.document, lang, chat, section_chars=args.section_chars,
+                             concurrency=args.concurrency, focused_passes=not args.no_focused_passes,
+                             usage=usage, runtime=runtime)
+        finally:
+            chat.close()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     (out / "context.md").write_bytes(context.encode("utf-8"))
@@ -86,6 +103,8 @@ def main(argv=None):
     add_discovery_commands(commands)
     runner = commands.add_parser("extract")
     runner.add_argument("--document", required=True)
+    runner.add_argument("--engine", choices=["docgrain", "docling-graph"], default="docgrain")
+    runner.add_argument("--graph-variant", choices=["plain", "quoted"], default="plain")
     runner.add_argument("--schema", help="Onaylanmış çalışma alanı şeması: schema.v<N>.json")
     runner.add_argument("--api", required=True)
     runner.add_argument("--lang", help="Kaynak dili (en, tr, de, ru); bilinmiyorsa belgede belirlenir")

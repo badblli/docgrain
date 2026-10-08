@@ -5,6 +5,9 @@ description = "Workspace collection discovery and evidence-verified records from
 requires-python = ">=3.12"
 dependencies = ["docgrain-domain", "docgrain-eval", "httpx>=0.27", "pydantic>=2.7"]
 
+[project.optional-dependencies]
+graph = ["docling-graph==1.9.1", "litellm==1.82.6"]
+
 [project.scripts]
 docgrain-records = "docgrain_records.cli:main"
 
