@@ -27,7 +27,7 @@ def processing_spec(result: StructuralParseResult) -> ProcessingSpec:
         packages += ["pymupdf"]
     if result.source_format.value in {"docx", "xlsx"}:
         packages += ["lxml", "openpyxl", "python-docx"]
-    if result.processing_options.get("ocr_profile"):
+    if result.processing_options.get("ocr_profile", {}).get("engine") == "easyocr":
         packages += ["easyocr", "opencv-python-headless", "numpy", "scikit-image"]
     for package in packages:
         try:
@@ -38,7 +38,8 @@ def processing_spec(result: StructuralParseResult) -> ProcessingSpec:
                           mapper_version="n2-1" if result.processing_options.get("adapter_version") == "n2-1" else "m2a-1",
                           schema_version=result.processing_options.get("canonical_schema_version", "0.3.0"),
                           dependencies=dependencies,
-                          options={"source_format": result.source_format.value, **result.processing_options})
+                          options={"source_format": result.source_format.value, **result.processing_options,
+                                   **({"reading_profile": result.reading_profile} if result.reading_profile else {})})
 
 
 def persist_structural(repository: CanonicalRepository, result: StructuralParseResult, source: SourceVersion,

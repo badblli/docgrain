@@ -66,6 +66,7 @@ class StructuralParseResult:
     processing_options: dict[str, Any] = field(default_factory=dict)
     legacy_markdown: bytes | None = None
     legacy_json: bytes | None = None
+    reading_profile: dict[str, Any] | None = None
 
     @property
     def coverage(self) -> dict[str, Any]:
@@ -139,52 +140,50 @@ def _txt(source: VerifiedSource) -> StructuralParseResult:
 
 
 def _docling(source: VerifiedSource, fmt: SourceFormat, *, ocr_enabled: bool = False,
-             image_metadata: dict | None = None, native_fidelity: bool = False) -> StructuralParseResult:
-    from docling.datamodel.base_models import InputFormat
-    from docling.datamodel.pipeline_options import (
-        AcceleratorOptions,
-        PdfPipelineOptions,
-    )
-    from docling.document_converter import (
-        DocumentConverter,
-        ImageFormatOption,
-        PdfFormatOption,
+             image_metadata: dict | None = None, native_fidelity: bool = False,
+             profile: str = "A_current", remote: Any = None) -> StructuralParseResult:
+    from .docling_profiles import (
+        build_converter,
+        confidence_report,
+        identity,
+        safe_options,
     )
 
     is_image = fmt in (SourceFormat.PNG, SourceFormat.JPEG)
-    input_format = InputFormat.IMAGE if is_image else InputFormat(fmt.value)
-    pipeline = PdfPipelineOptions(do_ocr=ocr_enabled, generate_picture_images=True)
-    if ocr_enabled:
-        from .ocr import options as ocr_options
-        from .ocr import verified_profile
-        pipeline.ocr_options = ocr_options()
-        pipeline.accelerator_options = AcceleratorOptions(device="cpu", num_threads=2)
-        pipeline.generate_parsed_pages = True
-
-    options = {InputFormat.PDF: PdfFormatOption(
-        pipeline_options=pipeline
-    )} if fmt is SourceFormat.PDF else {}
-    if is_image:
-        options[InputFormat.IMAGE] = ImageFormatOption(pipeline_options=pipeline)
-    converter = DocumentConverter(allowed_formats=[input_format], format_options=options)
+    native_fidelity = native_fidelity if profile == "A_current" else False
+    ocr_enabled = ocr_enabled if profile == "A_current" else fmt is SourceFormat.PDF or is_image
+    converter, input_format = build_converter(fmt, profile=profile, ocr_enabled=ocr_enabled, remote=remote)
     processing_options = {
-        "pipeline": converter.format_to_options[input_format].pipeline_options.model_dump(mode="json"),
+        "pipeline": safe_options(converter.format_to_options[input_format].pipeline_options.model_dump(mode="json")),
         "adapter_version": "m1b-1", "formula_evaluation": False,
     }
     if ocr_enabled or is_image:
         processing_options["adapter_version"] = "n1-1"
         processing_options["canonical_schema_version"] = "0.5.0"
         if ocr_enabled:
-            processing_options["ocr_profile"] = verified_profile()
+            from .ocr import verified_profile
+            if profile in {"A_current", "B_docling"}:
+                processing_options["ocr_profile"] = verified_profile()
+                if profile == "B_docling":
+                    processing_options["ocr_profile"]["recognition_threshold"] = 0.5
+            else:
+                import subprocess
+                probe = subprocess.run(["tesseract", "--version"], capture_output=True,
+                                       text=True, check=True, timeout=15)
+                tesseract_version = (probe.stdout.strip() or probe.stderr.strip()).splitlines()[0]
+                processing_options["ocr_profile"] = {"engine": "tesseract", "version": tesseract_version,
+                                                     "languages": ["tur", "eng", "deu", "rus"]}
             # Installation path is operational, not part of semantic configuration identity.
-            processing_options["pipeline"]["ocr_options"]["model_storage_directory"] = "pinned-checkpoints"
+            if profile in {"A_current", "B_docling"}:
+                processing_options["pipeline"]["ocr_options"]["model_storage_directory"] = "pinned-checkpoints"
         if image_metadata:
             processing_options["image_preparation"] = image_metadata
     converted = converter.convert(source.path, raises_on_error=False)
     version = importlib.metadata.version("docling")
     if converted.document is None:
         return StructuralParseResult(fmt, "docling", version, "failed", [], [], [],
-                                     [_issue(fmt, "conversion_failed", str(converted.errors)[:1000], impact="document")])
+                                     [_issue(fmt, "conversion_failed", "Docling conversion failed" if profile == "E_vlm" else str(converted.errors)[:1000], impact="document")],
+                                     processing_options=processing_options)
     raw = converted.document.export_to_dict()
     pages = raw.get("pages", {})
     issues: list[ParseIssue] = []
@@ -219,7 +218,8 @@ def _docling(source: VerifiedSource, fmt: SourceFormat, *, ocr_enabled: bool = F
     lookup = {entry["self_ref"]: entry for collection in ("texts", "tables", "pictures")
               for entry in raw.get(collection, [])}
     if fmt is SourceFormat.XLSX:
-        items.extend(_xlsx_items(source, raw, issues, native_fidelity=native_fidelity))
+        items.extend(_xlsx_items(source, raw, issues, native_fidelity=native_fidelity,
+                                 docling_only=profile != "A_current"))
     else:
         for ref in _reading_refs(raw.get("body", {}), raw, lookup):
             item = lookup[ref]
@@ -307,7 +307,7 @@ def _docling(source: VerifiedSource, fmt: SourceFormat, *, ocr_enabled: bool = F
             pdf_metadata = reconcile_pdf_tables(source, items, issues, pages)
             from .pdf_reading import reconcile_reading
             pdf_metadata["reading"] = reconcile_reading(source, items, issues)
-        else:
+        elif profile == "A_current":
             _pdf_missing_tables(source, items, issues, pages)
         for area in expected:
             if area not in processed:
@@ -344,6 +344,17 @@ def _docling(source: VerifiedSource, fmt: SourceFormat, *, ocr_enabled: bool = F
             result.expected_areas = result.processed_areas = office_metadata["parts"]
         if fmt is SourceFormat.PDF:
             result.source_metadata["pdf_fidelity"] = pdf_metadata
+    result.reading_profile = identity(profile, processing_options, native_fidelity=native_fidelity, remote=remote)
+    report = confidence_report(converted)
+    if report is not None:
+        result.source_metadata["docling_confidence"] = report
+    if profile != "A_current":
+        import json
+        result.legacy_markdown = converted.document.export_to_markdown().encode()
+        result.legacy_json = json.dumps(raw, ensure_ascii=False).encode()
+    if profile == "E_vlm":
+        from .docling_profiles import run_hard_page_vlm
+        run_hard_page_vlm(source, result, remote)
     return result
 
 
@@ -536,7 +547,8 @@ def _docx_paths(source: VerifiedSource, items: list[StructuralItem], issues: lis
             cursor = found + 1
 
 
-def _xlsx_items(source: VerifiedSource, raw: dict[str, Any], issues: list[ParseIssue], *, native_fidelity: bool = False) -> list[StructuralItem]:
+def _xlsx_items(source: VerifiedSource, raw: dict[str, Any], issues: list[ParseIssue], *, native_fidelity: bool = False,
+                docling_only: bool = False) -> list[StructuralItem]:
     from openpyxl import load_workbook
     workbook = load_workbook(source.path, read_only=False, data_only=False)
     cached = load_workbook(source.path, read_only=False, data_only=True)
@@ -583,14 +595,14 @@ def _xlsx_items(source: VerifiedSource, raw: dict[str, Any], issues: list[ParseI
                                         {"kind": "spreadsheet_range", "sheet": sheet.title, "a1_range": a1}, cells=rows))
         # Docling can omit isolated formulas/cells. Preserve each as a small
         # source-fidelity fallback and mark the omission explicitly.
-        for cell in list(sheet._cells.values()):
+        for cell in ([] if docling_only else list(sheet._cells.values())):
             if cell.value is None or cell.coordinate in covered:
                 continue
             issues.append(_issue(SourceFormat.XLSX, "cell_missing_in_docling", "Source cell was absent from Docling table ranges", location=f"{sheet.title}!{cell.coordinate}"))
             items.append(StructuralItem("table", f"sheet:{sheet.title}:{cell.coordinate}",
                                         {"kind": "spreadsheet_range", "sheet": sheet.title, "a1_range": cell.coordinate},
                                         cells=[[_xlsx_cell(sheet, cached[sheet.title], cell, issues, native_fidelity=native_fidelity)]]))
-        for chart in ([] if native_fidelity else sheet._charts):
+        for chart in ([] if native_fidelity or docling_only else sheet._charts):
             anchor = getattr(chart, "anchor", None)
             origin = getattr(anchor, "_from", None)
             if origin is None:
@@ -600,7 +612,7 @@ def _xlsx_items(source: VerifiedSource, raw: dict[str, Any], issues: list[ParseI
             locator = {"kind": "spreadsheet_range", "sheet": sheet.title, "a1_range": coordinate}
             items.append(StructuralItem("chart", f"chart:{sheet.title}:{coordinate}", locator))
             issues.append(_issue(SourceFormat.XLSX, "chart_not_interpreted", "Chart binary/data is not extracted", location=sheet.title))
-        for image in sheet._images:
+        for image in ([] if docling_only else sheet._images):
             anchor = getattr(image.anchor, "_from", None)
             if anchor is None:
                 issues.append(_issue(SourceFormat.XLSX, "image_anchor_missing", "Image has no source anchor", location=sheet.title))
@@ -645,7 +657,17 @@ def _xlsx_cell(sheet: Any, cached_sheet: Any, cell: Any, issues: list[ParseIssue
 
 
 class DocumentParser:
-    def __init__(self, *, ocr_enabled: bool = False, native_fidelity: bool = False):
+    def __init__(self, *, ocr_enabled: bool = False, native_fidelity: bool = False,
+                 profile: str = "A_current", remote: Any = None, bbox_tolerance: float = 0):
+        import math
+
+        from .docling_profiles import validate_profile
+        validate_profile(profile, remote)
+        if not math.isfinite(bbox_tolerance) or not 0 <= bbox_tolerance <= 5:
+            raise ValueError("bbox tolerance must be between 0 and 5 PDF points")
+        self.profile = profile
+        self.remote = remote
+        self.bbox_tolerance = bbox_tolerance
         self.ocr_enabled = ocr_enabled
         self.native_fidelity = native_fidelity
 
@@ -661,7 +683,7 @@ class DocumentParser:
                 path = Path(directory) / "input.png"
                 path.write_bytes(prepared)
                 result = _docling(VerifiedSource(path, sha256(prepared).hexdigest(), len(prepared)), source_format,
-                                  ocr_enabled=self.ocr_enabled, image_metadata=metadata, native_fidelity=self.native_fidelity)
+                                  ocr_enabled=self.ocr_enabled, image_metadata=metadata, native_fidelity=self.native_fidelity, profile=self.profile, remote=self.remote)
             # Original binary is authoritative; prepared PNG is only OCR input.
             if result.status != "failed":
                 picture = next(i for i in result.items if i.anchor == "original-image")
@@ -669,7 +691,13 @@ class DocumentParser:
         else:
             result = _txt(source) if source_format is SourceFormat.TXT else _docling(
                 source, source_format, ocr_enabled=self.ocr_enabled and source_format is SourceFormat.PDF,
-                native_fidelity=self.native_fidelity)
+                native_fidelity=self.native_fidelity, profile=self.profile, remote=self.remote)
         if source_format is SourceFormat.TXT:
             result.processing_options = {"encoding": "utf-8-sig", "paragraph_strategy": "exact-spans-v1"}
+        if self.bbox_tolerance:
+            result.processing_options["bbox_tolerance_points"] = self.bbox_tolerance
+        from .docling_profiles import identity
+        result.reading_profile = identity(self.profile, result.processing_options,
+                                          native_fidelity=self.native_fidelity and self.profile == "A_current",
+                                          remote=self.remote)
         return result

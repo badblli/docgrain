@@ -6,6 +6,7 @@ WORKDIR /srv
 
 RUN apt-get update \
     && apt-get install --no-install-recommends -y libgl1 libglib2.0-0 libxcb1 libxext6 libxrender1 \
+        tesseract-ocr tesseract-ocr-tur tesseract-ocr-deu tesseract-ocr-rus tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
 # Docling uses PyTorch for layout analysis. Pin the CPU wheel so a local
