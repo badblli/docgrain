@@ -1,46 +1,32 @@
-"""Pure quality checks for parser output."""
+"""Adapt Docling confidence grades to the existing reading-report issue codes."""
 
-from __future__ import annotations
+from .structural import _issue
 
-from typing import Any
-
-
-def missing_extraction_pages(
-    structured: dict[str, Any], rendered_page_count: int
-) -> list[int]:
-    """Return pages Docling did not represent with valid page dimensions.
-
-    Empty pages are legitimate, so text count is not used. A missing page entry
-    or Docling's zero-sized placeholder means extraction for that page failed.
-    """
-    pages = structured.get("pages")
-    if not isinstance(pages, dict):
-        return list(range(1, rendered_page_count + 1))
-
-    missing: list[int] = []
-    for page_number in range(1, rendered_page_count + 1):
-        page = pages.get(str(page_number), pages.get(page_number))
-        size = page.get("size") if isinstance(page, dict) else None
-        width = size.get("width", 0) if isinstance(size, dict) else 0
-        height = size.get("height", 0) if isinstance(size, dict) else 0
-        if (
-            not isinstance(width, (int, float))
-            or not isinstance(height, (int, float))
-            or width <= 0
-            or height <= 0
-        ):
-            missing.append(page_number)
-    return missing
+LOW_GRADES = {"poor", "fair", "low"}
 
 
-def page_failures(page_numbers: list[int]) -> list[dict[str, object]]:
-    """Build contract-compatible failures for pages rejected by quality checks."""
-    return [
-        {
-            "page_number": page_number,
-            "stage": "extract",
-            "reason": "Parser did not produce a valid page representation.",
-            "resolution": "Page render was preserved; page replay is not implemented.",
-        }
-        for page_number in page_numbers
-    ]
+def confidence_issues(report, fmt):
+    issues = []
+    for number, page in report.get("pages", {}).items():
+        if page.get("low_grade") not in LOW_GRADES and page.get("mean_grade") not in LOW_GRADES:
+            continue
+        # Grade comes from Docling, not a second threshold applied to cell scores.
+        ocr = page.get("ocr_score")
+        scores = [page.get(name) for name in ("ocr_score", "layout_score", "parse_score", "table_score")]
+        scores = [score for score in scores if isinstance(score, (int, float))]
+        code = "ocr_low_confidence" if ocr is not None and scores and ocr == min(scores) else "low_text_page"
+        location = f"page:{number}" if fmt.value == "pdf" else "image"
+        issues.append(_issue(fmt, code,
+            f"Docling confidence: low={page.get('low_grade')}, mean={page.get('mean_grade')}; source review required",
+            location=location, impact="page"))
+    return issues
+
+
+def page_failures(result):
+    """Keep the job contract, with Docling-derived issues as the reading signal."""
+    from .docling_profiles import hard_pages
+    return [{"page_number": number, "stage": "extract",
+             "reason": "; ".join(issue.reason for issue in result.issues
+                                 if issue.location == f"page:{number}" and issue.code in codes),
+             "resolution": "Kaynak sayfayı kontrol edin; otomatik kabul yapılmadı."}
+            for number, codes in sorted(hard_pages(result).items())]

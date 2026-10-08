@@ -1,5 +1,8 @@
 # ADR 0018 — Original image coordinates and pinned local OCR
 
+Reader/OCR choice superseded by [ADR 0024 — Docling reads documents](0024-docling-reads-documents.md).
+Original image evidence and historical schema contracts remain.
+
 - Date: 2026-10-02
 - Status: implemented; see [N1 verification](../N1_IMAGE_OCR.md).
 - Follows [normalization-first scope](0017-normalization-first-scope.md).

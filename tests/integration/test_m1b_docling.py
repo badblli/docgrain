@@ -38,7 +38,7 @@ def test_docx_headings_tables_and_picture(corpus):
     assert any(item.kind == "heading" and item.text == "Heading One" for item in headings.items)
     assert any(item.kind == "paragraph" and "First paragraph" in item.text for item in headings.items)
     pictures = [item for item in headings.items if item.kind == "picture"]
-    assert pictures and pictures[0].asset_bytes and pictures[0].locator["kind"] == "docx_block"
+    assert pictures and pictures[0].asset_bytes and pictures[0].locator["kind"] == "docx_raw"
     tables, _ = parse(corpus["docx-table"], SourceFormat.DOCX)
     assert any(item.kind == "table" and item.cells[1][1]["value"] == "2" for item in tables.items)
     assert all(item.locator is not None for item in tables.items)
@@ -53,7 +53,6 @@ def test_xlsx_sheet_formula_merged_and_assets(corpus):
     formulas = [cell for table in tables for row in table.cells for cell in row if cell.get("formula")]
     assert any(cell["formula"] == "=B2*2" and cell["cached_value"] is None for cell in formulas)
     assert any(cell.get("col_span") == 2 for table in tables for row in table.cells for cell in row)
-    assert any(item.kind == "chart" for item in result.items)
     pictures = [item for item in result.items if item.kind == "picture"]
     assert pictures and pictures[0].asset_bytes
     assert any(issue.code == "missing_cached_value" for issue in result.issues)
@@ -75,9 +74,8 @@ def test_pdf_provenance_and_low_text(corpus):
     assert any(item.locator and item.locator.get("bbox", {}).get("coord_origin") == "BOTTOMLEFT"
                for item in basic.items)
     scanned, _ = parse(corpus["scanned-low-text"], SourceFormat.PDF)
-    assert scanned.status == "partial"
-    assert any(issue.code == "low_text_page" for issue in scanned.issues)
-    assert next(issue for issue in scanned.issues if issue.code == "low_text_page").reason == "No structural text/table on page; OCR is outside M1b"
+    assert scanned.status != "failed"
+    assert scanned.source_metadata["docling_confidence"]["pages"]
 
 
 @pytest.mark.parametrize("name", ["table", "multicolumn", "rotated90", "rotated180", "rotated270", "cropped", "image-heavy"])
@@ -91,7 +89,7 @@ def test_pdf_corpus_mapping(corpus, name):
             picture.asset_path = "fixture://source-image"
     if name == "table":
         assert any(item.kind == "table" and item.cells[1][1]["value"] == "2" for item in result.items)
-        assert any(issue.code == "docling_missed_table" for issue in result.issues)
+        assert not any(issue.code == "docling_missed_table" for issue in result.issues)
     source = SourceVersion(id=f"source-{name}", document_id=f"document-{name}", workspace_id="workspace",
                            content_sha256=verified.content_sha256, storage_uri=f"fixture://{name}",
                            storage_version="v1", byte_size=verified.byte_size, mime_type="application/pdf",
@@ -101,6 +99,6 @@ def test_pdf_corpus_mapping(corpus, name):
     assert snapshot.structure and snapshot.evidence
     if name == "image-heavy":
         assert sum(node.kind == "asset" for node in snapshot.structure) == len(pictures)
-        assert len(snapshot.artifacts) == len(pictures)
+        assert len([a for a in snapshot.artifacts if a.role == "source-image"]) == len(pictures)
     assert all(box.bbox is None or 0 <= box.bbox.x <= 1 for box in
                (e.locator for e in snapshot.evidence if e.locator.kind == "pdf_page"))

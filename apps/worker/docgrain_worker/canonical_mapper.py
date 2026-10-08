@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict
 from datetime import datetime
 from hashlib import sha256
@@ -11,6 +12,7 @@ from typing import Any
 import pymupdf
 from docgrain_domain.canonical import (
     Annotation,
+    ArtifactObjectLocator,
     ArtifactRef,
     AssetNode,
     CanonicalKnowledgeSnapshot,
@@ -59,6 +61,13 @@ class CanonicalMapper:
         structure: list[Any] = [root]
         evidence: list[Evidence] = []
         artifacts: list[ArtifactRef] = []
+        docling_id = None
+        if result.legacy_json is not None:
+            digest = sha256(result.legacy_json).hexdigest()
+            docling_id = "artifact_" + digest[:32]
+            artifacts.append(ArtifactRef(id=docling_id, role="docling-document",
+                storage_uri=result.docling_artifact_uri or f"urn:sha256:{digest}",
+                content_sha256=digest, byte_size=len(result.legacy_json), mime_type="application/json"))
         if result.source_format.value == "pdf":
             for area in result.expected_areas:
                 if area.startswith("page:"):
@@ -72,9 +81,6 @@ class CanonicalMapper:
         previous_list: ListNode | None = None
         previous_part = None
         ocr_engine = result.processing_options.get("ocr_profile", {}).get("engine", "easyocr")
-        native_profile = result.processing_options.get("adapter_version") == "n2-1"
-        native_office = native_profile and result.source_format.value in {"docx", "xlsx"}
-        native_pdf = native_profile and result.source_format.value == "pdf"
         pdf = pymupdf.open(pdf_path) if pdf_path is not None and result.source_format.value == "pdf" else None
         try:
             for item in result.items:
@@ -86,7 +92,11 @@ class CanonicalMapper:
                 if item.kind == "picture" and (not item.asset_bytes or not item.asset_path):
                     continue
                 tolerance = result.processing_options.get("bbox_tolerance_points", 0)
-                locator = _locator(item.locator, item.page_size, pdf, tolerance_points=tolerance)
+                raw_locator = item.locator
+                if raw_locator and raw_locator.get("kind") == "docx_raw" and docling_id:
+                    raw_locator = {"kind": "artifact_object", "artifact_id": docling_id,
+                                   "object_path": raw_locator["ref"].removeprefix("#")}
+                locator = _locator(raw_locator, item.page_size, pdf, tolerance_points=tolerance)
                 if item.locator and locator is None:
                     issues.append(asdict(ParseIssue("locator_unresolved", "canonical_mapping", result.source_format,
                                                     str(item.locator.get("page_number") or item.locator.get("sheet")),
@@ -111,12 +121,6 @@ class CanonicalMapper:
                                                     None, item.anchor, "No stable source anchor", "item")))
                     continue
                 annotation = _extraction_annotation(item.text_origin, item.ocr_confidence, [evidence_id] if evidence_id else [], engine=ocr_engine)
-                if native_office:
-                    annotation.provenance.producer_id = "producer-native-ooxml"
-                    annotation.provenance.method = "source"
-                if native_pdf and (item.locator or {}).get("kind") == "pdf_native":
-                    annotation.provenance.producer_id = "producer-native-pdf"
-                    annotation.provenance.method = "source"
                 if item.kind == "heading":
                     key = f"heading:{anchor}"
                     node = SectionNode(id=item_id(document_id, "section", key), identity_key=key,
@@ -177,12 +181,6 @@ class CanonicalMapper:
                                     annotation=_extraction_annotation(cell.get("text_origin", "native"), cell.get("ocr_confidence"),
                                                                       [cell_evidence_id], engine=ocr_engine) if cell_evidence_id else None,
                                 ))
-                                if native_office and mapped_row[-1].annotation:
-                                    mapped_row[-1].annotation.provenance.producer_id = "producer-native-ooxml"
-                                    mapped_row[-1].annotation.provenance.method = "source"
-                                if native_pdf and mapped_row[-1].annotation and (cell.get("locator") or {}).get("kind") == "pdf_native":
-                                    mapped_row[-1].annotation.provenance.producer_id = "producer-native-pdf"
-                                    mapped_row[-1].annotation.provenance.method = "source"
                             rows.append(mapped_row)
                         node = TableNode(id=item_id(document_id, "table", key),
                                          identity_key=key, rows=rows, annotation=annotation)
@@ -196,8 +194,7 @@ class CanonicalMapper:
                                 field_id = "evidence_" + sha256(f"{source.id}:{field_locator.model_dump_json()}".encode()).hexdigest()[:32]
                                 if not any(e.id == field_id for e in evidence):
                                     evidence.append(Evidence(id=field_id, source_version_id=source.id, locator=field_locator))
-                                field_annotation = _annotation("producer-native-ooxml", [field_id])
-                                field_annotation.provenance.method = "source"
+                                field_annotation = _annotation(producer_id, [field_id])
                                 node.field_annotations[field_name] = field_annotation
                     else:
                         key = f"text:{anchor}"
@@ -218,13 +215,6 @@ class CanonicalMapper:
                                       name="Docling + EasyOCR (literal OCR / mixed native+OCR)" if ocr_engine == "easyocr" else "Docling + Tesseract (literal OCR / mixed native+OCR)",
                                       version="1.7.2" if ocr_engine == "easyocr" else result.processing_options["ocr_profile"].get("version", "system"),
                                       configuration_digest=processing.digest if processing else None))
-        if native_office:
-            producers.append(Producer(id="producer-native-ooxml", name="Native OOXML (literal parts/cells/chart references)",
-                version="n2-1", configuration_digest=processing.digest if processing else None))
-        if native_pdf:
-            import importlib.metadata
-            producers.append(Producer(id="producer-native-pdf", name="PyMuPDF native words + ruled cell geometry",
-                version=importlib.metadata.version("pymupdf"), configuration_digest=processing.digest if processing else None))
         revision = KnowledgeRevision(id=revision_id, document_id=document_id, workspace_id=source.workspace_id,
                                      source_version_id=source.id, created_at=created_at,
                                      parent_revision_id=parent_revision_id, processing=processing,
@@ -238,7 +228,9 @@ class CanonicalMapper:
             metadata={"structural_parse": {"coverage": coverage, "issues": issues,
                                            "source_format": result.source_format.value,
                                            "parser": result.parser, "parser_version": result.parser_version},
-                      **({"source_extraction": result.source_metadata} if result.processing_options.get("adapter_version") in {"n1-1", "n2-1"} else {}),
+                      **({"source_extraction": result.source_metadata} if result.processing_options.get("adapter_version") in {"n1-1", "n2-1", "docling-2"} else {}),
+                      **({"docling_document": json.loads(result.legacy_json)}
+                         if docling_id and not result.docling_artifact_uri else {}),
                       **({"docling_confidence": result.source_metadata["docling_confidence"]}
                          if "docling_confidence" in result.source_metadata else {})},
         )
@@ -275,6 +267,8 @@ def _locator(raw: dict[str, Any] | None, size: tuple[float, float] | None,
         box = normalized_pdf_box({"l": raw["rect"][0], "t": raw["rect"][1], "r": raw["rect"][2], "b": raw["rect"][3],
                                   "coord_origin": "TOPLEFT"}, (page.cropbox.width,page.cropbox.height), page)
         return PdfPageLocator(page_number=raw["page_number"], bbox=box)
+    if raw["kind"] == "artifact_object":
+        return ArtifactObjectLocator.model_validate(raw)
     if raw["kind"] == "docx_block":
         return DocxBlockLocator(part=raw["part"], path=raw["path"])
     if raw["kind"] == "text_span":
@@ -297,6 +291,9 @@ def _identity_anchor(item: Any, locator: Any | None, sections: list[SectionNode]
         box = locator.bbox
         geometry = ":".join(f"{v:.4f}" for v in (box.x, box.y, box.width, box.height))
         return f"pdf:{locator.page_number}:{geometry}:{context}:{sha256(item.text.encode()).hexdigest()[:8]}"
+    if isinstance(locator, ArtifactObjectLocator):
+        # JSON object paths are parser references, not invented OOXML locations.
+        return f"docling:{locator.object_path}"
     if isinstance(locator, DocxBlockLocator):
         return f"docx:{locator.part}:{locator.path}:{context}"
     if isinstance(locator, TextSpanLocator):
@@ -316,6 +313,9 @@ def _stable_anchor(locator: Any | None) -> str | None:
         box = locator.bbox
         geometry = ":".join(f"{v:.4f}" for v in (box.x, box.y, box.width, box.height))
         return f"pdf:{locator.page_number}:{geometry}"
+    if isinstance(locator, ArtifactObjectLocator):
+        # JSON object paths are parser references, not invented OOXML locations.
+        return f"docling:{locator.object_path}"
     if isinstance(locator, DocxBlockLocator):
         return f"docx:{locator.part}:{locator.path}"
     if isinstance(locator, TextSpanLocator):

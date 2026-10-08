@@ -49,7 +49,7 @@ def _page_manifest(version: DocumentVersion) -> dict[int, dict[str, int]]:
     try:
         payload = json.loads(content)
         return {
-            int(page["page_number"]): page
+            int(page["page_number"]): {**page, "dpi": page.get("dpi", payload.get("dpi", 200))}
             for page in payload.get("pages", [])
             if isinstance(page, dict) and "page_number" in page
         }
@@ -77,7 +77,7 @@ def _live_page(
         ),
         width=int(metadata.get("width", 1654)),
         height=int(metadata.get("height", 2339)),
-        dpi=200,
+        dpi=int(metadata.get("dpi", 200)),
         parser=version.parser or "docling",
         confidence=None,
         quality_flags=[],

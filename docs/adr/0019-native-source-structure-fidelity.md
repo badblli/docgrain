@@ -1,5 +1,8 @@
 # ADR 0019 — Native source structure and cell evidence
 
+Native reader implementation superseded by [ADR 0024 — Docling reads documents](0024-docling-reads-documents.md).
+Historical canonical/source-data contracts remain readable.
+
 - Date: 2026-10-02
 - Status: N2 local implementation; broad source acceptance remains N5.
 

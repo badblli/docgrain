@@ -97,10 +97,74 @@ def test_current_txt_golden_and_profile_in_spec(tmp_path):
          "ocr_confidence": None, "source_data": None, "field_locators": {}},
     ]
     spec = processing_spec(result)
-    assert spec.options["reading_profile"]["id"] == "A_current"
+    assert spec.options["reading_profile"]["id"] == "C_tesseract"
     clipped = DocumentParser(bbox_tolerance=0.5).parse(source, SourceFormat.TXT)
     assert processing_spec(clipped).digest != spec.digest
     assert spec.options["reading_profile"]["option_digest"] != clipped.reading_profile["option_digest"]
+
+
+def test_removed_current_profile_is_rejected():
+    with pytest.raises(ValueError, match="Unknown reading profile"):
+        DocumentParser(profile="A_current")
+
+
+def test_default_ocr_routing_protects_digital_and_mixed_pdfs(tmp_path):
+    from docgrain_worker.docling_profiles import default_full_page
+
+    from tests.fixtures.structural.docling_profiles import create_profile_corpus
+    company = create_profile_corpus(tmp_path) / "synthetic"
+    def route(name, fmt):
+        return default_full_page(SimpleNamespace(path=company / name), fmt)
+    assert route("scan.pdf", SourceFormat.PDF)
+    assert route("scan.png", SourceFormat.PNG)
+    assert route("scan.png", SourceFormat.JPEG)
+    assert not route("columns-table.pdf", SourceFormat.PDF)
+    assert not route("sample.docx", SourceFormat.DOCX)
+    with pymupdf.open(company / "columns-table.pdf") as pdf:
+        pdf.new_page()
+        pdf.save(company / "mixed.pdf")
+    assert not route("mixed.pdf", SourceFormat.PDF)
+    region = identity("C_tesseract", {"pipeline": {"ocr_options": {"mode": "pdf_aware_layout_regions"}}})
+    full = identity("C_tesseract", {"pipeline": {"ocr_options": {"mode": "full_page"}}})
+    assert region["option_digest"] != full["option_digest"]
+
+
+def test_docx_uses_docling_json_evidence_and_keeps_all_literal_content(monkeypatch, tmp_path):
+    import importlib.metadata
+
+    from docgrain_domain.canonical.validation import validate_snapshot
+    from docgrain_worker import docling_profiles
+
+    from tests.fixtures.structural.docling_profiles import create_profile_corpus
+    path = create_profile_corpus(tmp_path) / "synthetic" / "sample.docx"
+    data = path.read_bytes()
+    raw = {"body": {"children": [{"$ref": "#/texts/0"}, {"$ref": "#/texts/1"}]},
+           "texts": [{"self_ref": "#/texts/0", "text": "Repeat", "label": "paragraph"},
+                     {"self_ref": "#/texts/1", "text": "Repeat", "label": "paragraph"}]}
+    converted = SimpleNamespace(status="SUCCESS", document=SimpleNamespace(
+        export_to_dict=lambda: raw, export_to_markdown=lambda: "Repeat\nRepeat"))
+    converter = SimpleNamespace(convert=lambda *a, **kw: converted, format_to_options={
+        "docx": SimpleNamespace(pipeline_options=SimpleNamespace(model_dump=lambda **kw: {}))})
+    monkeypatch.setattr(docling_profiles, "build_converter", lambda *a, **kw: (converter, "docx"))
+    original = importlib.metadata.version
+    monkeypatch.setattr(importlib.metadata, "version", lambda n: "2.130.0" if n == "docling" else original(n))
+    result = DocumentParser().parse(VerifiedSource(path, sha256(data).hexdigest(), len(data)), SourceFormat.DOCX)
+    result.docling_artifact_uri = "s3://bucket/docling.json?versionId=1"
+    spec = processing_spec(result)
+    source = SourceVersion(id=source_revision_id("w", "d", sha256(data).hexdigest()), document_id="d", workspace_id="w",
+        content_sha256=sha256(data).hexdigest(), storage_uri="fixture://source", storage_version="1",
+        byte_size=len(data), mime_type="application/octet-stream", filename=path.name,
+        recorded_at=datetime(2026, 1, 1, tzinfo=UTC))
+    snapshot = CanonicalMapper().map(result, source, revision_id=processing_revision_id(source.id, spec),
+                                     created_at=source.recorded_at, processing=spec)
+    validate_snapshot(snapshot)
+    assert [n.text for n in snapshot.structure if n.kind == "text_block"] == ["Repeat", "Repeat"]
+    assert [e.locator.object_path for e in snapshot.evidence] == ["/texts/0", "/texts/1"]
+    artifact = snapshot.artifacts[0]
+    assert artifact.storage_uri == result.docling_artifact_uri and artifact.role == "docling-document"
+    assert artifact.content_sha256 == sha256(result.legacy_json).hexdigest()
+    assert all(e.locator.artifact_id == artifact.id for e in snapshot.evidence)
+    assert all(n.annotation.review_status == "unreviewed" for n in snapshot.structure)
 
 
 def test_recall_counts_repeated_words_and_no_text_layer():
@@ -115,7 +179,7 @@ def test_synthetic_source_readers(tmp_path):
     root = create_profile_corpus(tmp_path)
     company = root / "synthetic"
     assert "CombinedRuns" in source_text(company / "sample.docx", SourceFormat.DOCX)
-    assert "0.15" in source_text(company / "sample.xlsx", SourceFormat.XLSX)
+    assert "15%" in source_text(company / "sample.xlsx", SourceFormat.XLSX)
     assert "2026-01-02" in source_text(company / "sample.xlsx", SourceFormat.XLSX)
     text = source_text(company / "columns-table.pdf", SourceFormat.PDF)
     assert "Left column" in text and "Right column" in text and "42" in text
@@ -128,7 +192,7 @@ def test_benchmark_cli_in_process_on_txt_and_empty_root(tmp_path):
     company.mkdir(parents=True)
     (company / "sample.txt").write_text("Example 42", encoding="utf-8")
     out = tmp_path / "private-output"
-    assert main(["--profiles", "A_current,B_docling", "--root", str(company.parent), "--out", str(out)]) == 0
+    assert main(["--profiles", "C_tesseract,B_docling", "--root", str(company.parent), "--out", str(out)]) == 0
     rows = json.loads((out / "profiles.json").read_text(encoding="utf-8"))["rows"]
     assert len(rows) == 2 and all(row["word_recall"] == 1 for row in rows)
     assert all(row["vlm_calls"] == 0 and row["peak_rss_bytes"] > 0 for row in rows)
@@ -186,7 +250,7 @@ def test_adapter_disables_native_passes_and_stores_confidence(monkeypatch, tmp_p
     import importlib.metadata
     import subprocess
 
-    from docgrain_worker import docling_profiles, pdf_fidelity, pdf_reading, structural
+    from docgrain_worker import docling_profiles, structural
 
     path = tmp_path / "two-pages.pdf"
     with pymupdf.open() as pdf:
@@ -209,17 +273,12 @@ def test_adapter_disables_native_passes_and_stores_confidence(monkeypatch, tmp_p
     converter = SimpleNamespace(convert=lambda *a, **kw: converted, format_to_options={
         "pdf": SimpleNamespace(pipeline_options=SimpleNamespace(model_dump=lambda **kw: pipeline))})
     monkeypatch.setattr(docling_profiles, "build_converter", lambda *a, **kw: (converter, "pdf"))
-    monkeypatch.setattr(structural, "_tag_ocr", lambda *a: [])
+    monkeypatch.setattr(structural, "_bind_ocr_provenance", lambda *a: [])
     monkeypatch.setattr("docgrain_worker.ocr.verified_profile", lambda: {"engine": "easyocr"})
     original_version = importlib.metadata.version
     monkeypatch.setattr(importlib.metadata, "version", lambda name: "2.130.0" if name == "docling" else original_version(name))
     monkeypatch.setattr(subprocess, "run", lambda *a, **kw: SimpleNamespace(stdout="", stderr="tesseract 5.5\n"))
-    def forbidden(*args):
-        pytest.fail("native pass must be disabled for profiles B-D")
-    monkeypatch.setattr(structural, "_pdf_missing_tables", forbidden)
-    monkeypatch.setattr(pdf_fidelity, "reconcile_pdf_tables", forbidden)
-    monkeypatch.setattr(pdf_reading, "reconcile_reading", forbidden)
-    result = _docling(verified, SourceFormat.PDF, profile=profile, native_fidelity=True)
+    result = _docling(verified, SourceFormat.PDF, profile=profile)
     assert result.processing_options.get("native_source_fidelity") is None
     assert result.reading_profile["id"] == profile
     assert result.source_metadata["docling_confidence"]["pages"]["1"]["ocr_score"] == 0.3

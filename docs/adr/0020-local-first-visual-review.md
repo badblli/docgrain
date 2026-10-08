@@ -1,5 +1,8 @@
 # ADR 0020 — Local-first visual review for N3
 
+Default reader/OCR signals superseded by [ADR 0024 — Docling reads documents](0024-docling-reads-documents.md).
+Selected-artifact tools, visual inventory and human review contracts remain.
+
 - Date: 2026-10-02
 - Status: N3 local implementation; semantic gate, N4 and N5 remain open.
 

@@ -6,7 +6,6 @@ import json
 import logging
 import os
 from contextlib import closing
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
 from io import BytesIO
@@ -15,48 +14,23 @@ from tempfile import TemporaryDirectory
 from urllib.parse import urlparse
 
 import psycopg
-import pymupdf
 import redis
 from docgrain_api.canonical_repository import CanonicalRepository
 from docgrain_domain.canonical import SourceVersion
 from docgrain_domain.canonical.lifecycle import source_revision_id
 from docgrain_domain.source_format import SourceFormat, declared_format, verify_format
-from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import PdfPipelineOptions
-from docling.document_converter import DocumentConverter, PdfFormatOption
 from minio import Minio
 
 from .canonical_assets import store_asset
 from .canonical_writer import persist_structural, processing_spec
 from .output_writer import publish_outputs
-from .quality import missing_extraction_pages, page_failures
+from .quality import page_failures
 from .structural import (
     DocumentParser,
-    ParseIssue,
-    StructuralParseResult,
     VerifiedSource,
 )
-from .vision import GeminiPageExtractor, extract_pages
 
 QUEUE_NAME = "docgrain:pipeline"
-
-
-@dataclass(frozen=True)
-class RenderedPage:
-    page_number: int
-    path: Path
-    width: int
-    height: int
-
-
-def document_converter() -> DocumentConverter:
-    """Build the legacy PDF artifact parser; canonical parsing uses DocumentParser."""
-    options = PdfPipelineOptions(do_ocr=False)
-    return DocumentConverter(
-        format_options={
-            InputFormat.PDF: PdfFormatOption(pipeline_options=options),
-        }
-    )
 
 
 def db_url() -> str:
@@ -96,9 +70,9 @@ def stage_update(
             stage["summary"] = "Not applicable to this source format."
         stage["error"] = failed if failed and name == failed_stage else None
         if name == "render" and not failed and not non_pdf:
-            stage["summary"] = f"{rendered_pages} pages rendered at 200 DPI."
-            stage["provider"] = "pymupdf"
-            stage["attributes"] = {"pages": rendered_pages, "dpi": 200}
+            stage["summary"] = f"Docling page images published for {rendered_pages} source pages."
+            stage["provider"] = "docling"
+            stage["attributes"] = {"pages": rendered_pages, "dpi": 144}
         elif name == "extract" and not failed:
             stage["summary"] = ("Structural extraction completed." if non_pdf else (
                 f"{rendered_pages - len(missing_pages)} of {rendered_pages} pages extracted."
@@ -114,9 +88,9 @@ def stage_update(
         elif name == "quality" and not failed:
             stage["summary"] = (f"Structural parse: {structural_status}; {len(structural_issues or [])} issues."
                                 if non_pdf else (
-                "No page failures recorded; extraction completeness/confidence are not measured."
+                "Docling confidence report captured; grades do not certify source correctness."
                 if not missing_pages
-                else f"{len(missing_pages)} pages failed; stage replay is not implemented."
+                else f"{len(missing_pages)} pages require source review; stage replay is not implemented."
             ))
             stage["attributes"] = {"failed_pages": missing_pages, "structural_issues": structural_issues or []}
         if name in {"normalize", "chunk"} and outputs_published and not failed:
@@ -146,103 +120,20 @@ def fail(job_id: str, message: str, failed_stage: str = "extract") -> None:
         conn.commit()
 
 
-def render_pages(
-    source: Path, prefix: str, bucket: str, output_dir: Path
-) -> list[RenderedPage]:
-    """Render reviewable PDF page PNGs under the version object prefix."""
-    pdf = pymupdf.open(source)
-    try:
-        client = storage()
-        rendered: list[RenderedPage] = []
-        for number, page in enumerate(pdf, start=1):
-            pixmap = page.get_pixmap(dpi=200, alpha=False)
-            image = pixmap.tobytes("png")
-            image_path = output_dir / f"{number:04d}.png"
-            image_path.write_bytes(image)
-            client.put_object(
-                bucket,
-                f"{prefix}/pages/{number:04d}.png",
-                BytesIO(image),
-                len(image),
-                content_type="image/png",
-            )
-            rendered.append(
-                RenderedPage(number, image_path, pixmap.width, pixmap.height)
-            )
-        manifest = json.dumps(
-            {
-                "dpi": 200,
-                "pages": [
-                    {
-                        "page_number": item.page_number,
-                        "width": item.width,
-                        "height": item.height,
-                    }
-                    for item in rendered
-                ],
-            }
-        ).encode()
-        client.put_object(
-            bucket,
-            f"{prefix}/pages.json",
-            BytesIO(manifest),
-            len(manifest),
-            content_type="application/json",
-        )
-        return rendered
-    finally:
-        pdf.close()
-
-
-def gemini_extraction(
-    rendered: list[RenderedPage], prefix: str, bucket: str, api_key: str, model: str
-) -> tuple[bytes, bytes, list[int], list[dict[str, object]], int, int]:
-    """Run the current four-worker, three-attempt Vision extraction pass."""
-    results, errors = extract_pages(
-        [(page.page_number, page.path) for page in rendered],
-        GeminiPageExtractor(api_key, model),
-        max_workers=4,
-        attempts=3,
-    )
+def publish_page_images(result, prefix: str, bucket: str) -> None:
+    """Publish Docling's existing page images for the source-review API."""
+    from PIL import Image
     client = storage()
-    for page_number, result in results.items():
-        payload = result.model_dump_json().encode()
-        client.put_object(
-            bucket,
-            f"{prefix}/vision/{page_number:04d}.json",
-            BytesIO(payload),
-            len(payload),
-            content_type="application/json",
-        )
-    ordered = [results[number] for number in sorted(results)]
-    markdown = "\n\n".join(
-        f"<!-- page: {page.page_number} -->\n\n{page.markdown}" for page in ordered
-    ).encode()
-    structured_dict = {
-        "schema_name": "docgrain.multimodal-page-extraction",
-        "schema_version": "1.0",
-        "provider": model,
-        "pages": [page.model_dump(mode="json") for page in ordered],
-    }
-    structured = json.dumps(structured_dict, ensure_ascii=False).encode()
-    missing_pages = sorted(errors)
-    failures = [
-        {
-            "page_number": page_number,
-            "stage": "extract",
-            "reason": errors[page_number],
-            "resolution": "Page render was preserved; page replay is not implemented.",
-        }
-        for page_number in missing_pages
-    ]
-    return (
-        markdown,
-        structured,
-        missing_pages,
-        failures,
-        sum(page.table_count for page in ordered),
-        sum(page.asset_count for page in ordered),
-    )
+    pages = []
+    for number, data in sorted(result.page_images.items()):
+        with Image.open(BytesIO(data)) as image:
+            width, height = image.size
+        client.put_object(bucket, f"{prefix}/pages/{number:04d}.png", BytesIO(data),
+                          len(data), content_type="image/png")
+        pages.append({"page_number": number, "width": width, "height": height})
+    manifest = json.dumps({"dpi": 144, "pages": pages}).encode()
+    client.put_object(bucket, f"{prefix}/pages.json", BytesIO(manifest), len(manifest),
+                      content_type="application/json")
 
 
 def process(job_id: str) -> None:
@@ -283,20 +174,10 @@ def process(job_id: str) -> None:
             if os.getenv("CANONICAL_PERSISTENCE_ENABLED", "false").lower() == "true":
                 heads = canonical_repository.get_heads(document_id)
                 expected_head = heads[0] if heads else None
-            try:
-                structural = DocumentParser(ocr_enabled=os.getenv("DOCGRAIN_OCR_ENABLED", "true").lower() == "true",
-                    native_fidelity=os.getenv("DOCGRAIN_NATIVE_FIDELITY_ENABLED", "true").lower() == "true").parse(
-                    VerifiedSource(source, content_hash, len(source_bytes)), source_format)
-            except Exception as exc:
-                if source_format is not SourceFormat.PDF:
-                    raise
-                structural = StructuralParseResult(
-                    source_format, "docling", "unknown", "failed", [], [], [],
-                    [ParseIssue("conversion_failed", "structural_parse", source_format, None, None,
-                                str(exc)[:1000], "document")],
-                )
+            structural = DocumentParser().parse(
+                VerifiedSource(source, content_hash, len(source_bytes)), source_format)
             prefix = f"artifacts/{document_id}/{version_id}"
-            if structural.status == "failed" and source_format is not SourceFormat.PDF:
+            if structural.status == "failed":
                 raise ValueError("structural parser failed: " + "; ".join(i.reason for i in structural.issues))
             canonical_persisted = False
             outputs_published = False
@@ -326,6 +207,11 @@ def process(job_id: str) -> None:
                             object_name = f"{canonical_prefix}/structural/assets/{digest}"
                             item.asset_path = store_asset(client, bucket, object_name, item.asset_bytes,
                                                           item.asset_mime or "application/octet-stream")
+                    if structural.legacy_json is not None:
+                        digest = sha256(structural.legacy_json).hexdigest()
+                        structural.docling_artifact_uri = store_asset(client, bucket,
+                            f"{canonical_prefix}/structural/docling/{digest}.json",
+                            structural.legacy_json, "application/json")
                     snapshot, _ = persist_structural(
                         canonical_repository, structural, source_version, spec=processing_spec(structural),
                         pdf_path=source if source_format is SourceFormat.PDF else None,
@@ -337,48 +223,22 @@ def process(job_id: str) -> None:
                     structural_issues.append({"code": "source_not_versioned", "stage": "source_verification",
                                               "reason": "Immutable object version is unavailable; canonical persistence gated",
                                               "impact": "document"})
+            rendered_page_count = len(structural.expected_areas) if source_format is SourceFormat.PDF else 0
+            failures = page_failures(structural) if source_format is SourceFormat.PDF else []
+            missing_pages = [failure["page_number"] for failure in failures]
+            table_count = sum(i.kind == "table" for i in structural.items)
+            asset_count = sum(i.kind == "picture" and bool(i.asset_bytes) for i in structural.items)
+            parser = extraction_provider = structural.parser
+            vision_provider = None
             if source_format is SourceFormat.PDF:
                 active_stage = "render"
-                rendered = render_pages(source, prefix, bucket, Path(temp))
-                rendered_page_count = len(rendered)
-                active_stage = "extract"
-                gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
-                gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.7-flash")
-                if gemini_key and os.getenv("DOCGRAIN_REMOTE_VISION_ENABLED", "false").lower() == "true":
-                    markdown, structured, missing_pages, failures, table_count, asset_count = gemini_extraction(
-                        rendered, prefix, bucket, gemini_key, gemini_model
-                    )
-                    parser = "gemini-vision"
-                    vision_provider = gemini_model
-                    extraction_provider = gemini_model
-                else:
-                    if structural.legacy_json is not None and structural.legacy_markdown is not None:
-                        markdown = structural.legacy_markdown
-                        structured_dict = json.loads(structural.legacy_json)
-                    else:
-                        document = document_converter().convert(source).document
-                        markdown = document.export_to_markdown().encode()
-                        structured_dict = document.export_to_dict()
-                    structured = json.dumps(structured_dict, ensure_ascii=False).encode()
-                    missing_pages = missing_extraction_pages(structured_dict, rendered_page_count)
-                    failures = page_failures(missing_pages)
-                    table_count = len(structured_dict.get("tables", []))
-                    asset_count = len(structured_dict.get("pictures", []))
-                    parser = "docling-fallback"
-                    vision_provider = None
-                    extraction_provider = "docling-fallback"
+                publish_page_images(structural, prefix, bucket)
                 active_stage = "publish"
-                client.put_object(bucket, f"{prefix}/document.md", BytesIO(markdown), len(markdown), content_type="text/markdown")
-                client.put_object(bucket, f"{prefix}/document.json", BytesIO(structured), len(structured), content_type="application/json")
-            else:
-                rendered_page_count = 0
-                missing_pages = []
-                failures = []
-                table_count = sum(i.kind == "table" for i in structural.items)
-                asset_count = sum(i.kind == "picture" and bool(i.asset_bytes) for i in structural.items)
-                parser = structural.parser
-                vision_provider = None
-                extraction_provider = structural.parser
+                for name, data, mime in (("document.md", structural.legacy_markdown, "text/markdown"),
+                                         ("document.json", structural.legacy_json, "application/json")):
+                    if data is None:
+                        raise ValueError("Docling extraction artifact unavailable")
+                    client.put_object(bucket, f"{prefix}/{name}", BytesIO(data), len(data), content_type=mime)
             if canonical_persisted:
                 active_stage = "publish"
                 output, publication, _ = publish_outputs(canonical_repository,snapshot,client,bucket)

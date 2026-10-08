@@ -63,7 +63,8 @@ def source_text(path: Path, fmt: SourceFormat) -> str | None:
         from openpyxl import load_workbook
         workbook = load_workbook(path, read_only=True, data_only=True)
         try:
-            return "\n".join(str(cell.value) for sheet in workbook for row in sheet
+            from docgrain_worker.xlsx_format import display_value
+            return "\n".join(display_value(cell.value, cell.number_format) for sheet in workbook for row in sheet
                              for cell in row if cell.value is not None)
         finally:
             workbook.close()
@@ -153,7 +154,7 @@ def measure(path: Path, profile: str, *, tolerance: float = 0,
     reference = source_text(path, fmt)
     started = time.perf_counter()
     with peak_rss() as peak, count_vlm_calls(remote) as calls:
-        result = DocumentParser(ocr_enabled=True, native_fidelity=True, profile=profile,
+        result = DocumentParser(profile=profile,
                                 remote=remote, bbox_tolerance=tolerance).parse(verified, fmt)
     elapsed = time.perf_counter() - started
     if result.status == "failed":
@@ -225,7 +226,7 @@ def markdown(rows: list[dict]) -> str:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--profiles", default="A_current,B_docling")
+    parser.add_argument("--profiles", default="C_tesseract")
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--bbox-tolerance", type=float, default=0, help="PDF points, 0 disables clipping")

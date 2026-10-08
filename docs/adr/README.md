@@ -1,5 +1,9 @@
 # Architecture Decision Records
 
+Document reader: [ADR 0024 — Docling reads documents (decision 18)](0024-docling-reads-documents.md).
+It replaces the native reader/default OCR decisions in ADRs 0018–0020; the optional
+proposal and human review contracts in ADR 0023 remain.
+
 Güncel yön: [ADR 0004 — canonical-first scope freeze](0004-canonical-first-scope-freeze.md). M1 foundation: [ADR 0005](0005-canonical-knowledge-foundation.md). M1b parsing: [ADR 0006](0006-m1b-structural-parsing.md).
 
 ADR 0001–0003 tarihsel tasarım kararlarıdır; güncel implementasyon özellik listesi değildir. Özellikle primary-Vision hedefi ADR 0004 ile değiştirilmiştir. Mevcut runtime, M0'da henüz yeni extraction yönüne geçirilmez.
