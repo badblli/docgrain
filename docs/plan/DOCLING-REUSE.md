@@ -89,11 +89,11 @@ compromised in March 2026).
    resolved bbox ratio, chunks per image, time and RAM per page, VLM calls. Rule: if Docling is at most 1 point
    below ours on a metric, our module goes.
 2. **bbox tolerance** in `pdf_geometry.normalized_pdf_box`, measured separately.
-3. **Removals** in this order once the benchmark agrees: `pdf_fidelity`/`pdf_reading`/`_pdf_missing_tables`;
+3. **Retirements** (user rule: keep the code, mark it unused with a header comment, never delete) in this order once the benchmark agrees: `pdf_fidelity`/`pdf_reading`/`_pdf_missing_tables`;
    DOCX/XLSX native paths (keep number formats); `quality.py`/`_tag_ocr` → confidence report; old Gemini path
    (`gemini_extraction`, `render_pages`, `document_converter()`, `GeminiPageExtractor`, `google-genai`);
    `local_visual_ocr.py` and the proposal part of `selective_vision.py`. ADRs 0018–0020 and 0023 superseded by a
-   new ADR. Estimated 1,600–2,000 lines removed.
+   new ADR. About 1,800 lines retired by WP100 (kept, marked unused).
 4. **WP97 rescoped**: keep the reading report (signal from Docling confidence) and hard-page selection/budget/
    resume; transport through Docling `ApiVlmOptions`/`PictureDescriptionApiOptions`. Not merged as is.
 5. **Docling Graph A/B** for the `extract` stage only (`--engine docgrain|docling-graph`, runtime template

@@ -72,6 +72,8 @@ mobile apps and websites.
     not provide: per-company collection discovery, cross-document matching and merge, conflict questions to a
     human, review and approved revisions, file versions that keep approved decisions, and the approved
     knowledge API/MCP. Parser work is frozen until the build-vs-reuse study and benchmark decide what to replace.
+    User rule 2026-10-08: our superseded code is never deleted; it stays in place marked "KULLANILMIYOR" with a
+    header comment (and full pre-change copies under `apps/worker/docgrain_worker/unused/`), never imported.
     Positioning: "Docgrain turns scattered company documents into one trusted, versioned source of knowledge
     for AI and applications."
 19. User decision 2026-10-08: accounts. A user belongs to one or more organizations (an agency such as the first
