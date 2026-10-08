@@ -63,7 +63,7 @@ class GuardTransport(httpx.BaseTransport):
 
 def model_client(kind, resolved, guard, transport=None):
     chat = kind(resolved.base_url, resolved.model, resolved.api_key or "local-profile",
-                timeout=30, retries=0, transport=GuardTransport(guard, transport))
+                timeout=180, retries=3, transport=GuardTransport(guard, transport))
     # Existing ChatClient requires a nonempty key. An explicitly keyless server profile
     # still uses that same client, with no invented credential sent to the endpoint.
     if not resolved.api_key:
@@ -317,13 +317,22 @@ def process_job(job_id, transport=None, document_loader=None):
     except Exception as exc:  # noqa: BLE001 - persist a fixed terminal error for any failed stage.
         code = (exc.code if isinstance(exc, (PipelineError, lifecycle.JobConflict)) else
                 "guard" if isinstance(exc, ModelSettingsError) else "step_failed")
-        # Never log exception text/tracebacks: providers may include credentials or sources.
-        logger.error("record job stopped (%s)", code)
+        # Never log exception text: providers may include credentials or sources. The exception type
+        # and code locations (file:line:function, no locals or messages) are safe and make failures fixable.
+        logger.error("record job stopped (%s) %s at %s", code, type(exc).__name__, _safe_frames(exc))
         with lifecycle.pack_store()._workspace_lock(workspace):
             lifecycle.finish(workspace, job_id, code)
     finally:
         stop.set()
         thread.join(timeout=1)
+
+
+def _safe_frames(exc, limit=6):
+    """Innermost code locations of an exception chain, without messages or local values."""
+    import traceback
+
+    frames = traceback.extract_tb(exc.__traceback__)[-limit:]
+    return " <- ".join(f"{os.path.basename(f.filename)}:{f.lineno}:{f.name}" for f in reversed(frames))
 
 
 def _run_child(job_id):
