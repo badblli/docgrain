@@ -178,7 +178,7 @@ def test_mcp_lifecycle_same_four_tools_schema_and_structured_sources(access):
     assert server.handle(rpc("tools/list"))["error"]["code"] == -32000
     assert initialize(server)["result"]["capabilities"] == {"tools": {}}
     tools = server.handle(rpc("tools/list"))["result"]["tools"]
-    assert len(tools) == 4
+    assert len(tools) == 5  # WP112 added list_collection.
     assert tools[1]["inputSchema"] == access.specs()["tools"][1]["function"]["parameters"]
     assert all(t["annotations"]["readOnlyHint"] for t in tools)
     result = server.handle(rpc("tools/call", {"name": "get_record", "arguments": {

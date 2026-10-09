@@ -1,5 +1,6 @@
 """Explicit question action over wp68 approved tools, pinned once per question."""
 
+import time
 from collections.abc import Mapping
 
 import httpx
@@ -104,9 +105,19 @@ def answer_question(workspace_id, repository, *, question, model_factory=None):
     if any(collection["record_count"] for collection in listing["collections"]):
         model = None
         failed = None
+        settings = get_settings()
         try:
-            model = (model_factory or OpenAICompatibleClient)(base_url, model_name, key, timeout=20)
-            result = ask_result(question, approved, model)
+            # KULLANILMIYOR (karar 18) — WP112 replaced the fixed 20 s request timeout:
+            # model = (model_factory or OpenAICompatibleClient)(base_url, model_name, key, timeout=20)
+            # result = ask_result(question, approved, model)
+            # WP112: per-request timeout and one deadline for the whole question (all model
+            # requests, retries, tool reads and the format repair).
+            limit = settings.dene_question_timeout_seconds
+            deadline = time.monotonic() + limit
+            model = (model_factory or OpenAICompatibleClient)(
+                base_url, model_name, key, timeout=settings.dene_model_timeout_seconds,
+                total_timeout=limit)
+            result = ask_result(question, approved, model, deadline=deadline)
             # Even a fake/custom client must never reflect a credential into the API.
             if key and key in result.answer + str(result.sources):
                 raise ModelUnavailable("Model service unavailable")

@@ -1,7 +1,7 @@
 # Dene çekimserlik ölçümü
 
 `benchmarks/dene_abstain.py`, bir çalışma alanının sabitlenmiş **onaylı** yayınında
-bilinen ve bilinmeyen soruları N kez sorar. Her soru yeni model istemcisi ve boş
+bilinen (tekil), liste ve bilinmeyen soruları N kez sorar. Her soru yeni model istemcisi ve boş
 geçmiş kullanır. Varsayılan çalıştırma ağ/model istemcisi oluşturmaz; gerçek model
 yalnız `--enable-model` ve açık bağlantı argümanlarıyla kullanılır. Anahtar komut
 satırında verilmez; `--api-key-env` sunucudaki ortam değişkeninin adıdır. Bu seçenek
@@ -22,9 +22,21 @@ Gerçek sorular/alıntılar ve çıktı dosyası Git dışında tutulmalıdır. 
     ],
     "forbidden_patterns": ["\\b36\\b"]
   },
+  {
+    "id": "rooms",
+    "kind": "list",
+    "question": "Hangi odalar var, kaç kişilik?",
+    "items": [["Garden room", "Bahçe odası"], ["Sea room", "Deniz Odası"], "Family suite"]
+  },
   {"id": "price", "kind": "unknown", "question": "2035 gecelik fiyatı nedir?"}
 ]
 ```
+
+Liste sorusu (WP112, `kind: "list"`): `items`, onaylı koleksiyonda olan **bütün**
+beklenen öğelerdir; her öğe bir ad ya da kabul edilen adların listesidir (ör. İngilizce
+ve Türkçe ad). Cevabın her üst düzey liste satırı (`- …`, `1. …`) bir öğe adıyla
+başlamalı ve dönen bir kaynağa atıf yapmalıdır. İsteğe bağlı `claims` ve
+`forbidden_patterns` bilinen sorudaki gibi çalışır (ör. “ısıtmalı” havuzun kaynağı).
 
 `pattern`, kaynaktaki bağımsız beklenen değerin ve birimin düzenli ifadesidir.
 Her iddia için aynı cümledeki atıf, tam `quote`, `document_name`, `locator`
@@ -37,6 +49,12 @@ Liderin canlı komutu (yer tutucuları kendi bağlantısıyla değiştirmeli):
 ```powershell
 & 'C:/Users/root/Documents/projects/docgrain/.venv/Scripts/python' benchmarks/dene_abstain.py --enable-model --api-url 'http://localhost:8000' --workspace '<workspace-id>' --revision '<approved-revision-id>' --base-url '<openai-compatible-base-url>' --model '<model-name>' --api-key-env 'AI_API_KEY' --questions '<private-questions.json>' --repetitions 20
 ```
+
+WP112 sonrası `--model-timeout` (varsayılan 60 sn, tek model isteği) ve
+`--question-timeout` (varsayılan 120 sn, sorunun tamamı) Dene'nin
+`DENE_MODEL_TIMEOUT_SECONDS` / `DENE_QUESTION_TIMEOUT_SECONDS` ayarlarıyla aynıdır.
+`list_collection` aracı API tarafındadır; ölçümden önce API bu kodla çalışıyor olmalıdır
+(`GET /v1/workspaces/<id>/ai/tools` beş araç döndürür).
 
 `--revision` verilmezse başlangıçtaki en güncel yayın bir kez sabitlenir; tüm tekrarlar
 aynı yayını okur. Betik mevcut salt okunur AI araçları üzerinden `ask_result`
@@ -51,6 +69,13 @@ JSON raporu şunları sayar:
 - `invented_sources`: kullanıcıya dönen cevapta okunmamış/değiştirilmiş kaynak; hedef **0**.
 - `incorrect_on_known`: atıflı olsa da bağımsız anahtarı karşılamayan cevap.
 - `errors`: bağlantı/model/yayın hatası; başarılı çekimserlik sayılmaz.
+- `invented_items` (WP112): liste cevabında anahtarda olmayan öğe satırı; hedef **0**.
+- `missing_items` (WP112): liste cevabında atıflı satırı olmayan anahtar öğesi.
+- `timeouts` (WP112): soru süresi/model zaman aşımı; ayrıca `errors` içinde sayılır.
+- `latency_seconds` (`mean`, `p50`, `max`) ve her sonuçta `seconds`: soru başına süre.
+
+Liste soruları `known_runs` ve `abstained_on_known` içinde bilinen soru sayılır; liste
+cevabı, eksik veya uydurma öğe yoksa ve `claims` sağlanıyorsa `correct_with_sources` olur.
 
 Reddedilip kullanıcıya dönmeyen uydurma atıf girişimi `invented_sources` sayısını
 artırmaz. Bilinen soruda çekimserlik/yanlış cevap, bilinmeyende cevap, uydurma kaynak

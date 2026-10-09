@@ -137,8 +137,9 @@ integration tests run inside the worker Docker image.
 
 Your own model can read approved collections through
 `GET /v1/workspaces/{workspace}/ai/tools` and
-`POST /v1/workspaces/{workspace}/ai/call`. The four tools are `list_collections`,
-`search_records`, `get_record` and `get_context`; each result includes its publication
+`POST /v1/workspaces/{workspace}/ai/call`. The five tools are `list_collections`,
+`search_records`, `get_record`, `get_context` and `list_collection` (a whole collection
+with per-record source ids); each result includes its publication
 mode, revision and document sources. `approved` is the default; `preview` requires
 an explicit request. Search is deterministic and uses no embeddings or model calls.
 
