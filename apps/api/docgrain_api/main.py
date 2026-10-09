@@ -31,6 +31,7 @@ from .routers import (
     local_visuals,
     outputs,
     providers,
+    reading_quality,
     record_jobs,
     records,
     retrieval,
@@ -109,6 +110,7 @@ app.include_router(record_jobs.router)
 app.include_router(ai.router)
 app.include_router(chat.router)
 app.include_router(local_visuals.router)
+app.include_router(reading_quality.router)
 app.include_router(knowledge.document_router)
 app.include_router(knowledge.revision_router)
 
