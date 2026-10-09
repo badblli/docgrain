@@ -36,8 +36,8 @@ Kaynakta olmayan “2035 gecelik fiyatı nedir?” sorusunun sonucu:
 ## Sınırlar
 
 Sunucu her soru başında en güncel yayını bir kez sabitler; sonraki soruda başı tekrar
-çözer. Dört mevcut araç (`list_collections`, `search_records`, `get_record`,
-`get_context`) aynı şirket/yayının **onaylı** görünümünü okur. İstemci yalnız `question`
+çözer. Beş araç (`list_collections`, `search_records`, `get_record`,
+`get_context`, WP112 ile `list_collection`) aynı şirket/yayının **onaylı** görünümünü okur. İstemci yalnız `question`
 gönderir; endpoint/model/key/mode/revision ve sorgu parametresi kabul edilmez.
 Modelin önizleme/başka şirket/yayın argümanları okuma yapmadan reddedilir.
 Yeni retrieval veya embedding yolu yoktur.
@@ -50,9 +50,20 @@ mekanik olarak denetler; noktalama biçimleri nedeniyle temkinli çekimserlik ol
 Yalnız tanınan olgusuz geçiş cümleleri için bir kez, araçsız yeniden yazma istenir;
 olgusal cümleler ve kaynakları aynen korunmalıdır. Bu çağrı da sekiz tur sınırına
 dahildir. Atıfsız olgular veya değişen/okunmamış kaynaklar yine reddedilir.
+Liste soruları (WP112): model koleksiyonu tek `list_collection` çağrısıyla okur ve
+her öğeyi ayrı satırda yazar. Bu durumda denetim satır bazlıdır: her öğe satırı bu
+soruda araçların döndürdüğü bir kaydın adıyla başlar (büyük/küçük harf ve aksan
+duyarsız) ve yalnız o kaydın okunmuş kaynaklarına atıf yapar; satır başına bir atıf
+yeterlidir. Girintili ayrıntı satırları aynı kaydın kaynaklarını gösterir. Listeyi
+tanıtan, `:` ile biten, rakamsız, olumsuzluk içermeyen ve yalnız sorudaki kelimelerle
+küçük bir liste ifadesi kümesini kullanan kısa başlık satırı atıfsız olabilir. Okunmamış
+kayıt/kaynak, atıfsız öğe veya olgu içeren başlık yine “Bilmiyorum.” üretir; bu
+cevaplar onarıma gönderilmez.
 Tekrarlı ölçüm ve liderin canlı komutu: [Dene çekimserlik ölçümü](dene-abstain.md).
-Bir tur en fazla sekiz araç çağrısı kabul eder. Model transport'u 20 saniyelik
-HTTP timeout ve en fazla üç denemeyle sınırlıdır; yalnız timeout/429/seçili 5xx
+Bir tur en fazla sekiz araç çağrısı kabul eder. Model transport'u istek başına 60 saniyelik
+HTTP timeout (`DENE_MODEL_TIMEOUT_SECONDS`), sorunun tamamı için 120 saniye
+(`DENE_QUESTION_TIMEOUT_SECONDS`; tüm model istekleri, yeniden denemeler, araç okumaları
+ve onarım dahil) ve en fazla üç denemeyle sınırlıdır (WP112; önceden 20 saniye); yalnız timeout/429/seçili 5xx
 yeniden denenir, beklemeler 1 ve 2 saniyedir. Bağlantı veya bozuk araç/model sonucu
 `503`, zaman aşımı `504` döndürür; servis kesintisi bilinmeyen bilgi diye gizlenmez.
 İstemciye sağlayıcı yanıtı, endpoint veya sır içeren hata yansıtılmaz.

@@ -10,7 +10,7 @@ outside this local publication adapter's scope.
 
 `GET /v1/workspaces/{workspace}/ai/tools` returns `{workspace_id, revision_id,
 mode: "approved", tools}`. Pass `tools` directly to an OpenAI-compatible Chat
-Completions endpoint with function-calling support. There are exactly four functions:
+Completions endpoint with function-calling support. There are exactly five functions:
 
 | Tool | Required arguments | Result payload |
 | --- | --- | --- |
@@ -18,6 +18,7 @@ Completions endpoint with function-calling support. There are exactly four funct
 | `search_records` | `collection`, `query` | ranked `records` matches, each with `record`, `score` and `sources` |
 | `get_record` | `collection`, `id` | `record`, including field evidence under `_meta` |
 | `get_context` | `collection` | precomputed Markdown `context` |
+| `list_collection` | `collection` (optional `fields`) | every record as `records[]`: `record` (id, `name`, requested fields, their translations) and its `sources` ids; `sources` holds only the evidence of the returned fields |
 
 Every tool accepts optional `mode` (`approved` by default; explicit `preview`).
 Every result includes `workspace_id`, `revision_id`, `mode` and deduplicated `sources`.

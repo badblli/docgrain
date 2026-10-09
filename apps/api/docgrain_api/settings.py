@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     records_publication_root: str = ""
     # WP110: parallel model calls while extracting records (1-4).
     records_extraction_concurrency: int = Field(default=4, ge=1, le=4)
+    # WP112: Dene (POST /ai/ask) bounds one model request and the whole question.
+    dene_model_timeout_seconds: float = Field(default=60, gt=0, le=600)
+    dene_question_timeout_seconds: float = Field(default=120, gt=0, le=1800)
     # Metadata only; actual credentials live in each profile's server environment.
     docgrain_model_credential_profiles: str = Field(default="{}", repr=False)
 

@@ -1,4 +1,4 @@
-"""Repeat independent known/unknown questions over one pinned approved publication.
+"""Repeat independent known/list/unknown questions over one pinned approved publication.
 
 No clients are constructed without --enable-model and explicit connection arguments.
 The callable measure() accepts fake models/access adapters for offline tests.
@@ -9,12 +9,21 @@ import argparse
 import json
 import os
 import re
+import statistics
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "packages/access"))
 
-from docgrain_access.ask import CITATION, OpenAICompatibleClient, ask_result
+from docgrain_access.ask import (
+    CITATION,
+    ModelTimeout,
+    OpenAICompatibleClient,
+    ask_result,
+    bullet_items,
+    match_name,
+)
 from docgrain_access.client import AccessClient
 
 
@@ -49,8 +58,8 @@ def validate_questions(questions):
     ids = set()
     kinds = set()
     for item in questions:
-        if not isinstance(item, dict) or item.get("kind") not in {"known", "unknown"}:
-            raise ValueError("question kind must be known or unknown")
+        if not isinstance(item, dict) or item.get("kind") not in {"known", "list", "unknown"}:
+            raise ValueError("question kind must be known, list or unknown")
         for name in ("id", "question"):
             if not isinstance(item.get(name), str) or not item[name].strip():
                 raise ValueError("question id and text required")
@@ -58,10 +67,21 @@ def validate_questions(questions):
             raise ValueError("duplicate question id")
         ids.add(item["id"])
         kinds.add(item["kind"])
-        if item["kind"] == "known":
-            if not isinstance(item.get("claims"), list) or not item["claims"]:
-                raise ValueError("known question requires independent claims")
-            for claim in item["claims"]:
+        if item["kind"] == "list":
+            # WP112: the independent key names EVERY approved item the answer must list.
+            # Each entry is a name or a nonempty list of accepted names (aliases, translations).
+            names = item.get("items")
+            if not isinstance(names, list) or not names or any(
+                    not isinstance(name, str) or not name.strip() for entry in names
+                    for name in (entry if isinstance(entry, list) and entry else [entry])):
+                raise ValueError("list question requires the independent item names")
+            if not isinstance(item.get("claims", []), list):
+                raise ValueError("list claims must be a list")
+        if item["kind"] == "known" and (
+                not isinstance(item.get("claims"), list) or not item["claims"]):
+            raise ValueError("known question requires independent claims")
+        if item["kind"] != "unknown":
+            for claim in item.get("claims", []):
                 if not isinstance(claim, dict) or any(
                         not isinstance(claim.get(key), str) or not claim[key].strip()
                         for key in ("pattern", "quote", "document_name", "locator")):
@@ -69,7 +89,7 @@ def validate_questions(questions):
                 re.compile(claim["pattern"])
         for pattern in item.get("forbidden_patterns", []):
             re.compile(pattern)
-    if kinds != {"known", "unknown"}:
+    if "unknown" not in kinds or not kinds & {"known", "list"}:
         raise ValueError("both known and unknown questions required")
     return questions
 
@@ -89,11 +109,34 @@ def correct_with_sources(item, result):
             all(sources.get(key, {}).get(field) == claim[field]
                 for field in ("quote", "document_name", "locator"))
             for key in CITATION.findall(part))
-        for part in parts) for claim in item["claims"])
+        for part in parts) for claim in item.get("claims", []))
 
 
-def measure(questions, access, model_factory, *, repetitions=10):
-    """Fresh model/history per question; one immutable publication for the whole run."""
+def list_score(item, result):
+    """WP112: (listed key items, invented items) over the answer's top-level list lines.
+
+    A key item counts when a list line starts with its name and cites a returned source.
+    A list line that names no key item is an invented item.
+    """
+    returned = {source["id"] for source in result.sources}
+    groups = {name: index for index, entry in enumerate(item["items"])
+              for name in (entry if isinstance(entry, list) else [entry])}
+    listed = set()
+    invented = 0
+    for text, citations in bullet_items(result.answer):
+        name = match_name(text, groups)
+        if name is None:
+            invented += 1
+        elif citations & returned:
+            listed.add(groups[name])
+    return listed, invented
+
+
+def measure(questions, access, model_factory, *, repetitions=10, question_timeout=None):
+    """Fresh model/history per question; one immutable publication for the whole run.
+
+    question_timeout (seconds) bounds each question like Dene does (WP112).
+    """
     validate_questions(questions)
     if repetitions < 1:
         raise ValueError("repetitions must be positive")
@@ -104,15 +147,22 @@ def measure(questions, access, model_factory, *, repetitions=10):
               "mode": "approved", "repetitions": repetitions,
               "correct_with_sources": 0, "abstained_on_known": 0,
               "answered_on_unknown": 0, "invented_sources": 0,
-              "incorrect_on_known": 0, "errors": 0, "results": []}
+              "incorrect_on_known": 0, "errors": 0, "results": [],
+              "invented_items": 0, "missing_items": 0, "timeouts": 0}
+    latencies = []
     for repetition in range(repetitions):
         for item in questions:
             trace = ReadTrace(access, specs)
             model = None
             outcome = "error"
+            started = time.monotonic()
             try:
                 model = model_factory()
-                result = ask_result(item["question"], trace, model)
+                if question_timeout is None:
+                    result = ask_result(item["question"], trace, model)
+                else:
+                    result = ask_result(item["question"], trace, model,
+                                        deadline=started + question_timeout)
                 citations = set(CITATION.findall(result.answer))
                 returned = {source["id"]: source for source in result.sources}
                 invented = ((citations | returned.keys()) - trace.sources.keys()) | {
@@ -127,10 +177,23 @@ def measure(questions, access, model_factory, *, repetitions=10):
                 elif result.abstained:
                     outcome = "abstained_on_known"
                     report[outcome] += 1
+                elif item["kind"] == "list":
+                    listed, invented = list_score(item, result)
+                    missing = len(item["items"]) - len(listed)
+                    report["invented_items"] += invented
+                    report["missing_items"] += missing
+                    outcome = ("correct_with_sources" if result.sources and not invented
+                               and not missing and correct_with_sources(item, result)
+                               else "incorrect_on_known")
+                    report[outcome] += 1
                 else:
                     outcome = ("correct_with_sources" if result.sources and
                                correct_with_sources(item, result) else "incorrect_on_known")
                     report[outcome] += 1
+            except ModelTimeout:
+                outcome = "timeout"
+                report["timeouts"] += 1
+                report["errors"] += 1
             except Exception:  # noqa: BLE001 -- No private model/source/config output in reports.
                 report["errors"] += 1
             finally:
@@ -139,15 +202,23 @@ def measure(questions, access, model_factory, *, repetitions=10):
                         model.close()
                     except Exception:  # noqa: BLE001 -- Do not leak transport internals.
                         report["errors"] += 1
+            seconds = round(time.monotonic() - started, 2)
+            latencies.append(seconds)
             report["results"].append({"question_id": item["id"], "repetition": repetition + 1,
-                                      "outcome": outcome})
-    known = repetitions * sum(item["kind"] == "known" for item in questions)
+                                      "outcome": outcome, "seconds": seconds})
+    report["latency_seconds"] = {"mean": round(statistics.fmean(latencies), 2),
+                                 "p50": round(statistics.median(latencies), 2),
+                                 "max": max(latencies)}
+    # KULLANILMIYOR (karar 18) — before WP112 only "known" questions were answerable:
+    # known = repetitions * sum(item["kind"] == "known" for item in questions)
+    known = repetitions * sum(item["kind"] in {"known", "list"} for item in questions)
     unknown = repetitions * sum(item["kind"] == "unknown" for item in questions)
     report["known_runs"] = known
     report["unknown_runs"] = unknown
     report["abstained_on_known_rate"] = report["abstained_on_known"] / known
     report["passed"] = not any(report[key] for key in (
-        "abstained_on_known", "answered_on_unknown", "invented_sources", "incorrect_on_known", "errors"))
+        "abstained_on_known", "answered_on_unknown", "invented_sources", "incorrect_on_known", "errors",
+        "invented_items", "missing_items"))
     return report
 
 
@@ -158,6 +229,9 @@ def main(argv=None):
         parser.add_argument("--" + name)
     parser.add_argument("--questions", type=Path)
     parser.add_argument("--repetitions", type=int, default=10)
+    # WP112: the same bounds as Dene (DENE_MODEL_TIMEOUT_SECONDS / DENE_QUESTION_TIMEOUT_SECONDS).
+    parser.add_argument("--model-timeout", type=float, default=60)
+    parser.add_argument("--question-timeout", type=float, default=120)
     args = parser.parse_args(argv)
     if not args.enable_model:
         print("Model kapalı. Ölçüm için --enable-model ve bağlantı bilgilerini açıkça verin.")
@@ -166,6 +240,8 @@ def main(argv=None):
         parser.error("--api-url, --workspace, --base-url, --model ve --questions gerekli")
     if args.repetitions < 1:
         parser.error("--repetitions en az 1 olmalı")
+    if args.model_timeout <= 0 or args.question_timeout <= 0:
+        parser.error("--model-timeout ve --question-timeout pozitif olmalı")
     key = os.environ.get(args.api_key_env) if args.api_key_env else ""
     if key is None:
         parser.error("Belirtilen anahtar profili hazır değil")
@@ -173,8 +249,13 @@ def main(argv=None):
     try:
         questions = validate_questions(json.loads(args.questions.read_text(encoding="utf-8")))
         access = AccessClient(args.api_url, args.workspace, args.revision)
+        # KULLANILMIYOR (karar 18) — fixed 20 s request timeout before WP112:
+        # report = measure(questions, access, lambda: OpenAICompatibleClient(
+        #     args.base_url, args.model, key, timeout=20), repetitions=args.repetitions)
         report = measure(questions, access, lambda: OpenAICompatibleClient(
-            args.base_url, args.model, key, timeout=20), repetitions=args.repetitions)
+            args.base_url, args.model, key, timeout=args.model_timeout,
+            total_timeout=args.question_timeout), repetitions=args.repetitions,
+            question_timeout=args.question_timeout)
         # Even caller-controlled identifiers must not echo a credential.
         output = json.dumps(report, ensure_ascii=False, indent=2)
         if key and key in output:

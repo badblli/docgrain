@@ -54,7 +54,7 @@ def test_specs_match_two_discovered_schemas_and_filter_types(setup):
         result = response.json()
         assert result["mode"] == "approved" and result["revision_id"] == "r1"
         assert {t["function"]["name"] for t in result["tools"]} == {
-            "list_collections", "search_records", "get_record", "get_context"}
+            "list_collections", "search_records", "get_record", "get_context", "list_collection"}
         for spec in result["tools"]:
             schema = spec["function"]["parameters"]
             Draft202012Validator.check_schema(schema)
