@@ -211,8 +211,13 @@ def test_register_queue_worker_shared_publication_and_previous_head(services, mo
         preview = client.get(url)
         assert preview.status_code == 200 and len(preview.json()) == 1
         assert {v["value"] for v in preview.json()[0]["_meta"]["conflicts"][0]["candidates"]} == {32, 36}
-        assert client.get(url + "?mode=approved").json() == []
-        assert client.get(base + "/questions").json()["total"] == 3
+        # KULLANILMIYOR (karar 18, WP111): karar 20 öncesi onaylı yayın boştu, 3 soru vardı.
+        # assert client.get(url + "?mode=approved").json() == []
+        # assert client.get(base + "/questions").json()["total"] == 3
+        approved = client.get(url + "?mode=approved").json()
+        assert [(row["name"], row["capacity"], "size_m2" in row) for row in approved] == [
+            ("Garden Room", 2, False)]
+        assert client.get(base + "/questions").json()["total"] == 1  # only the 32/36 conflict
         with connect() as conn:
             rows = conn.execute("SELECT payload FROM record_jobs").fetchall()
             assert len(rows) == 1 and rows[0]["payload"]["status"] == "done"

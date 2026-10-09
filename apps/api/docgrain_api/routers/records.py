@@ -58,6 +58,13 @@ def get_questions(workspace_id: str, revision_id: str | None = None,
     return _review_response("list_questions", workspace_id, revision_id, limit, offset)
 
 
+@workspace_router.get("/auto-accepted")
+def get_auto_accepted(workspace_id: str, revision_id: str | None = None,
+                      limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0)):
+    """WP111: values a rule accepted (karar 20). Change one with POST /questions/{id}/answer."""
+    return _review_response("list_auto_accepted", workspace_id, revision_id, limit, offset)
+
+
 @workspace_router.post("/questions/{question_id}/answer")
 def answer_question(workspace_id: str, question_id: str, answer: Answer,
                     revision_id: str | None = None):

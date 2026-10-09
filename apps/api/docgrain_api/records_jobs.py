@@ -3,6 +3,8 @@
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+from docgrain_records.auto_accept import human_accepted
+
 from . import records_jobs_repository as jobs
 from . import repository
 from .queue import queue_client
@@ -107,6 +109,13 @@ def head(store, workspace):
 
 
 def has_accepted(store, workspace):
+    """A person's acceptance on the head; a new job must not overwrite it (karar 20: rules don't count)."""
+    revision_id = head(store, workspace)
+    return bool(revision_id and human_accepted(store._source(workspace, revision_id)))
+
+
+# KULLANILMIYOR (karar 18, WP111): kural onayları (karar 20) da sayılıp her yeni işi engelliyordu.
+def _has_accepted_before_wp111(store, workspace):
     revision_id = head(store, workspace)
     return bool(revision_id and any(c.review_state == "accepted"
                 for r in store._source(workspace, revision_id).records
