@@ -7,6 +7,7 @@ All source bodies and model proposals stay under the private runtime directory.
 import logging
 import multiprocessing
 import os
+from collections import Counter
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from threading import Event, Thread
@@ -17,6 +18,7 @@ from docgrain_api import records_jobs_repository as jobs
 from docgrain_api.settings import get_settings
 from docgrain_api.workspace_settings import ModelSettingsError, resolve_workspace_model
 from docgrain_records.discovery import (
+    FIELD_SYNONYMS,
     DiscoveryClient,
     discover,
     source_pins,
@@ -30,7 +32,12 @@ from docgrain_records.discovery_store import (
     write_proposal,
 )
 from docgrain_records.export import load_revision
-from docgrain_records.extractor import _blocks, extract, extraction_plan
+from docgrain_records.extractor import (
+    ExtractionRun,
+    _blocks,
+    extract,  # KULLANILMIYOR (karar 18, WP110): yalnız _extract_before_wp110 kullanıyor.
+    extraction_plan,  # KULLANILMIYOR (karar 18, WP110): yalnız _extract_before_wp110 kullanıyor.
+)
 from docgrain_records.match import accept_strong_matches, load_records, propose_matches
 from docgrain_records.match_merge import merge_matches, write_json
 from docgrain_records.model import ChatClient
@@ -79,6 +86,8 @@ class CheckedDiscovery:
         self.blocks = {d.source.document_id: _blocks(d.context) for d in documents}
         self.root = root
         self.needs_review = False
+        # WP110: (collection, field) definitions that could not be verified, in model order.
+        self.unverified = []
 
     def complete(self, messages, **kwargs):
         raw = self.chat.complete(messages, **kwargs)
@@ -89,13 +98,33 @@ class CheckedDiscovery:
             supported = {value.key for example in verified for value in example.values}
             if rejected or supported != {field.key for field in collection.fields}:
                 self.needs_review = True
+                failed = {item.field for item in rejected}
+                self.unverified.extend((collection, field) for field in collection.fields
+                                       if field.key in failed or field.key not in supported)
                 # Keep the complete proposal for the lead, never silently prune it.
                 write_json(self.root / "schema.review.json", response.model_dump(mode="json"))
         return raw
 
 
+# Same order as discovery_store.accept_schema, which picks a collection's identity from these.
+IDENTITY_FIELDS = ("name", "title", "question", "term", "label")
+
+
+def _label(labels, fallback):
+    """Plain name for the job report: Turkish, else English, else the key."""
+    values = {label.lang: label.value for label in labels}
+    return values.get("tr") or values.get("en") or fallback
+
+
+def _review_item(collection, field, reason):
+    """A definition set aside for review; no source text, only keys and schema labels."""
+    name = _label(collection.label_i18n, collection.key)
+    return {"collection": collection.key, "field": field.key if field else None, "reason": reason,
+            "label": f"{name}: {_label(field.label_i18n, field.key)}" if field else name}
+
+
 class Pipeline:
-    def __init__(self, job, transport=None, document_loader=None):
+    def __init__(self, job, transport=None, document_loader=None, concurrency=None):
         self.job = job
         self.workspace = job["workspace_id"]
         self.job_id = job["job_id"]
@@ -111,6 +140,9 @@ class Pipeline:
         self.matches = None
         self.revision = None
         self.schema_review = False
+        self.unverified = []
+        # WP110: parallel extraction calls (1-4); record order and usage do not depend on it.
+        self.concurrency = concurrency or get_settings().records_extraction_concurrency
         self.root.mkdir(parents=True, mode=0o700, exist_ok=True)
 
     def guard(self):
@@ -168,6 +200,7 @@ class Pipeline:
         try:
             self.schema = discover(self.documents, self.workspace, checked)
             self.schema_review = checked.needs_review
+            self.unverified = checked.unverified
         finally:
             chat.close()
         write_proposal(self.root / "schema", self.schema, self.documents)
@@ -177,6 +210,89 @@ class Pipeline:
                        doc.source.model_dump(mode="json"))
 
     def accept_schema(self):
+        """WP110: accept what verifies; set the rest aside for review instead of stopping."""
+        schema = self.schema
+        blocks = {doc.source.document_id: _blocks(doc.context) for doc in self.documents}
+        set_aside, accepted = [], {}
+        for collection in schema.collections:
+            rejected = []
+            examples = verify_examples(collection, blocks, rejected)
+            supported = {v.key for e in examples for v in e.values}
+            failed = {item.field for item in rejected}
+            keep = set()
+            for field in collection.fields:
+                if collection.review_state not in {"proposed", "needs_review"}:
+                    reason = "unverified"
+                elif field.alternatives or field.review_state != "proposed":
+                    reason = "alternatives"
+                elif field.key in failed or field.key not in supported:
+                    reason = "unverified"
+                else:
+                    keep.add(field.key)
+                    continue
+                set_aside.append(_review_item(collection, field, reason))
+            proposed = {f.key for f in collection.fields} | {
+                FIELD_SYNONYMS.get(f.key, f.key) for raw, f in self.unverified
+                if raw.key in {collection.key, *collection.aliases}}
+            names = proposed & set(IDENTITY_FIELDS)
+            if names and not keep & names:
+                # Without its verified name a record cannot be told apart; set the collection aside.
+                keep = set()
+            if keep:
+                accepted[collection.key] = keep
+            else:
+                set_aside = [item for item in set_aside if item["collection"] != collection.key]
+                set_aside.append(_review_item(collection, None, "unverified"))
+        # Definitions that discovery could not verify never reached the proposal; list them as well.
+        for raw, field in self.unverified:
+            target = next((c for c in schema.collections if raw.key in {c.key, *c.aliases}), None)
+            key = FIELD_SYNONYMS.get(field.key, field.key)
+            if target and (target.key not in accepted or key in accepted[target.key] or any(
+                    item["collection"] == target.key and item["field"] == key for item in set_aside)):
+                continue
+            item = _review_item(raw, field if target else None, "unverified")
+            if item not in set_aside:
+                set_aside.append(item)
+        if not accepted:
+            # Nothing verifiable remains: stop as before (needs_review, or empty without any proposal).
+            if set_aside:
+                self.metadata(schema_needs_review=set_aside)
+            if not schema.collections:
+                raise PipelineError("schema_review" if self.schema_review or schema.rejected else "empty")
+            raise PipelineError("schema_review")
+        # Nothing is removed from the proposal: set-aside parts stay there as needs_review.
+        # The rule accepts definitions only, never record values.
+        for collection in schema.collections:
+            if collection.key not in accepted:
+                collection.review_state = "needs_review"
+                continue
+            collection.review_state = "accepted"
+            for field in collection.fields:
+                if field.key in accepted[collection.key]:
+                    field.review_state = "accepted"
+                else:
+                    field.review_state = "needs_review"
+        write_json(self.root / "schema" / "schema.proposed.json", schema.model_dump(mode="json"))
+        accepting = schema.model_copy(deep=True)
+        accepting.collections = [c for c in accepting.collections if c.key in accepted]
+        for collection in accepting.collections:
+            collection.fields = [f for f in collection.fields if f.key in accepted[collection.key]]
+        write_json(self.root / "schema" / "schema.accepting.json", accepting.model_dump(mode="json"))
+        try:
+            self.schema = accept_schema(self.root / "schema" / "schema.accepting.json", self.root / "schema")
+        except ValueError:
+            raise PipelineError("schema_review") from None
+        self.metadata(schema_acceptance={
+            "reviewer": "rule:u1-verified-schema",
+            "reason": "Her alanın tipi ve sabit kaynak alıntısı doğrulandı; alternatif tanım yok.",
+            "version": self.schema.version,
+            "collections": [c.key for c in self.schema.collections],
+            "set_aside": len(set_aside),
+        }, schema_needs_review=set_aside)
+        self.runtime = load_runtime(self.root / "schema" / f"schema.v{self.schema.version}.json")
+
+    # KULLANILMIYOR (karar 18, WP110): doğrulanamayan tek bir alan bütün işi durduruyordu.
+    def _accept_schema_before_wp110(self):
         schema = self.schema
         if not schema.collections:
             raise PipelineError("schema_review" if self.schema_review or schema.rejected else "empty")
@@ -210,6 +326,49 @@ class Pipeline:
         self.runtime = load_runtime(self.root / "schema" / f"schema.v{self.schema.version}.json")
 
     def extract(self):
+        """WP110: rejected fields are reported; failed sections are retried once, then reported."""
+        chat = model_client(ChatClient, self.guard(), self.guard, self.transport)
+        plans, runs, retried = {}, [], 0
+        try:
+            for doc in self.documents:
+                self.guard()
+                usage = ExtractionUsage()
+                run = ExtractionRun(doc.context, doc.source.document_id, doc.source.lang, chat,
+                                    concurrency=self.concurrency, usage=usage, runtime=self.runtime)
+                plans[doc.source.document_id] = len(run.plan)
+                runs.append((doc, usage, run.run()))
+            # Model/network failures left after the client's own retries get one more try here.
+            for _doc, _usage, run in runs:
+                if failed := run.failed:
+                    self.guard()
+                    retried += len(failed)
+                    run.run(failed)
+        finally:
+            chat.close()
+        rejected_fields, failed_sections = {}, []
+        for doc, usage, run in runs:
+            result = run.result()
+            path = self.root / "records" / sha256(doc.source.document_id.encode()).hexdigest()
+            doc.source.usage = usage
+            write_json(path / "source.json", doc.source.model_dump(mode="json"))
+            write_json(path / "records.json", result.model_dump(mode="json", exclude_none=True))
+            if counts := Counter(item.reason for item in result.rejected):
+                rejected_fields[doc.source.document_id] = dict(sorted(counts.items()))
+            failed_sections.extend({"document_id": doc.source.document_id,
+                                    **failure.model_dump(mode="json")} for failure in result.failures)
+        total = sum(plans.values())
+        self.metadata(extraction_plans=plans, extraction_concurrency=self.concurrency,
+                      rejected_fields=rejected_fields, failed_sections=failed_sections,
+                      extraction_sections={"total": total, "failed": len(failed_sections),
+                                           "retried": retried})
+        if len(failed_sections) * 100 > total * lifecycle.MAX_FAILED_SECTIONS_PERCENT:
+            raise PipelineError("sections_failed")
+        self.results = load_records(self.root / "records", runtime=self.runtime)
+        if not any(result.records for result in self.results):
+            raise PipelineError("empty")
+
+    # KULLANILMIYOR (karar 18, WP110): tek reddedilen alan ya da tek başarısız bölüm işi durduruyordu.
+    def _extract_before_wp110(self):
         chat = model_client(ChatClient, self.guard(), self.guard, self.transport)
         plans = {}
         try:

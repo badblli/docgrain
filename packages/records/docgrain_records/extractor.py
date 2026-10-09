@@ -29,6 +29,7 @@ from .verify import (
 
 # Preserve the existing import surface while moving the implementation.
 __all__ = [
+    "ExtractionRun",
     "_blocks",
     "_source_key",
     "build_messages",
@@ -112,7 +113,118 @@ def extraction_plan(context: str, section_chars: int = 8000, focused_passes: boo
             for collection in (None, *runtime.focused) if focused_passes or collection is None]
 
 
+class ExtractionRun:
+    """One document's extraction plan. Failed passes can run again later (WP110).
+
+    Outcomes are stored per plan position and assembled in plan order, so record IDs,
+    record order and usage order never depend on latency or on the concurrency level.
+    A pass that succeeds on a later retry gives the same records as a first-try success.
+    """
+
+    def __init__(self, context: str, document_id: str, lang: str, chat: ChatClient | None = None, *,
+                 section_chars: int = 8000, concurrency: int = 3, focused_passes: bool = True,
+                 usage: ExtractionUsage | None = None, runtime=None):
+        if chat is None:
+            raise ValueError("extraction requires an explicitly configured chat client")
+        if not 1 <= concurrency <= 4:
+            raise ValueError("concurrency must be between 1 and 4")
+        self.runtime = runtime or HOSPITALITY
+        build_messages(context, document_id, lang, runtime=self.runtime)
+        self.context, self.document_id, self.lang = context, document_id, lang
+        self.chat, self.concurrency, self.usage = chat, concurrency, usage
+        self.plan = extraction_plan(context, section_chars, focused_passes, runtime=self.runtime)
+        self.outcomes = [None] * len(self.plan)
+
+    def _pass(self, task):
+        section, collection = task
+        calls = []
+
+        def account(values):
+            calls.append(CallUsage(section=section.index, collection=collection, **values))
+
+        try:
+            messages = build_messages(section.context, self.document_id, self.lang, collection,
+                                      runtime=self.runtime)
+            raw = self.chat.complete(messages, schema=proposal_schema(collection, runtime=self.runtime),
+                                     on_usage=account)
+            result = verify_response(raw, section.context, self.document_id, self.lang, collection,
+                                     source_context=self.context, runtime=self.runtime)
+            return result, None, calls
+        except httpx.HTTPStatusError:
+            reason = "http_error"
+        except httpx.HTTPError:
+            reason = "connection_error"
+        except ModelResponseError:
+            reason = "invalid_response"
+        return None, ExtractionFailure(
+            section=section.index, source_keys=list(section.source_keys),
+            collection=collection, reason=reason,
+        ), calls
+
+    @property
+    def failed(self) -> list[int]:
+        """Plan positions whose last attempt failed."""
+        return [index for index, outcome in enumerate(self.outcomes)
+                if outcome is not None and outcome[1] is not None]
+
+    def run(self, indexes=None):
+        """Run all passes, or only the given plan positions (a retry). Usage stays in plan order."""
+        indexes = list(range(len(self.plan)) if indexes is None else indexes)
+        executor = ThreadPoolExecutor(max_workers=self.concurrency)
+        try:
+            futures = [executor.submit(self._pass, self.plan[index]) for index in indexes]
+            for index, future in zip(indexes, futures, strict=True):
+                result, failure, calls = future.result()
+                if self.usage is not None:
+                    for call in calls:
+                        self.usage.add(call)
+                self.outcomes[index] = (result, failure)
+        finally:
+            # A guard/stale error stops queued passes; in-flight ones recheck the guard per request.
+            executor.shutdown(wait=True, cancel_futures=True)
+        return self
+
+    def result(self) -> ExtractionResult:
+        records, rejected, failures = [], [], []
+        offset = 0
+        for outcome in self.outcomes:
+            if outcome is None:
+                continue
+            result, failure = outcome
+            if failure is not None:
+                failures.append(failure)
+                continue
+            result = result.model_copy(deep=True)
+            # Per-response ordinal IDs must not collide between sections or focused passes.
+            local_indexes = [int(record.id.rsplit(":", 1)[1]) for record in result.records]
+            local_indexes.extend(item.record_index + 1 for item in result.rejected)
+            for record in result.records:
+                index = int(record.id.rsplit(":", 1)[1]) + offset
+                record.id = f"{self.document_id}:{record.type}:{index}"
+            for item in result.rejected:
+                item.record_index += offset
+            offset += max(local_indexes, default=0)
+            records.extend(result.records)
+            rejected.extend(result.rejected)
+        return self.runtime.result(
+            document_id=self.document_id, lang=self.lang,
+            records=_coalesce_document_records(records, self.lang, self.runtime),
+            rejected=rejected, failures=failures,
+        )
+
+
 def extract(context: str, document_id: str, lang: str, chat: ChatClient | None = None, *,
+            section_chars: int = 8000, concurrency: int = 3, focused_passes: bool = True,
+            usage: ExtractionUsage | None = None, runtime=None) -> ExtractionResult:
+    """Opt-in, bounded parallel extraction; failed passes never erase successful ones."""
+    return ExtractionRun(context, document_id, lang, chat, section_chars=section_chars,
+                         concurrency=concurrency, focused_passes=focused_passes, usage=usage,
+                         runtime=runtime).run().result()
+
+
+# KULLANILMIYOR (karar 18, WP110): extract() artık ExtractionRun ile çalışıyor; başarısız bölümler
+# aşama sonunda yeniden denenebiliyor. Eski gövde aynen korunuyor.
+def _extract_before_wp110(context: str, document_id: str, lang: str, chat: ChatClient | None = None, *,
             section_chars: int = 8000, concurrency: int = 3, focused_passes: bool = True,
             usage: ExtractionUsage | None = None, runtime=None) -> ExtractionResult:
     """Opt-in, bounded parallel extraction; failed passes never erase successful ones."""
