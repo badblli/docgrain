@@ -222,6 +222,18 @@ def list_jobs() -> list[Job]:
         return [_job(row) for row in cursor.fetchall()]
 
 
+def requeue_failed_job(job_id: str, version_id: str) -> None:
+    """Re-uploading a file whose last job failed processes it again (WP108); live mode only."""
+    if _fixture_mode():
+        return
+    with _connection() as connection, connection.cursor() as cursor:
+        cursor.execute(
+            """UPDATE jobs SET status='queued', finished_at=NULL, stale_retries=0, run_token=NULL
+               WHERE id=%s AND status='failed'""", (job_id,))
+        if cursor.rowcount:
+            cursor.execute("UPDATE document_versions SET status='processing' WHERE id=%s", (version_id,))
+
+
 def get_job(job_id: str) -> Job | None:
     if _fixture_mode():
         return next((item for item in _jobs if item.id == job_id), None)

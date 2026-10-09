@@ -199,6 +199,10 @@ def _register_document(payload: RegisterRequest) -> RegisterResponse:
                     and existing.content_sha256 == payload.content_sha256):
                 document = repository.get_document(existing.document_id)
                 job = repository.job_for_version(existing.id)
+                if job is not None and job.status == "failed":
+                    # WP108: a failed result is never reused; the same version is processed again.
+                    repository.requeue_failed_job(job.id, existing.id)
+                    job = repository.job_for_version(existing.id)
                 if document is not None and job is not None:
                     object_name = urlparse(existing.source_uri).path.lstrip("/")
                     return RegisterResponse(
