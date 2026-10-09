@@ -47,7 +47,8 @@ def add_discovery_commands(commands):
     accepter.add_argument("--out", required=True)
 
 
-def load_workspace_documents(api_url, workspace_id):
+def load_workspace_documents(api_url, workspace_id, document_ids=None):
+    """document_ids limits loading to pinned documents (failed ones are skipped by the caller)."""
     documents = []
     with httpx.Client(base_url=api_url.rstrip("/"), timeout=30) as api:
         offset = 0
@@ -69,7 +70,7 @@ def load_workspace_documents(api_url, workspace_id):
             if len(page) < 50:
                 break
             offset += len(page)
-        for document_id in sorted(ids):
+        for document_id in sorted(i for i in ids if document_ids is None or i in document_ids):
             context, _, source = load_context_bundle(api, document_id)
             documents.append(DiscoveryDocument(source=source, context=context))
     source_pins(documents, workspace_id)
