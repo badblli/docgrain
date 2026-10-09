@@ -17,6 +17,7 @@ from docgrain_api import records_jobs as lifecycle
 from docgrain_api import records_jobs_repository as jobs
 from docgrain_api.settings import get_settings
 from docgrain_api.workspace_settings import ModelSettingsError, resolve_workspace_model
+from docgrain_records.auto_accept import apply_review_rules
 from docgrain_records.discovery import (
     FIELD_SYNONYMS,
     DiscoveryClient,
@@ -121,6 +122,11 @@ def _review_item(collection, field, reason):
     name = _label(collection.label_i18n, collection.key)
     return {"collection": collection.key, "field": field.key if field else None, "reason": reason,
             "label": f"{name}: {_label(field.label_i18n, field.key)}" if field else name}
+
+
+def review_counts(audit):
+    """Rule outcomes for the job report: reviewer -> number of field values."""
+    return dict(sorted(Counter(item["reviewer"] for item in audit).items()))
 
 
 class Pipeline:
@@ -397,6 +403,18 @@ class Pipeline:
         write_json(self.root / "match" / "match_proposals.json", self.matches.model_dump(mode="json"))
 
     def merge(self):
+        """WP111 (karar 20): verified agreeing values are accepted by a recorded rule; the rest wait."""
+        merge_matches(self.root / "records", self.results, self.matches, self.root / "merged",
+                      self.workspace, "u1_" + self.job_id, "strong")
+        self.revision = load_revision((self.root / "merged" / "merge_revision.json").read_bytes())
+        if not self.revision.records:
+            raise PipelineError("empty")
+        self.revision, audit = apply_review_rules(self.revision)
+        self.metadata(field_review_audit=audit, field_review_counts=review_counts(audit))
+        write_json(self.root / "merged" / "merge_revision.json", self.revision.model_dump(mode="json"))
+
+    # KULLANILMIYOR (karar 18, WP111): her doğrulanmış tek kaynaklı değer de insan onayı bekliyordu.
+    def _merge_before_wp111(self):
         merge_matches(self.root / "records", self.results, self.matches, self.root / "merged",
                       self.workspace, "u1_" + self.job_id, "strong")
         self.revision = load_revision((self.root / "merged" / "merge_revision.json").read_bytes())

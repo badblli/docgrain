@@ -17,7 +17,7 @@ from typing import get_args
 
 from docgrain_records.export import MODES, SCHEMA_VERSION, encode, export_bundle
 from docgrain_records.merge_models import MergeRevision
-from docgrain_records.review import SkipAnswer, answer_revision, questions, summary
+from docgrain_records.review import SkipAnswer, answer_revision, auto_accepted, questions, summary
 from docgrain_records.runtime import revision_runtime
 
 
@@ -298,6 +298,18 @@ class RecordsRepository:
             self._save_review_state(workspace, state)
             return {"total": len(items), "items": page}
 
+    def list_auto_accepted(self, workspace, revision=None, limit=20, offset=0):
+        """WP111: values accepted by a rule (karar 20); answer them like questions to change them."""
+        with self._workspace_lock(workspace):
+            source = self._source(workspace, revision)
+            state = self._review_state(workspace)
+            items = auto_accepted(source)
+            page = items[offset:offset + limit]
+            for item in page:
+                state["issued"][item["id"]] = source.id
+            self._save_review_state(workspace, state)
+            return {"total": len(items), "items": page}
+
     def answer_question(self, workspace, question_id, answer, revision=None):
         with self._workspace_lock(workspace):
             if self.before_answer:
@@ -310,7 +322,8 @@ class RecordsRepository:
             if expected != newest.id:
                 raise QuestionStale("question revision is no longer newest; reload questions")
             pending = questions(newest)
-            if not any(q["id"] == question_id for q in pending):
+            # WP111: a rule-accepted value (karar 20) is answerable by its slot ID as well.
+            if not any(q["id"] == question_id for q in pending + auto_accepted(newest)):
                 raise PackMissing("question unknown")
             if isinstance(answer, SkipAnswer):
                 skipped = state["skipped"].setdefault(newest.id, [])

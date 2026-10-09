@@ -315,15 +315,30 @@ def test_real_six_stage_run_questions_answer_and_old_bytes(setup):
     source = setup.store._source(WORKSPACE)
     assert len(source.records) == 1
     assert {c.value for c in source.records[0].fields["size_m2"].candidates} == {32, 36}
-    assert all(c.review_state == "needs_review" for r in source.records
-               for f in r.fields.values() for c in f.candidates)
+    # KULLANILMIYOR (karar 18, WP111): karar 20 öncesi her alan insan onayı bekliyordu.
+    # assert all(c.review_state == "needs_review" for r in source.records
+    #            for f in r.fields.values() for c in f.candidates)
+    # assert len(metadata["field_review_audit"]) == 2
+    # assert json.loads(setup.store.read(WORKSPACE, source.id, "rooms", mode="approved")) == []
+    # assert questions["total"] == 3
+    # assert [q["kind"] for q in questions["items"]] == ["conflict", "needs_review", "needs_review"]
+    fields = source.records[0].fields
+    # Karar 20: both documents verify the same name and capacity -> accepted by the rule.
+    assert {name: {c.review_state for c in f.candidates} for name, f in fields.items()} == {
+        "name": {"accepted"}, "capacity": {"accepted"}, "size_m2": {"needs_review"}}
+    assert {(d.field, d.action, d.reviewer) for d in source.decisions} == {
+        ("name", "accepted", "rule:verified-agreeing-sources"),
+        ("capacity", "accepted", "rule:verified-agreeing-sources")}
     metadata = setup.memory.locate(key)["metadata"]
     assert metadata["schema_acceptance"]["reviewer"] == "rule:u1-verified-schema"
     assert len(metadata["field_review_audit"]) == 2  # name/capacity; conflict was already needs_review.
-    assert json.loads(setup.store.read(WORKSPACE, source.id, "rooms", mode="approved")) == []
+    assert metadata["field_review_counts"] == {"rule:verified-agreeing-sources": 2}
+    approved_before = json.loads(setup.store.read(WORKSPACE, source.id, "rooms", mode="approved"))
+    assert [(row["name"], row["capacity"], "size_m2" in row) for row in approved_before] == [
+        ("Garden Room", 2, False)]
     questions = setup.client.get(BASE + "/questions").json()
-    assert questions["total"] == 3
-    assert [q["kind"] for q in questions["items"]] == ["conflict", "needs_review", "needs_review"]
+    assert questions["total"] == 1
+    assert [q["kind"] for q in questions["items"]] == ["conflict"]
     size = next(q for q in questions["items"] if q["field"] == "size_m2")
     chosen = next(o for o in size["options"] if o["value"] == 32)
     assert chosen["quote"] == "32 m2" and chosen["document_name"] == "rooms.txt"
@@ -333,7 +348,9 @@ def test_real_six_stage_run_questions_answer_and_old_bytes(setup):
     new = answer.json()["revision_id"]
     approved = json.loads(setup.store.read(WORKSPACE, new, "rooms", mode="approved"))
     assert approved[0]["size_m2"] == 32
-    assert "capacity" not in approved[0]
+    # KULLANILMIYOR (karar 18, WP111): capacity artık kuralla onaylı.
+    # assert "capacity" not in approved[0]
+    assert approved[0]["capacity"] == 2
     assert setup.store.read(WORKSPACE, source.id, "rooms") == old
     assert setup.client.post(BASE + "/record-jobs", json={"request_id": "new-job"}).status_code == 409
     assert lifecycle.start(WORKSPACE, "request-1") == key  # completed request is idempotent too.
@@ -486,8 +503,9 @@ def test_dispatch_failure_is_durable_and_fixed(setup, monkeypatch):
 
 def test_start_and_answer_race_share_lock(setup, monkeypatch):
     run(setup, start(setup))
+    # WP111: name/capacity are accepted by the rule (karar 20); the size conflict remains.
     question = next(q for q in setup.client.get(BASE + "/questions").json()["items"]
-                    if q["kind"] == "needs_review")
+                    if q["kind"] == "conflict")
     saved = Event()
     release = Event()
     attempted = Event()
@@ -816,3 +834,89 @@ def test_extraction_run_order_is_independent_of_latency():
         outputs.append((passes.result().model_dump(mode="json"), usage.model_dump(mode="json")))
     assert outputs[0] == outputs[1] == outputs[2]
     assert len(outputs[0][0]["records"]) >= 3
+
+
+def old_publication(setup, monkeypatch):
+    """A publication made before WP111: every field value waits for a person."""
+    current = pipeline.Pipeline.merge
+    monkeypatch.setattr(pipeline.Pipeline, "merge", pipeline.Pipeline._merge_before_wp111)
+    assert run(setup, start(setup))["status"] == "done"
+    monkeypatch.setattr(pipeline.Pipeline, "merge", current)
+
+
+def test_republish_applies_review_rules_without_extraction(setup, monkeypatch, capsys):
+    """WP111: an old publication (all needs_review) gets karar 20 rules from its runtime directory."""
+    from docgrain_worker import republish
+
+    old_publication(setup, monkeypatch)
+    key = setup.memory.latest(WORKSPACE)["job_id"]
+    old = setup.store._source(WORKSPACE)
+    assert len(questions := setup.client.get(BASE + "/questions").json()["items"]) == 3
+    calls = len(setup.model.calls)
+    dry = republish.republish(WORKSPACE, dry_run=True)
+    assert dry["published"] is False and setup.store.list_revisions(WORKSPACE) == [old.id]
+    assert republish.main(["--workspace", WORKSPACE]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert setup.model.calls[calls:] == []  # no extraction, no model call
+    assert report["published"] is True and report["job_id"] == key
+    before, after = report["before"], report["after"]
+    assert (before["records"], before["questions"], before["conflicts"], before["needs_review"],
+            before["accepted_field_values"]) == (1, 3, 1, 2, 0)
+    assert (after["records"], after["questions"], after["conflicts"], after["needs_review"],
+            after["accepted_field_values"], after["duplicates"]) == (1, 1, 1, 0, 2, 0)
+    assert report["field_review_counts"] == {"rule:verified-agreeing-sources": 2}
+    head = setup.store._source(WORKSPACE)
+    assert head.id == report["revision_id"] == f"u1_{key}_wp111"
+    assert (head.parent_id, head.lineage_id) == (old.id, old.id)
+    approved = json.loads(setup.store.read(WORKSPACE, head.id, "rooms", mode="approved"))
+    assert (approved[0]["name"], approved[0]["capacity"]) == ("Garden Room", 2)
+    assert setup.store.read(WORKSPACE, old.id, "rooms", mode="approved") == b"[]"
+    # Lineage kept: the remaining conflict has the same question ID as before.
+    conflict = setup.client.get(BASE + "/questions").json()["items"]
+    assert [q["id"] for q in conflict] == [q["id"] for q in questions if q["kind"] == "conflict"]
+    # Idempotent: the same rules on the same job publish nothing new.
+    assert republish.republish(WORKSPACE)["published"] is False
+    assert setup.store.list_revisions(WORKSPACE) == [head.id, old.id]
+    # Rule acceptances never block the next record job (only people's answers do).
+    assert lifecycle.has_accepted(setup.store, WORKSPACE) is False
+    # They stay correctable: listed by the API, answered by the same answer endpoint.
+    listed = setup.client.get(BASE + "/auto-accepted").json()
+    assert listed["total"] == 2 and {q["field"] for q in listed["items"]} == {"name", "capacity"}
+    capacity = next(q for q in listed["items"] if q["field"] == "capacity")
+    corrected = setup.client.post(BASE + f"/questions/{capacity['id']}/answer",
+                                  json={"value": 3, "note": "Yeni yatak eklendi"})
+    assert corrected.status_code == 200, corrected.text
+    approved = json.loads(setup.store.read(WORKSPACE, corrected.json()["revision_id"], "rooms",
+                                           mode="approved"))
+    assert approved[0]["capacity"] == 3
+    assert lifecycle.has_accepted(setup.store, WORKSPACE) is True
+    assert setup.client.get(BASE + "/auto-accepted").json()["total"] == 1  # capacity is a person's now
+    size = setup.client.get(BASE + "/questions").json()["items"][0]
+    answer = setup.client.post(BASE + f"/questions/{size['id']}/answer",
+                               json={"candidate_id": size["options"][0]["candidate_id"]})
+    assert answer.status_code == 200
+    with pytest.raises(republish.RepublishError, match="answers"):
+        republish.republish(WORKSPACE)
+    assert republish.main(["--workspace", WORKSPACE]) == 2
+
+
+def test_republish_refuses_while_a_job_runs(setup, monkeypatch):
+    from docgrain_worker import republish
+
+    old_publication(setup, monkeypatch)
+    old = setup.store.list_revisions(WORKSPACE)
+    start(setup, "rerun")  # queued: the publication lock fence sees an active job
+    with pytest.raises(republish.RepublishError, match="running"):
+        republish.republish(WORKSPACE)
+    assert setup.store.list_revisions(WORKSPACE) == old
+
+
+def test_republish_is_a_no_op_for_a_job_that_already_used_the_rules(setup):
+    from docgrain_worker import republish
+
+    run(setup, start(setup))
+    old = setup.store.list_revisions(WORKSPACE)
+    report = republish.republish(WORKSPACE)
+    assert report["published"] is False and "already" in report["note"]
+    assert report["before"]["questions"] == report["after"]["questions"] == 1
+    assert setup.store.list_revisions(WORKSPACE) == old

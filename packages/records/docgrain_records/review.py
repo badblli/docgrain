@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from pydantic import JsonValue, model_validator
 
+from .auto_accept import auto_slots, rule_decisions
 from .duplicates import answer_duplicate, duplicate_questions
 from .export import encode, project_records
 from .merge_models import AnswerHistory, FactCandidate, MergeRevision, UserEditEvidence
@@ -144,6 +145,55 @@ def questions(revision: MergeRevision) -> list[dict]:
                                         q["collection"], q["record_id"], q["field"], q["lang"] or ""))
 
 
+def auto_accepted(revision: MergeRevision) -> list[dict]:
+    """WP111: values a rule accepted (karar 20), shaped like questions so a person can change them.
+
+    Not part of ``questions``/counts. The ID is the slot's question ID; answering it with a
+    candidate (also a recorded variant), a document, all values or a correction replaces the
+    rule's choice and records the answer in the history like any other answer.
+    """
+    runtime = revision_runtime(revision)
+    definitions = {c["key"]: c for c in (runtime.schema or {}).get("collections", [])}
+    rows = project_records(revision, "tr")
+    titles = {row["id"]: _display(row.get(runtime.identities[kind], row["id"]))
+              for kind, key in runtime.collections.items() for row in rows[key]}
+    documents = {pin.document_id: pin.document_name or pin.document_id
+                 for pin in revision.documents}
+    rules = rule_decisions(revision)
+    result = []
+    for record, field, lang, candidates in auto_slots(revision):
+        collection = runtime.collections[record.type]
+        definition = definitions.get(collection, {})
+        fields = {f["key"]: f for f in definition.get("fields", [])}
+        identity = [revision.workspace_id, revision.lineage_id or revision.id, record.id, field, lang]
+        options = []
+        for candidate in sorted(candidates, key=lambda c: (c.review_state != "accepted", c.id)):
+            decision = rules.get((record.id, field, candidate.id))
+            for evidence in sorted(candidate.evidence, key=lambda e: (
+                    e.document_id, e.locator, e.quote)):
+                options.append({
+                    "candidate_id": candidate.id, "value": candidate.value,
+                    "display": _display(candidate.value), "quote": evidence.quote,
+                    "document_id": evidence.document_id,
+                    "document_name": documents[evidence.document_id],
+                    "locator": _locator(evidence.locator),
+                    "accepted": candidate.review_state == "accepted",
+                    "reviewer": decision.reviewer if decision else None,
+                })
+        accepted = [c for c in candidates if c.review_state == "accepted"]
+        result.append({
+            "id": "q_" + sha256(encode(identity)).hexdigest(), "kind": "auto_accepted",
+            "collection": collection, "collection_label": _label(definition, collection),
+            "record_id": record.id, "record_title": titles.get(record.id, record.id),
+            "field": field, "field_label": _label(fields.get(field, {}), field), "lang": lang,
+            "reviewer": rules[(record.id, field, accepted[0].id)].reviewer,
+            "options": options,
+            # "All" only where the rule itself accepted several values (one document's list).
+            "allow_all": len(accepted) > 1 and not list_field(runtime, record.type, field),
+        })
+    return result
+
+
 def summary(revision: MergeRevision, updated_at: str) -> dict:
     """Count published preview fields; each language value is a field slot."""
     runtime = revision_runtime(revision)
@@ -196,6 +246,9 @@ def answer_revision(base: MergeRevision, question_id: str,
                     | DuplicateAnswer) -> MergeRevision:
     question = next((q for q in questions(base) if q["id"] == question_id), None)
     if question is None:
+        # WP111 (karar 20): a value accepted by a rule stays correctable by its slot ID.
+        question = next((q for q in auto_accepted(base) if q["id"] == question_id), None)
+    if question is None:
         raise LookupError("question unknown")
     if (question["kind"] == "duplicate") != isinstance(answer, DuplicateAnswer):
         raise ValueError("same answer is required only for a duplicate question")
@@ -212,6 +265,12 @@ def answer_revision(base: MergeRevision, question_id: str,
         return MergeRevision.model_validate_json(revision.model_dump_json(round_trip=True))
     record = next(r for r in revision.records if r.id == question["record_id"])
     field = record.fields[question["field"]]
+    if question["kind"] == "auto_accepted":
+        # Reopen the rule's slot, including its recorded variants; the answer below decides it.
+        offered = {option["candidate_id"] for option in question["options"]}
+        for candidate in field.candidates:
+            if candidate.lang == question["lang"] and candidate.id in offered:
+                candidate.review_state = "needs_review"
     all_candidates = []
     if isinstance(answer, (AllAnswer, DocumentAnswer)):
         if isinstance(answer, AllAnswer) and not question["allow_all"]:

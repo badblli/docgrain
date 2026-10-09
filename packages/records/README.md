@@ -511,3 +511,31 @@ read and answer to the `revision_id` obtained from summary. This ensures stale
 screens return 409 even if another reader has since refreshed the same question.
 Unknown/foreign publications return 404, staged publications 409, and invalid
 or unavailable artifacts 503. These paths make no model or network calls.
+
+## Automatic acceptance of agreeing values (WP111, decision 20)
+
+After the U1 merge, `auto_accept.apply_review_rules` settles each record/field/language slot:
+
+- every candidate is still verified (pinned source, and each quote states the value literally or in
+  a formatting-equal spelling); otherwise the slot stays `needs_review`;
+- candidates that are equal after `normalize.format_key` (Unicode width and dashes, whitespace,
+  case including Turkish İ/ı, prose punctuation not between digits, `10.00`/`10:00`, a slash or
+  dash between two clock times, `m 2`/`m²`) or near-identical long text (`normalize.near_identical`:
+  at least 40 characters, the same numbers, ≥ 0.95 similarity, only single-letter word slips) are
+  one value. The best-sourced candidate is `accepted` with reviewer
+  `rule:verified-single-source` or `rule:verified-agreeing-sources`; each other spelling stays as a
+  `rejected` variant with `rule:format-equal-variant` or `rule:near-identical-variant`;
+- one document listing several values that the cardinality rules already treat as a list is
+  accepted as that list;
+- different numbers, times or dates, unverified evidence, user edits and duplicates remain questions.
+
+Each automatic state is a `ReviewDecision` in the revision. `GET /v1/workspaces/{id}/auto-accepted`
+lists rule-settled values in the question shape (`kind: "auto_accepted"`, options include the
+variants); answering one of those IDs through `POST .../questions/{id}/answer` replaces the rule's
+choice like any answer. Rule acceptances do not block a new record job; people's answers still do.
+
+Existing publications get the rules without extraction or model calls (inside the worker image):
+
+```sh
+python -m docgrain_worker.republish --workspace <workspace_id> [--job <job_id>] [--dry-run]
+```
