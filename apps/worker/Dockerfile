@@ -10,6 +10,15 @@ RUN apt-get update \
         tesseract-ocr tesseract-ocr-tur tesseract-ocr-deu tesseract-ocr-rus tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
+# WP106: legacy Office (DOC, RTF, PPT, XLS) is converted by Docling through headless LibreOffice;
+# OpenDocument (ODT, ODS, ODP) needs odfdo. Separate layers keep the OCR layer above cached.
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y libreoffice-writer-nogui libreoffice-calc-nogui \
+        libreoffice-impress-nogui \
+    && rm -rf /var/lib/apt/lists/*
+ENV DOCLING_LIBREOFFICE_CMD=/usr/bin/soffice
+RUN pip install --no-cache-dir 'odfdo>=3.22.0,<4.0.0'
+
 # Docling uses PyTorch for layout analysis. Pin the CPU wheel so a local
 # development worker does not download CUDA runtimes it cannot use.
 COPY apps/worker/pyproject.toml /srv/apps/worker/pyproject.toml
