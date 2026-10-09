@@ -17,7 +17,7 @@ from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import psycopg
 import redis
@@ -189,11 +189,14 @@ def process(job_id: str, token: str) -> None:
     version_id, document_id, stages, filename, mime_type, workspace_id, expected_size, expected_sha, source_uri = row
     bucket = os.environ["S3_BUCKET"]
     active_stage = "extract"
+    rereading = any(stage.get("attributes", {}).get("reading_reread") for stage in stages)
     try:
         with TemporaryDirectory() as temp:
             client = storage()
             object_key = urlparse(source_uri).path.lstrip("/")
-            response = client.get_object(bucket, object_key)
+            source_query = parse_qs(urlparse(source_uri).query)
+            source_options = {"version_id": source_query["versionId"][0]} if source_query.get("versionId") else {}
+            response = client.get_object(bucket, object_key, **source_options)
             source_format = declared_format(filename, mime_type)
             # KULLANILMIYOR (karar 18): source = Path(temp) / f"source.{source_format.value}"
             # WP106: Docling detects the newer formats by suffix (eml/msg, dclg, tar.gz); the six keep theirs.
@@ -216,18 +219,19 @@ def process(job_id: str, token: str) -> None:
             if os.getenv("CANONICAL_PERSISTENCE_ENABLED", "false").lower() == "true":
                 heads = canonical_repository.get_heads(document_id)
                 expected_head = heads[0] if heads else None
-            structural = convert(VerifiedSource(source, content_hash, len(source_bytes)), source_format,
-                                 tick=_lease_tick(job_id, token))
+            structural = None if rereading else convert(
+                VerifiedSource(source, content_hash, len(source_bytes)), source_format,
+                tick=_lease_tick(job_id, token))
             _progress(job_id, token)
             prefix = f"artifacts/{document_id}/{version_id}"
-            if structural.status == "failed":
+            if structural is not None and structural.status == "failed":
                 raise ValueError("structural parser failed: " + "; ".join(i.reason for i in structural.issues))
             canonical_persisted = False
             outputs_published = False
             chunk_count = 0
             output_revision_id = None
-            structural_issues = [i.__dict__ for i in structural.issues]
-            if os.getenv("CANONICAL_PERSISTENCE_ENABLED", "false").lower() == "true":
+            structural_issues = [] if rereading else [i.__dict__ for i in structural.issues]
+            if not rereading and os.getenv("CANONICAL_PERSISTENCE_ENABLED", "false").lower() == "true":
                 if storage_version and storage_version != "null" and structural.status != "failed":
                     stat = client.stat_object(bucket, object_key, version_id=storage_version)
                     source_id = source_revision_id(workspace_id, document_id, content_hash)
@@ -266,6 +270,15 @@ def process(job_id: str, token: str) -> None:
                     structural_issues.append({"code": "source_not_versioned", "stage": "source_verification",
                                               "reason": "Immutable object version is unavailable; canonical persistence gated",
                                               "impact": "document"})
+            # WP97: reading report + hard pages through the workspace model (decision 17), via Docling's
+            # remote options. Model off: no remote call; the report says which pages wait for the model.
+            reading = _read_hard_pages(job_id, token, VerifiedSource(source, content_hash, len(source_bytes)),
+                                       workspace_id=workspace_id, document_id=document_id, version_id=version_id,
+                                       client=client, bucket=bucket, structural=structural,
+                                       mapping_issues=structural_issues, required=rereading)
+            if rereading:
+                _finish_reread(job_id, token, stages, reading)
+                return
             rendered_page_count = len(structural.expected_areas) if source_format is SourceFormat.PDF else 0
             failures = page_failures(structural) if source_format is SourceFormat.PDF else []
             missing_pages = [failure["page_number"] for failure in failures]
@@ -341,9 +354,71 @@ def process(job_id: str, token: str) -> None:
             )
             conn.commit()
     except WorkerCrash as exc:
+        if rereading:
+            _finish_reread(job_id, token, stages, None)
+            return
         fail(job_id, str(exc), active_stage, code="worker_crash", token=token)
     except Exception as exc:  # noqa: BLE001 - pipeline must persist unexpected provider failures.
+        if rereading:
+            _finish_reread(job_id, token, stages, None)
+            return
         fail(job_id, str(exc)[:1000], active_stage, token=token)
+
+
+READ_STATES = {"done", "partial"}
+
+
+def _read_hard_pages(job_id: str, token: str, source, *, required: bool, **kwargs) -> dict | None:
+    """Run the reading report; a failed report never fails an ingested version.
+
+    The advisory lock is shared with the reread CLI/API so page checkpoints never compete.
+    """
+    from .reread import run_reading
+
+    try:
+        with closing(psycopg.connect(db_url())) as reading_conn:
+            locked = reading_conn.execute("SELECT pg_try_advisory_lock(hashtextextended(%s, 0))",
+                                          (f"reading:{kwargs['version_id']}",)).fetchone()
+            if not locked or not locked[0]:
+                raise ValueError("reading already running")
+            return run_reading(source, progress=lambda: _progress(job_id, token),
+                               tick=_lease_tick(job_id, token), **kwargs)
+    except WorkerCrash:
+        raise
+    except Exception:  # noqa: BLE001 -- fixed boundary; provider/storage diagnostics may contain secrets
+        if required:
+            raise ValueError("Okuma raporu hazırlanamadı.") from None
+        logging.getLogger(__name__).error("reading report deferred (reading_report_unavailable)")
+        return None
+
+
+def _finish_reread(job_id: str, token: str, stages: list[dict[str, object]], reading: dict | None) -> None:
+    """A reread job never changes the version's parse; it restores the status claim() replaced."""
+    attributes = stages[0].setdefault("attributes", {})
+    previous = attributes.get("previous_version_status")
+    previous = previous if previous in READ_STATES else "partial"
+    if reading is None:
+        stages[0]["status"] = "failed"
+        stages[0]["error"] = "Yeniden okuma tamamlanamadı."
+        status = "failed"
+    else:
+        stages[0]["status"] = "done"
+        stages[0]["error"] = None
+        stages[0]["summary"] = reading["summary"]
+        attributes["reading_report"] = {key: reading.get(key) for key in (
+            "summary", "total_pages", "pages_read_well", "pages_read_by_model", "pages_waiting_model",
+            "attempted_pages", "model_enabled")}
+        status = "partial" if reading["pages_waiting_model"] else "done"
+    with closing(psycopg.connect(db_url())) as conn, conn.cursor() as cur:
+        cur.execute("SELECT document_version_id FROM jobs WHERE id=%s AND status='running' AND run_token=%s FOR UPDATE",
+                    (job_id, token))
+        row = cur.fetchone()
+        if row is None:
+            return
+        cur.execute("UPDATE jobs SET status=%s, stages=%s::jsonb, finished_at=NOW() WHERE id=%s",
+                    (status, json.dumps(stages), job_id))
+        cur.execute("UPDATE document_versions SET status=%s WHERE id=%s AND status='processing'", (previous, row[0]))
+        conn.commit()
 
 
 def recover_jobs(client) -> None:
