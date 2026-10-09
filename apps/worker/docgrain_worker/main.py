@@ -25,7 +25,7 @@ from docgrain_api import document_jobs
 from docgrain_api.canonical_repository import CanonicalRepository
 from docgrain_domain.canonical import SourceVersion
 from docgrain_domain.canonical.lifecycle import source_revision_id
-from docgrain_domain.source_format import SourceFormat, declared_format
+from docgrain_domain.source_format import SourceFormat, declared_format, storage_suffix
 from minio import Minio
 
 from .canonical_assets import store_asset
@@ -195,7 +195,9 @@ def process(job_id: str, token: str) -> None:
             object_key = urlparse(source_uri).path.lstrip("/")
             response = client.get_object(bucket, object_key)
             source_format = declared_format(filename, mime_type)
-            source = Path(temp) / f"source.{source_format.value}"
+            # KULLANILMIYOR (karar 18): source = Path(temp) / f"source.{source_format.value}"
+            # WP106: Docling detects the newer formats by suffix (eml/msg, dclg, tar.gz); the six keep theirs.
+            source = Path(temp) / f"source.{storage_suffix(filename, source_format)}"
             try:
                 source.write_bytes(response.read())
                 storage_version = response.headers.get("x-amz-version-id")
@@ -366,6 +368,13 @@ def run() -> None:
     from .docling_models import startup_check
 
     startup_check()
+    try:
+        # WP106: tell the API which optional Docling readers this image has (LibreOffice, odfdo, ...).
+        from .format_capabilities import publish
+
+        publish(storage(), os.environ["S3_BUCKET"])
+    except Exception:  # noqa: BLE001 - without a report the API keeps optional formats closed.
+        logging.getLogger(__name__).error("format capabilities were not published")
     from docgrain_api.records_jobs import QUEUE_NAME as RECORDS_QUEUE
 
     from .records_pipeline import supervise

@@ -557,6 +557,12 @@ class DocumentParser:
         if len(data) != source.byte_size or sha256(data).hexdigest() != source.content_sha256:
             raise ValueError("verified source bytes changed before parsing")
         verify_format(data, source_format)
+        # WP106: ".xml" becomes the XML type Docling detects; closed formats fail here with a clear reason.
+        from .docling_dispatch import closed_format_result, resolve_source_format
+        source_format = resolve_source_format(data, source_format)
+        closed = closed_format_result(source_format)
+        if closed is not None:
+            return closed
         if source_format in (SourceFormat.PNG, SourceFormat.JPEG):
             from .image_geometry import prepare_image
             prepared, metadata = prepare_image(data)
@@ -587,9 +593,23 @@ class DocumentParser:
                             location=f"page:{number}", impact="page"))
                     if result.status != "failed":
                         result.status = "partial"
+        elif source_format.value in {"tiff", "bmp", "webp"}:
+            # WP106: other image types and TIFF pages follow the PNG/JPEG image rules.
+            from .image_formats import parse_image
+
+            def read_prepared(prepared: bytes, metadata: dict) -> StructuralParseResult:
+                with TemporaryDirectory(prefix="docgrain-image-") as directory:
+                    path = Path(directory) / "input.png"
+                    path.write_bytes(prepared)
+                    return _docling(VerifiedSource(path, sha256(prepared).hexdigest(), len(prepared)),
+                                    SourceFormat.PNG, image_metadata=metadata, profile=self.profile,
+                                    remote=self.remote)
+            result = parse_image(data, source_format, read_prepared)
         else:
             result = _txt(source) if source_format is SourceFormat.TXT else _docling(
                 source, source_format, profile=self.profile, remote=self.remote)
+            from .docling_dispatch import mark_document_area
+            mark_document_area(result)
         if source_format is SourceFormat.TXT:
             result.processing_options = {"encoding": "utf-8-sig", "paragraph_strategy": "exact-spans-v1"}
         if self.bbox_tolerance:

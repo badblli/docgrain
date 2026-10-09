@@ -19,7 +19,8 @@ function evaluate(path, dependencies = {}) {
   vm.runInNewContext(compile(path), context);
   return exports;
 }
-const { createUploadQueue, sha256 } = evaluate("../../apps/web/lib/u1-upload.ts");
+const sourceFormats = evaluate("../../apps/web/lib/source-formats.ts");
+const { createUploadQueue, sha256 } = evaluate("../../apps/web/lib/u1-upload.ts", { "./source-formats": sourceFormats });
 const file = (name, text = name) => new File([text], name, { type: "text/plain" });
 const hash = async file => createHash("sha256").update(Buffer.from(await file.arrayBuffer())).digest("hex");
 const response = (body, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
@@ -63,6 +64,25 @@ test("SHA-256 uses the actual file content", async () => {
   const input = file("rooms.txt", "Örnek oda 32 m²");
   assert.equal(await sha256(input), await hash(input));
   assert.equal((await sha256(input)).length, 64);
+});
+test("generated accept list covers the Docling formats and keeps the original six", () => {
+  const accepted = sourceFormats.ACCEPTED_FILE_TYPES.split(",");
+  for (const extension of [".pdf", ".docx", ".xlsx", ".txt", ".png", ".jpg", ".jpeg", ".pptx", ".html", ".md", ".csv",
+    ".odt", ".eml", ".msg", ".epub", ".tif", ".tiff", ".bmp", ".webp", ".vtt", ".xml", ".doc", ".xls", ".ppt", ".wav", ".mp4"])
+    assert.ok(accepted.includes(extension), extension);
+  assert.ok(!accepted.includes(".ebc") && !accepted.includes(".exe"));
+  assert.match(sourceFormats.UPLOAD_SUMMARY, /^PDF, Word, Excel, PowerPoint, .* veya görsel$/);
+});
+test("a type this installation has not opened shows the server's plain reason", async () => {
+  const worker = queue({ fetch: async url => url.endsWith("/documents")
+    ? response({ detail: sourceFormats.NOT_ENABLED_MESSAGE }, 415) : response({}, 500) });
+  worker.add([file("old.doc")]);
+  await until(() => [...worker.states.values()][0]?.phase === "error");
+  assert.equal([...worker.states.values()][0].message, "Bu dosya türü bu kurulumda henüz açık değil.");
+  const other = queue({ fetch: async () => response({ detail: "unsupported file extension" }, 415) });
+  other.add([file("tool.exe")]);
+  await until(() => [...other.states.values()][0]?.phase === "error");
+  assert.match([...other.states.values()][0].message, /Dosya yüklenemedi/);
 });
 test("two files each register, transfer, confirm without waiting for preparation", async () => {
   const backend = server(), worker = queue(backend);

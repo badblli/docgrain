@@ -4,7 +4,7 @@ from hashlib import sha256
 import jsonschema
 import pytest
 from docgrain_domain.canonical.ai_output import output_bundle
-from docgrain_domain.source_format import SourceFormat
+from docgrain_domain.source_format import IMAGE_FORMATS, SourceFormat
 
 from tests.fixtures.lifecycle import mapped_snapshot
 from tests.unit.test_m2c_chunking import rich_snapshot
@@ -15,7 +15,7 @@ def test_single_consumer_schema_and_source_evidence_preserved(fmt):
     snapshot, _, _, _ = mapped_snapshot(fmt)
     output, chunks, revision, files = output_bundle(snapshot)
     jsonschema.Draft202012Validator(json.loads(files["ai.schema.json"])).validate(json.loads(files["ai.json"]))
-    assert output.version == ("1.1.0" if fmt in {SourceFormat.PNG, SourceFormat.JPEG} else "1.0.0")
+    assert output.version == ("1.1.0" if fmt in IMAGE_FORMATS else "1.0.0")
     assert output.source == snapshot.source_version
     assert {n.id:n.model_dump(mode="json") for n in output.content} == {
         n.id:n.model_dump(mode="json") for n in snapshot.structure}

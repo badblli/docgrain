@@ -22,7 +22,9 @@ def test_registration_supports_four_formats_and_rejects_mismatch(live_repository
                            ("a.txt", "text/plain"), ("a.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")):
         assert _register(filename, mime, 8).status_code == 202
     assert _register("a.docx", "application/pdf", 8).status_code == 415
-    assert _register("a.html", "text/html", 8).status_code == 415
+    # WP106: HTML is a Docling format now; an unknown type is still refused.
+    assert _register("a.exe", "application/octet-stream", 8).status_code == 415
+    assert _register("a.html", "application/pdf", 8).status_code == 415
 
 
 def test_upload_rejects_mismatched_and_corrupt_bytes(monkeypatch, live_repository) -> None:

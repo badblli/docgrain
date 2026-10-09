@@ -17,6 +17,15 @@ from docgrain_domain.canonical.lifecycle import (
 from .canonical_mapper import CanonicalMapper
 from .structural import StructuralParseResult
 
+READER_PACKAGES = {
+    "pptx": ["python-pptx", "lxml"], "doc": ["python-docx", "lxml"], "rtf": ["python-docx", "lxml"],
+    "ppt": ["python-pptx", "lxml"], "xls": ["openpyxl"], "html": ["beautifulsoup4", "lxml"],
+    "mhtml": ["beautifulsoup4", "lxml"], "md": ["marko"], "odt": ["odfdo"], "ods": ["odfdo"], "odp": ["odfdo"],
+    "xml_jats": ["beautifulsoup4", "lxml"], "xml_uspto": ["beautifulsoup4", "defusedxml"],
+    "xml_xbrl": ["arelle-release"], "latex": ["pylatexenc"], "epub": ["defusedxml"],
+    "email": ["mail-parser", "python-oxmsg", "beautifulsoup4"], "iwork_pages": ["defusedxml"],
+}
+
 
 def processing_spec(result: StructuralParseResult) -> ProcessingSpec:
     dependencies = {"python": platform.python_version()}
@@ -27,6 +36,8 @@ def processing_spec(result: StructuralParseResult) -> ProcessingSpec:
         packages += ["pymupdf"]
     if result.source_format.value in {"docx", "xlsx"}:
         packages += ["lxml", "openpyxl", "python-docx"]
+    # WP106: the reader packages behind the other Docling formats are part of the processing identity.
+    packages += READER_PACKAGES.get(result.source_format.value, [])
     if result.processing_options.get("ocr_profile", {}).get("engine") == "easyocr":
         packages += ["easyocr", "opencv-python-headless", "numpy", "scikit-image"]
     for package in packages:
