@@ -51,6 +51,10 @@ def pack_store():
     return RecordsRepository(root)
 
 
+PREPARING = {"queued", "running"}
+USABLE = {"done", "partial"}
+
+
 def source_snapshot(workspace):
     """Pin current prepared documents and canonical heads, without model or HTTP I/O."""
     from .routers.knowledge import latest_knowledge
@@ -65,22 +69,30 @@ def source_snapshot(workspace):
     for doc in documents:
         version = repository.get_version(doc.id, doc.latest_version_id)
         preparation = repository.job_for_version(doc.latest_version_id)
-        if (not version or version.status != "done" or version.workspace_id != workspace
-                or not preparation or preparation.status != "done" or preparation.page_failures):
+        if not version or version.workspace_id != workspace or not preparation:
             raise JobConflict()
+        # Documents still being prepared block the job: their content is not pinned yet.
+        if version.status in PREPARING or preparation.status in PREPARING:
+            raise JobConflict()
+        # A failed document is skipped, not fatal for the whole company. Partial documents are used: the
+        # readable part carries verified evidence, and pages Docling graded low stay visible in the report.
+        if version.status not in USABLE or preparation.status not in USABLE:
+            continue
         try:
             snapshot = latest_knowledge(doc.id).snapshot
         except Exception:  # noqa: BLE001 - fail closed without exposing storage errors.
             raise JobConflict() from None
         source = snapshot.source_version
+        # Reading issues (low-grade pages, downscaled images) are reported, not blocking.
         if (source.workspace_id != workspace or source.document_id != doc.id
-                or source.content_sha256 != version.content_sha256
-                or snapshot.metadata.get("structural_parse", {}).get("issues")):
+                or source.content_sha256 != version.content_sha256):
             raise JobConflict()
         pins.append({"document_id": doc.id, "document_version_id": version.id,
                      "source_version_id": source.id,
                      "knowledge_revision_id": snapshot.knowledge_revision.id,
                      "content_sha256": source.content_sha256})
+    if not pins:
+        raise JobConflict()
     return pins
 
 

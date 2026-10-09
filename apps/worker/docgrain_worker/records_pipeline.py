@@ -142,8 +142,14 @@ class Pipeline:
         resolved = self.guard()
         self.sources_unchanged()
         self.publication_unchanged()
-        self.documents = self.document_loader(os.environ.get("DOCGRAIN_INTERNAL_API_URL", "http://api:8000"),
-                                              self.workspace)
+        # Failed documents are not pinned at start (records_jobs.source_snapshot skips them); load only pins.
+        pinned = {pin["document_id"] for pin in self.job["sources"]}
+        api_url = os.environ.get("DOCGRAIN_INTERNAL_API_URL", "http://api:8000")
+        try:
+            self.documents = self.document_loader(api_url, self.workspace, document_ids=pinned)
+        except TypeError:  # older/fake loaders without the filter argument
+            self.documents = self.document_loader(api_url, self.workspace)
+        self.documents = [doc for doc in self.documents if doc.source.document_id in pinned]
         actual = [{key: getattr(doc.source, key) for key in
                    ("document_id", "source_version_id", "knowledge_revision_id", "content_sha256")}
                   for doc in sorted(self.documents, key=lambda d: d.source.document_id)]

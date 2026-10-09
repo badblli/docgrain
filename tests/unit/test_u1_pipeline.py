@@ -221,7 +221,7 @@ def run(setup, key):
     return setup.client.get(BASE + "/record-jobs/" + key).json()
 
 
-@pytest.mark.parametrize("guard", ["disabled", "missing", "empty", "queued", "failed", "partial", "demo"])
+@pytest.mark.parametrize("guard", ["disabled", "missing", "empty", "queued", "running", "demo"])
 def test_guards_409_and_no_model_or_dispatch(setup, guard, monkeypatch):
     if guard == "disabled":
         setup.settings["enabled"] = False
@@ -564,3 +564,13 @@ def test_credentials_absent_from_runtime_files_and_job_get(setup):
     for path in setup.root.rglob("*"):
         if path.is_file():
             assert SECRET.encode() not in path.read_bytes()
+
+
+@pytest.mark.parametrize("status", ["partial", "failed"])
+def test_partial_documents_are_used_and_failed_ones_skipped(setup, status):
+    # Real companies have partially read documents (low-grade pages); they must not block extraction.
+    setup.versions["rooms"].status = status
+    response = setup.client.post(BASE + "/record-jobs", json={"request_id": "mixed-" + status})
+    assert response.status_code == 202, response.text
+    pinned = {pin["document_id"] for pin in setup.memory.rows[next(iter(setup.memory.rows))]["sources"]}
+    assert ("rooms" in pinned) is (status == "partial")
