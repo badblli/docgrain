@@ -83,6 +83,10 @@ mobile apps and websites.
     keys belong to the workspace; matching and conflicts never cross workspaces. Roles: owner, editor (upload,
     answer, approve), viewer, integrator (API/MCP keys). Authentication and membership come after U1; today's
     workspace model is already compatible.
+20. User decision 2026-10-09: a field value that is verified by its evidence quote and has no conflicting
+    candidate (single source, or sources that agree after normalization) is accepted automatically and published
+    as approved, with the rule recorded as reviewer; only real conflicts, duplicates and verifier doubts become
+    questions. People can still correct any value afterwards.
 
 ## Phases
 
