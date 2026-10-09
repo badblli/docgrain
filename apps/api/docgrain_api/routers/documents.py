@@ -19,10 +19,14 @@ from docgrain_domain import (
     VersionStatus,
     new_id,
 )
+from docgrain_domain.docling_formats import DOCLING_VERSION, SPECS
 from docgrain_domain.source_format import (
     CorruptSource,
     FormatMismatch,
+    SourceFormat,
     declared_format,
+    missing_requirements,
+    resolve_format,
     verify_format,
 )
 from docgrain_domain.storage_paths import upload_key
@@ -30,7 +34,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
-from .. import repository
+from .. import format_capabilities, repository
 from ..queue import enqueue
 from ..settings import get_settings
 from ..storage import get_text, object_exists, put_upload
@@ -50,6 +54,30 @@ class WorkspaceListItem(BaseModel):
     id: str
     name: str
     documents: int
+
+
+class FormatItem(BaseModel):
+    format: str
+    extensions: list[str]
+    enabled: bool
+    missing: list[str]
+
+
+class FormatList(BaseModel):
+    docling_version: str
+    formats: list[FormatItem]
+
+
+@workspaces_router.get("/v1/formats", response_model=FormatList)
+def list_formats() -> FormatList:
+    """Accepted file types and whether this installation can read them now (WP106)."""
+    available = format_capabilities.available()
+    items = []
+    for spec in SPECS.values():
+        missing = missing_requirements(SourceFormat(spec.value), available) if spec.requirements else []
+        items.append(FormatItem(format=spec.value, extensions=list(spec.extensions),
+                                enabled=not missing, missing=missing))
+    return FormatList(docling_version=DOCLING_VERSION, formats=items)
 
 
 @workspaces_router.get("/v1/workspaces", response_model=list[WorkspaceListItem])
@@ -160,7 +188,9 @@ def _register_document(payload: RegisterRequest) -> RegisterResponse:
     if payload.source_uri is not None:
         raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "external source ingestion is not implemented")
     try:
-        declared_format(payload.filename, payload.mime_type)
+        # KULLANILMIYOR (karar 18): declared_format(payload.filename, payload.mime_type)
+        # WP106: Docling can read the format, but its reader may need something this installation lacks.
+        format_capabilities.ensure_format_enabled(declared_format(payload.filename, payload.mime_type))
     except FormatMismatch as exc:
         raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, str(exc)) from exc
     if payload.content_sha256:
@@ -253,6 +283,8 @@ def upload_content(
         if len(data) != version.byte_size:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "upload size differs from registration")
         verify_format(data, source_format)
+        # WP106: an ".xml" file is only known as USPTO/JATS/XBRL/DocLang once its content is read.
+        format_capabilities.ensure_format_enabled(resolve_format(data, source_format))
     except FormatMismatch as exc:
         raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, str(exc)) from exc
     except CorruptSource as exc:

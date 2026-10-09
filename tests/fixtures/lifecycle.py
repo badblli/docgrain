@@ -12,7 +12,7 @@ from docgrain_domain.canonical.lifecycle import (
     source_revision_id,
 )
 from docgrain_domain.canonical.lineage import DerivedManifest, LineageEdge, ObjectRef
-from docgrain_domain.source_format import SourceFormat
+from docgrain_domain.source_format import IMAGE_FORMATS, SourceFormat
 from docgrain_worker.canonical_mapper import CanonicalMapper
 from docgrain_worker.structural import StructuralItem, StructuralParseResult
 
@@ -29,9 +29,14 @@ def mapped_snapshot(fmt=SourceFormat.TXT, *, pdf_path=None, mapper_version="m2a-
         SourceFormat.JPEG: {"kind": "image_region", "width_px": 800, "height_px": 600, "exif_orientation": 6,
                             "bbox": {"x": 0.1, "y": 0.2, "width": 0.3, "height": 0.1}},
     }
+    # WP106: the other Docling formats map to Docling JSON object paths; new image types to image regions.
+    image = fmt in IMAGE_FORMATS
+    locator = locators.get(fmt) or (locators[SourceFormat.PNG] if image else {"kind": "docx_raw", "ref": "#/texts/0"})
     result = StructuralParseResult(fmt, "test-parser", "1", "complete", [
-        StructuralItem("paragraph", "first", locators[fmt], text="Hello", page_size=(600, 800))
+        StructuralItem("paragraph", "first", locator, text="Hello", page_size=(600, 800))
     ], ["area:1"], ["area:1"], [])
+    if locator["kind"] == "docx_raw":
+        result.legacy_json = b'{"texts": [{"text": "Hello"}]}'
     content_hash = sha256(fmt.value.encode()).hexdigest()
     source = SourceVersion(id=source_revision_id("workspace-test", "document-test", content_hash),
                            document_id="document-test", workspace_id="workspace-test", content_sha256=content_hash,
@@ -39,7 +44,7 @@ def mapped_snapshot(fmt=SourceFormat.TXT, *, pdf_path=None, mapper_version="m2a-
                            mime_type="application/test", filename=f"test.{fmt.value}",
                            recorded_at=datetime(2026, 1, 1, tzinfo=UTC))
     spec = ProcessingSpec(parser=result.parser, parser_version=result.parser_version,
-                          schema_version="0.5.0" if fmt in {SourceFormat.PNG, SourceFormat.JPEG} else "0.3.0",
+                          schema_version="0.5.0" if image else "0.3.0",
                           mapper_version=mapper_version)
     snapshot = CanonicalMapper().map(result, source, processing=spec,
                                      revision_id=processing_revision_id(source.id, spec),

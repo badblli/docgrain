@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useDeveloperMode } from "./developer-mode";
+import { ACCEPTED_FILE_TYPES, UPLOAD_SUMMARY } from "@/lib/source-formats";
 import { Head, Icon, Ep, pageBody } from "./console-ui";
 import type { DocumentRow, UploadState, Mode } from "./console-types";
 
@@ -26,10 +27,10 @@ export function Documents({ docs, open, upload, uploadState, uploadStates, retry
     <div className={pageBody}>
       <section className="flex flex-wrap items-center gap-4">
         <div className="grid size-9 shrink-0 place-items-center rounded-lg border border-line bg-paper text-muted"><Icon name="upload" className="size-5" /></div>
-        <div className="min-w-0 flex-1"><h3 className="text-base font-semibold">Belgeleri ekleyin</h3><p className="mt-1 max-w-[56ch] text-xs text-muted">PDF, Word, Excel, metin veya görsel dosyalarınızı ekleyin.</p>
+        <div className="min-w-0 flex-1"><h3 className="text-base font-semibold">Belgeleri ekleyin</h3>{/* KULLANILMIYOR (karar 18): "PDF, Word, Excel, metin veya görsel dosyalarınızı ekleyin." — WP106: liste Docling biçimlerinden üretiliyor. */}<p className="mt-1 max-w-[56ch] text-xs text-muted">{UPLOAD_SUMMARY} dosyalarınızı ekleyin.</p>
 
         </div>
-        <input ref={input} type="file" multiple hidden accept=".pdf,.docx,.xlsx,.txt,.png,.jpg,.jpeg" aria-label="Dosyaları yükle: PDF, Word, Excel, metin veya görsel" disabled={busy} onChange={event => {
+        <input ref={input} type="file" multiple hidden accept={ACCEPTED_FILE_TYPES} aria-label={`Dosyaları yükle: ${UPLOAD_SUMMARY}`} disabled={busy} onChange={event => {
           const files = Array.from(event.target.files ?? []); event.target.value = "";
           if (files.length) upload(files);
         }} />

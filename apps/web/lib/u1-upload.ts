@@ -1,10 +1,14 @@
 import type { UploadState } from "../app/components/console-types";
+import { NOT_ENABLED_MESSAGE } from "./source-formats";
 
 export type UploadRegistration = {
   document: { id: string; filename?: string };
   version: { id: string; status: string };
   job_id: string; upload_url: string | null; deduplicated: boolean;
 };
+// A refusal the person can act on; shown as is instead of the generic retry message.
+class UploadMessage extends Error {}
+
 export async function sha256(file: Blob): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
@@ -30,7 +34,11 @@ export function createUploadQueue<R extends UploadRegistration>(options: {
   async function json<T>(url: string, init: RequestInit): Promise<T> {
     if (!current()) throw new Error("Eski şirket isteği.");
     const response = await options.fetch(url, { ...init, signal: options.signal });
-    if (!response.ok) throw new Error("Dosya yüklenemedi. Bağlantıyı ve dosyayı kontrol edip yeniden deneyin.");
+    if (!response.ok) {
+      // WP106: Docling can read the type, but this installation has not opened it yet.
+      if (response.status === 415 && (await response.json().catch(() => null))?.detail === NOT_ENABLED_MESSAGE) throw new UploadMessage(NOT_ENABLED_MESSAGE);
+      throw new Error("Dosya yüklenemedi. Bağlantıyı ve dosyayı kontrol edip yeniden deneyin.");
+    }
     if (!current()) throw new Error("Eski şirket isteği.");
     return response.json();
   }
@@ -78,9 +86,9 @@ export function createUploadQueue<R extends UploadRegistration>(options: {
       state(item, registration.version.status === "done" ? "done" : "queued",
         registration.deduplicated ? "Aynı dosya zaten var. Mevcut belge kullanılıyor." : "Yüklendi; belge hazırlanmayı bekliyor.");
       options.onUploaded(registration, item.id);
-    } catch {
+    } catch (error) {
       item.failed = true;
-      state(item, "error", "Dosya yüklenemedi. Bağlantıyı ve dosyayı kontrol edip yeniden deneyin.");
+      state(item, "error", error instanceof UploadMessage ? error.message : "Dosya yüklenemedi. Bağlantıyı ve dosyayı kontrol edip yeniden deneyin.");
     }
   }
   const limit = Math.max(1, Math.min(3, options.concurrency ?? 2));

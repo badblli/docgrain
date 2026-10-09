@@ -9,7 +9,12 @@ import time
 from pathlib import Path
 
 import httpx
-from docgrain_domain.source_format import MIME_TYPES, SourceFormat
+from docgrain_domain.docling_formats import NOT_ENABLED_MESSAGE
+from docgrain_domain.source_format import (
+    FormatMismatch,
+    format_for_filename,
+    mime_for_filename,
+)
 
 TERMINAL = {"done", "partial", "failed"}
 
@@ -29,6 +34,15 @@ def _issues(job: dict) -> list[dict]:
             if issue not in issues:
                 issues.append(issue)
     return issues
+
+
+def _not_enabled(exc: Exception) -> bool:
+    if not isinstance(exc, httpx.HTTPStatusError) or exc.response.status_code != 415:
+        return False
+    try:
+        return exc.response.json().get("detail") == NOT_ENABLED_MESSAGE
+    except ValueError:
+        return False
 
 
 def ingest_folder(folder: Path, workspace_id: str, client: httpx.Client, *,
@@ -67,10 +81,13 @@ def ingest_folder(folder: Path, workspace_id: str, client: httpx.Client, *,
             row["issues"].append({"reason": "Sembolik bağlantı atlandı."})
             save()
             continue
-        suffix = path.suffix.lower().lstrip(".")
+        # KULLANILMIYOR (karar 18): WP106 öncesi altı uzantılık kontrol.
+        # suffix = path.suffix.lower().lstrip(".")
+        # source_format = SourceFormat("jpeg" if suffix == "jpg" else suffix)
         try:
-            source_format = SourceFormat("jpeg" if suffix == "jpg" else suffix)
-        except ValueError:
+            # WP106: every extension Docling reads (docling_formats); closed ones are refused by the API.
+            format_for_filename(path.name)
+        except FormatMismatch:
             row["issues"].append({"reason": "Desteklenmeyen dosya türü."})
             save()
             continue
@@ -79,7 +96,8 @@ def ingest_folder(folder: Path, workspace_id: str, client: httpx.Client, *,
             if not data:
                 raise ValueError("Dosya boş.")
             row["sha256"] = hashlib.sha256(data).hexdigest()
-            mime = MIME_TYPES[source_format]
+            # KULLANILMIYOR (karar 18): mime = MIME_TYPES[source_format]
+            mime = mime_for_filename(path.name)
             registration = _json(client, "POST", "/v1/documents", json={
                 "workspace_id": workspace_id, "filename": path.name, "mime_type": mime,
                 "byte_size": len(data), "content_sha256": row["sha256"],
@@ -113,6 +131,10 @@ def ingest_folder(folder: Path, workspace_id: str, client: httpx.Client, *,
             # Never copy server response bodies or source content into the report.
             reason = (f"HTTP {exc.response.status_code}" if isinstance(exc, httpx.HTTPStatusError)
                       else type(exc).__name__ if isinstance(exc, (OSError, httpx.HTTPError)) else str(exc))
+            if _not_enabled(exc):
+                # A known product sentence, compared exactly; other response bodies are never copied.
+                row["status"] = "skipped"
+                reason = NOT_ENABLED_MESSAGE
             row["issues"].append({"reason": reason})
         save()
     return report
