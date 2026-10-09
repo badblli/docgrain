@@ -169,6 +169,8 @@ def _docling(source: VerifiedSource, fmt: SourceFormat, *,
         "adapter_version": "docling-2", "canonical_schema_version": "0.6.0",
         "formula_evaluation": False, "ocr_routing": "file-text-layer-v1",
         "xlsx_display_format": "number-date-percent-v1",
+        # WP107: tables/pictures are typed by their Docling collection, not by label.
+        "docling_item_kinds": "collection-v1",
     }
     if raster_budget:
         processing_options["image_budget"] = raster_budget
@@ -254,8 +256,12 @@ def _docling(source: VerifiedSource, fmt: SourceFormat, *,
                 + _reading_refs(raw.get("furniture", {}), raw, lookup)):
         item = lookup[ref]
         label = item.get("label", "")
-        kind = {"section_header": "heading", "title": "heading", "list_item": "list_item",
-                "table": "table", "picture": "picture"}.get(label, "paragraph")
+        # KULLANILMIYOR (karar 18, WP107): türü yalnız etiketten seçmek, Docling'in `document_index`
+        # etiketli tablolarını (ör. fiyat listesi gibi okunan şarap menüsü) ve `chart` etiketli
+        # resimlerini "paragraph" sayıyordu; metinleri olmadığı için aşağıda sessizce düşüyorlardı.
+        # kind = {"section_header": "heading", "title": "heading", "list_item": "list_item",
+        #         "table": "table", "picture": "picture"}.get(label, "paragraph")
+        kind = _item_kind(ref, label)
         if fmt is SourceFormat.XLSX and kind != "picture":
             continue
         if kind == "paragraph" and not item.get("text"):
@@ -423,6 +429,19 @@ def _bind_ocr_provenance(converted, raw: dict, items: list[StructuralItem], fmt:
                         if image_metadata:
                             mapped["locator"] = image_locator(cell["bbox"], item.page_size, image_metadata)
     return literals
+
+
+def _item_kind(ref: str, label: str) -> str:
+    """Docling's collection decides tables and pictures.
+
+    `TableItem` is also labelled `document_index` (price lists and indexes) and `PictureItem`
+    also `chart`; both must keep their cells/asset instead of becoming text-less paragraphs.
+    """
+    if ref.startswith("#/tables/"):
+        return "table"
+    if ref.startswith("#/pictures/"):
+        return "picture"
+    return {"section_header": "heading", "title": "heading", "list_item": "list_item"}.get(label, "paragraph")
 
 
 def _reading_refs(body: dict[str, Any], raw: dict[str, Any], lookup: dict[str, Any]) -> list[str]:
