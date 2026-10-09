@@ -866,12 +866,37 @@ export default function Home() {
   }
 
   useEffect(() => {
-    let savedWorkspace = DEFAULT_WORKSPACE;
-    try { savedWorkspace = localStorage.getItem("docgrain.workspace_id") || DEFAULT_WORKSPACE; }
-    catch { /* The default remains available without storage. */ }
-    workspaceRef.current = savedWorkspace;
-    if (savedWorkspace !== DEFAULT_WORKSPACE) setWorkspace(savedWorkspace);
-    void refresh(savedWorkspace);
+    let savedWorkspace: string | null = null;
+    try {
+      savedWorkspace = localStorage.getItem("docgrain.workspace_id");
+    } catch {
+      /* The default remains available without storage. */
+    }
+
+    if (savedWorkspace) {
+      workspaceRef.current = savedWorkspace;
+      setWorkspace(savedWorkspace);
+      void refresh(savedWorkspace);
+    } else {
+      void (async () => {
+        let initialWs = DEFAULT_WORKSPACE;
+        try {
+          const list = await apiJson<WorkspaceItem[]>(`${API}/v1/workspaces`);
+          const withDocs = list.find(item => item.documents > 0);
+          if (withDocs?.id) {
+            initialWs = withDocs.id;
+          }
+        } catch {
+          /* Fall back to default workspace if listing fails. */
+        }
+        workspaceRef.current = initialWs;
+        if (initialWs !== DEFAULT_WORKSPACE) {
+          setWorkspace(initialWs);
+        }
+        void refresh(initialWs);
+      })();
+    }
+
     return () => { requestId.current += 1; generation.current += 1; uploadController.current?.abort(); };
   }, []);
   useEffect(() => {
