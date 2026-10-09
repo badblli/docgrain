@@ -380,6 +380,17 @@ test("stage counts, schema review and timeout are honest terminal presentations"
   assert.match(markup("failed"), /bekleme süresi doldu/); assert.match(markup("failed"), /Önceki bilgiler korunuyor/);
   assert.match(markup("done"), /onay bekleyenleri Sorular/); assert.doesNotMatch(markup("running"), /%|dakika|saniye/);
 });
+test("finished record jobs list what was left out in plain words", () => {
+  const { RecordJobProgress } = evaluate("../../apps/web/app/components/record-job-progress.tsx", { react: React, "@/components/ui/card": { Card: element("section") } });
+  const notes = ["7 alan doğrulanamadığı için alınmadı", "1 bölüm okunamadı", "İncelenmeyi bekleyen yapı: Hizmetler"];
+  const summary = { rejected_fields: 7, failed_sections: 1, total_sections: 10, needs_review: ["Hizmetler"], notes };
+  const markup = (status, extra = {}) => renderToStaticMarkup(React.createElement(RecordJobProgress, { job: { ...job("ws-a", status), summary, ...extra }, error: "" }));
+  for (const note of notes) assert.ok(markup("done").includes(note));
+  assert.match(markup("done"), /onay bekleyenleri Sorular/);
+  assert.doesNotMatch(markup("running"), /bölüm okunamadı/);
+  assert.match(markup("failed", { error_code: "sections_failed" }), /yüzde 20(?:'|&#x27;)sinden fazlası okunamadı/);
+  assert.doesNotMatch(renderToStaticMarkup(React.createElement(RecordJobProgress, { job: job("ws-a", "done"), error: "" })), /<ul/);
+});
 
 function nodes(tree) {
   if (Array.isArray(tree)) return tree.flatMap(nodes);

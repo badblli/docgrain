@@ -2,11 +2,14 @@
 
 import json
 import os
+import random
+import re
 import socket
+import time
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
-from threading import Barrier, Event, RLock
+from threading import Barrier, Event, Lock, RLock
 from types import SimpleNamespace
 
 import httpx
@@ -21,7 +24,11 @@ from docgrain_api.records_repository import (
 )
 from docgrain_api.routers import knowledge, record_jobs, records
 from docgrain_api.settings import get_settings
+from docgrain_records import model as chat_model
 from docgrain_records.discovery_models import DiscoveryDocument
+from docgrain_records.extractor import ExtractionRun
+from docgrain_records.model import ChatClient
+from docgrain_records.models import RECORD_MODELS, ExtractionUsage
 from docgrain_records.review import CandidateAnswer
 from docgrain_worker import records_pipeline as pipeline
 from fastapi import FastAPI
@@ -67,10 +74,17 @@ class FakeModel:
         self.calls = []
         self.mode = None
         self.after_call = None
+        # WP110: (document, focus or None) -> physical requests left to fail (None: always fail).
+        self.failing = {}
+        self.jitter = False
+        self.lock = Lock()
 
     def handle(self, request):
         payload = json.loads(request.content)
-        self.calls.append(payload)
+        with self.lock:
+            self.calls.append(payload)
+        if self.jitter:
+            time.sleep(random.uniform(0, 0.02))  # Scramble completion order under concurrency.
         assert "untrusted" in payload["messages"][0]["content"].lower()
         if payload["response_format"]["json_schema"]["name"] == "workspace_collections":
             response = discovery_response()
@@ -88,9 +102,27 @@ class FakeModel:
                 other["fields"][1]["type"] = "string"
                 other["examples"][0]["values"][1]["value"] = "32"
                 response["collections"].append(other)
+            if self.mode == "all_bad":
+                for value in response["collections"][0]["examples"][0]["values"]:
+                    value["evidence"][0]["quote"] = "absent"
+            if self.mode == "bad_collection":
+                labels = [{"lang": "en", "value": "Services"}, {"lang": "tr", "value": "Hizmetler"}]
+                response["collections"].append({
+                    "key": "services", "label_i18n": labels, "description": "Services in the source.",
+                    "fields": [{"key": "name", "type": "string", "unit": None, "label_i18n": labels}],
+                    "examples": [{"values": [{"key": "name", **fact("rooms", "Spa", "Spa menu")}]}],
+                })
         else:
             user = json.loads(payload["messages"][1]["content"])
             document = user["document_id"]
+            focus = re.search(r"This pass extracts ONLY (\w+) records", payload["messages"][0]["content"])
+            task = (document, focus.group(1) if focus else None)
+            with self.lock:
+                left = self.failing.get(task, 0)
+                if task in self.failing and left is not None:
+                    self.failing[task] = max(left - 1, 0)
+            if left is None or left > 0:
+                raise httpx.ConnectError("synthetic connection failure")
             size = 32 if document == "rooms" else 36
             response = {"records": [{"type": "rooms", "name": [fact(document, "Garden Room")],
                                       "size_m2": [fact(document, size, f"{size} m2")],
@@ -101,6 +133,13 @@ class FakeModel:
                 response = {"records": []}
             if self.mode == "rejected_field":
                 response["records"][0]["capacity"][0]["evidence"][0]["quote"] = "missing"
+            if self.mode == "duplicate_language":
+                response["records"][0]["capacity"].append(fact(document, 2, "capacity 2"))
+            # A strict structured-output endpoint returns only the accepted fields.
+            fields = {f["key"] for c in user.get("untrusted_collection_definitions", []) for f in c["fields"]}
+            for record in response["records"] if fields else []:
+                for key in [k for k in record if k != "type" and k not in fields]:
+                    del record[key]
         if self.after_call:
             self.after_call(len(self.calls))
         return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(response)}}]})
@@ -302,15 +341,19 @@ def test_real_six_stage_run_questions_answer_and_old_bytes(setup):
 
 
 @pytest.mark.parametrize("mode,code,stage", [
-    ("missing_example", "schema_review", "accept_schema"),
-    ("bad_quote", "schema_review", "accept_schema"),
-    ("alternatives", "schema_review", "accept_schema"),
+    # KULLANILMIYOR (karar 18, WP110): bu durumlar artık işi durdurmuyor; aşağıdaki WP110 testleri.
+    # ("missing_example", "schema_review", "accept_schema"),
+    # ("bad_quote", "schema_review", "accept_schema"),
+    # ("alternatives", "schema_review", "accept_schema"),
+    # ("partial", "incomplete", "extract"),
+    # ("rejected_field", "incomplete", "extract"),
+    ("all_bad", "schema_review", "accept_schema"),
     ("empty_schema", "empty", "accept_schema"),
-    ("partial", "incomplete", "extract"),
-    ("rejected_field", "incomplete", "extract"),
+    ("partial", "sections_failed", "extract"),
     ("empty_records", "empty", "extract"),
 ])
-def test_ambiguous_partial_empty_not_success(setup, mode, code, stage):
+def test_ambiguous_partial_empty_not_success(setup, mode, code, stage, monkeypatch):
+    monkeypatch.setattr(chat_model, "time", SimpleNamespace(sleep=lambda _: None))
     setup.model.mode = mode
     result = run(setup, start(setup))
     assert result["status"] == ("needs_review" if code == "schema_review" else "failed")
@@ -574,3 +617,202 @@ def test_partial_documents_are_used_and_failed_ones_skipped(setup, status):
     assert response.status_code == 202, response.text
     pinned = {pin["document_id"] for pin in setup.memory.rows[next(iter(setup.memory.rows))]["sources"]}
     assert ("rooms" in pinned) is (status == "partial")
+
+
+# WP110: real companies finish with a report instead of stopping at the first imperfection.
+
+def add_documents(setup, count):
+    """More synthetic documents, so failure shares below and above 20 % are reachable."""
+    for index in range(count):
+        key = f"extra{index}"
+        setup.docs.append(DiscoveryDocument(source={
+            "document_id": key, "workspace_id": WORKSPACE, "knowledge_revision_id": key + "-k1",
+            "source_version_id": key + "-s1", "content_sha256": "a" * 64, "lang": "en",
+            "filename": key + ".txt",
+        }, context="[§1 p.1]\nGarden Room: 36 m2, capacity 2.\n"))
+        setup.metadata_docs.append(SimpleNamespace(id=key, workspace_id=WORKSPACE,
+                                                   latest_version_id=key + "-v1"))
+        setup.versions[key] = SimpleNamespace(id=key + "-v1", status="done", workspace_id=WORKSPACE,
+                                              content_sha256="a" * 64)
+        setup.preparations[key + "-v1"] = SimpleNamespace(status="done", page_failures=[])
+
+
+@pytest.fixture
+def no_backoff(monkeypatch):
+    monkeypatch.setattr(chat_model, "time", SimpleNamespace(sleep=lambda _: None))
+
+
+def records_files(setup, key):
+    directory = setup.store._path(WORKSPACE) / "runtime" / pipeline.sha256(key.encode()).hexdigest() / "records"
+    return {path.parent.name: (json.loads(path.read_text(encoding="utf-8")),
+                               json.loads((path.parent / "source.json").read_text(encoding="utf-8"))["usage"])
+            for path in sorted(directory.rglob("records.json"))}
+
+
+def extraction_calls(setup, document, focus):
+    calls = [c for c in setup.model.calls
+             if c["response_format"]["json_schema"]["name"] != "workspace_collections"
+             and json.loads(c["messages"][1]["content"])["document_id"] == document]
+    return [c for c in calls if (f"This pass extracts ONLY {focus} records" in c["messages"][0]["content"])
+            is (focus is not None)]
+
+
+@pytest.mark.parametrize("mode,reason", [("duplicate_language", "duplicate_language"),
+                                         ("rejected_field", "quote_not_found")])
+def test_rejected_fields_are_counted_not_fatal(setup, mode, reason):
+    setup.model.mode = mode
+    key = start(setup)
+    result = run(setup, key)
+    assert result["status"] == "done", result
+    metadata = setup.memory.locate(key)["metadata"]
+    counts = metadata["rejected_fields"]
+    assert set(counts) == {"rooms", "services"} and all(set(c) == {reason} for c in counts.values())
+    total = sum(n for c in counts.values() for n in c.values())
+    assert total > 0 and metadata["failed_sections"] == []
+    assert result["summary"]["rejected_fields"] == total
+    assert result["summary"]["notes"] == [f"{total} alan doğrulanamadığı için alınmadı"]
+    assert result["message"] == "Bilgiler hazır; onay bekleyenleri Sorular'dan kontrol edin"
+    assert setup.store.list_revisions(WORKSPACE) == [result["revision_id"]]
+
+
+def test_clean_run_has_an_empty_summary(setup):
+    result = run(setup, start(setup))
+    assert result["summary"] == {"rejected_fields": 0, "failed_sections": 0, "total_sections": 4,
+                                 "needs_review": [], "notes": []}
+
+
+def test_section_failing_twice_finishes_with_note(setup, no_backoff):
+    add_documents(setup, 3)  # 5 documents x 2 passes = 10 sections; one failure is 10 %.
+    setup.model.failing[("services", "rooms")] = None
+    key = start(setup)
+    result = run(setup, key)
+    assert result["status"] == "done", result
+    metadata = setup.memory.locate(key)["metadata"]
+    assert metadata["failed_sections"] == [{"document_id": "services", "section": 1, "source_keys": ["§1"],
+                                            "collection": "rooms", "reason": "connection_error"}]
+    assert metadata["extraction_sections"] == {"total": 10, "failed": 1, "retried": 1}
+    assert result["summary"]["failed_sections"] == 1 and result["summary"]["total_sections"] == 10
+    assert result["summary"]["notes"] == ["1 bölüm okunamadı"]
+    # One pass is 4 physical requests (the client's own retries); the stage end tries it once more.
+    assert len(extraction_calls(setup, "services", "rooms")) == 8
+    assert setup.store.list_revisions(WORKSPACE) == [result["revision_id"]]
+
+
+def test_section_recovering_on_retry_matches_a_clean_run(setup, no_backoff):
+    clean = run(setup, start(setup, "clean"))
+    clean_records = records_files(setup, clean["job_id"])
+    setup.model.failing[("rooms", None)] = 4  # The whole first attempt fails; the stage-end retry works.
+    key = start(setup, "retry")
+    result = run(setup, key)
+    assert result["status"] == "done", result
+    metadata = setup.memory.locate(key)["metadata"]
+    assert metadata["failed_sections"] == [] and metadata["extraction_sections"]["retried"] == 1
+    assert result["summary"]["notes"] == []
+    retried = records_files(setup, key)
+    assert {k: records for k, (records, _) in retried.items()} == {
+        k: records for k, (records, _) in clean_records.items()}
+
+
+def test_more_than_a_fifth_of_sections_failing_fails(setup, no_backoff):
+    add_documents(setup, 3)
+    for document in ("rooms", "services", "extra0"):
+        setup.model.failing[(document, None)] = None  # 3 / 10 sections = 30 %.
+    key = start(setup)
+    result = run(setup, key)
+    assert result["status"] == "failed" and result["stage"] == "extract"
+    assert result["error_code"] == "sections_failed"
+    assert result["message"] == lifecycle.ERRORS["sections_failed"] and "20" in result["message"]
+    assert result["summary"]["failed_sections"] == 3 and "3 bölüm okunamadı" in result["summary"]["notes"]
+    assert setup.store.list_revisions(WORKSPACE) == []
+
+
+@pytest.mark.parametrize("mode,accepted_fields,review", [
+    ("bad_collection", {"capacity", "name", "size_m2"}, ["Hizmetler"]),
+    ("missing_example", {"capacity", "name", "size_m2"}, ["Odalar: Price"]),
+    ("alternatives", {"capacity", "name"}, ["Odalar: Odalar"]),
+])
+def test_unverifiable_schema_parts_are_set_aside(setup, mode, accepted_fields, review):
+    setup.model.mode = mode
+    key = start(setup)
+    result = run(setup, key)
+    assert result["status"] == "done", result
+    metadata = setup.memory.locate(key)["metadata"]
+    acceptance = metadata["schema_acceptance"]
+    assert acceptance["reviewer"] == "rule:u1-verified-schema" and acceptance["collections"] == ["rooms"]
+    assert acceptance["set_aside"] == len(metadata["schema_needs_review"]) >= 1
+    assert [item["label"] for item in metadata["schema_needs_review"]] == review
+    assert result["summary"]["needs_review"] == review
+    assert result["summary"]["notes"] == ["İncelenmeyi bekleyen yapı: " + ", ".join(review)]
+    source = setup.store._source(WORKSPACE)
+    assert source.records and {name for record in source.records for name in record.fields} <= accepted_fields
+    root = setup.store._path(WORKSPACE) / "runtime"
+    kept = json.loads(next(root.rglob("schema.proposed.json")).read_text(encoding="utf-8"))["collections"]
+    rooms = next(c for c in kept if c["key"] == "rooms")
+    assert rooms["review_state"] == "accepted"
+    assert {f["key"] for f in rooms["fields"] if f["review_state"] == "accepted"} == accepted_fields
+    assert all(f["review_state"] == "needs_review" for f in rooms["fields"] if f["key"] not in accepted_fields)
+    accepted = json.loads(next(root.rglob("schema.v1.json")).read_text(encoding="utf-8"))
+    assert [c["key"] for c in accepted["collections"]] == ["rooms"]
+    assert {f["key"] for f in accepted["collections"][0]["fields"]} == accepted_fields
+
+
+@pytest.mark.parametrize("mode", ["all_bad", "bad_quote"])  # bad_quote: the identity (name) fails.
+def test_nothing_verifiable_still_stops_for_review(setup, mode):
+    setup.model.mode = mode
+    key = start(setup)
+    result = run(setup, key)
+    assert result["status"] == "needs_review" and result["error_code"] == "schema_review"
+    assert result["summary"]["needs_review"] == ["Odalar"]
+    assert setup.store.list_revisions(WORKSPACE) == []
+
+
+def test_concurrency_four_matches_concurrency_one(setup, monkeypatch):
+    add_documents(setup, 3)
+    setup.model.jitter = True
+    outputs = {}
+    for level in (1, 4):
+        monkeypatch.setattr(get_settings(), "records_extraction_concurrency", level)
+        key = start(setup, f"level-{level}")
+        result = run(setup, key)
+        assert result["status"] == "done", result
+        assert setup.memory.locate(key)["metadata"]["extraction_concurrency"] == level
+        revision = setup.store._source(WORKSPACE, result["revision_id"])
+        outputs[level] = (records_files(setup, key),
+                          [record.model_dump(mode="json") for record in revision.records])
+    assert outputs[1][0] == outputs[4][0]
+    assert len(outputs[4][0]) == 5 and all(usage["calls"] for _, usage in outputs[4][0].values())
+    assert json.dumps(outputs[1][1]).replace(outputs_job(setup, 1), "") == json.dumps(
+        outputs[4][1]).replace(outputs_job(setup, 4), "")
+
+
+def outputs_job(setup, level):
+    return next(key for key, row in setup.memory.rows.items() if row["request_id"] == f"level-{level}")
+
+
+def test_extraction_run_order_is_independent_of_latency():
+    context = "".join(f"[§{i} p.1]\nIndoor pool {i}\n" + "Filler line.\n" * 700 for i in range(1, 4))
+
+    def handler(request):
+        time.sleep(random.uniform(0, 0.02))
+        user = json.loads(json.loads(request.content)["messages"][1]["content"])
+        marker = re.search(r"\[§(\d+)", user["untrusted_source_context"]).group(1)
+        record = {"type": "facility", **{name: [] for name in RECORD_MODELS["facility"][1].model_fields},
+                  "name": [{"value": f"Indoor pool {marker}", "lang": "en", "evidence": [
+                      {"document_id": "doc", "locator": f"§{marker}", "quote": f"Indoor pool {marker}"}]}]}
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps({"records": [record]})}}],
+                                         "usage": {"prompt_tokens": int(marker), "completion_tokens": 1}})
+
+    outputs = []
+    for level in (1, 4, 4):
+        chat = ChatClient("http://model.invalid/v1", "fake", "fake", retries=0,
+                          transport=httpx.MockTransport(handler))
+        usage = ExtractionUsage()
+        try:
+            passes = ExtractionRun(context, "doc", "en", chat, concurrency=level, usage=usage,
+                                   focused_passes=False).run()
+        finally:
+            chat.close()
+        assert len(passes.plan) >= 3 and not passes.failed
+        outputs.append((passes.result().model_dump(mode="json"), usage.model_dump(mode="json")))
+    assert outputs[0] == outputs[1] == outputs[2]
+    assert len(outputs[0][0]["records"]) >= 3

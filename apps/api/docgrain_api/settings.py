@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     use_fixtures: bool = False
     canonical_persistence_enabled: bool = False
     records_publication_root: str = ""
+    # WP110: parallel model calls while extracting records (1-4).
+    records_extraction_concurrency: int = Field(default=4, ge=1, le=4)
     # Metadata only; actual credentials live in each profile's server environment.
     docgrain_model_credential_profiles: str = Field(default="{}", repr=False)
 

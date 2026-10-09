@@ -33,11 +33,11 @@ def _read(workspace, job_id=None):
         raise HTTPException(503, "İşlem bilgisi alınamadı; yeniden deneyin.") from None
     if not job:
         raise HTTPException(404, "İşlem bulunamadı.")
-    return {key: job[key] for key in (
+    return {**{key: job[key] for key in (
         "job_id", "workspace_id", "status", "stage", "completed_stages", "total_stages",
         "message", "revision_id", "error_code", "updated_at", "queued_at", "started_at",
         "finished_at", "stages",
-    )}
+    )}, "summary": records_jobs.summary(job)}  # WP110: counts and plain notes only.
 
 
 @router.get("/latest")

@@ -6,6 +6,8 @@ export type RecordJob = {
   job_id: string; workspace_id: string; status: "queued" | "running" | "needs_review" | "done" | "failed";
   stage: string | null; completed_stages: number; total_stages: number;
   revision_id: string | null; error_code?: string | null;
+  // WP110: what was left out, in plain words ("N bölüm okunamadı"). Older servers omit it.
+  summary?: { rejected_fields: number; failed_sections: number; total_sections: number; needs_review: string[]; notes: string[] };
 };
 const stages: Record<string, string> = {
   discover: "Listeler bulunuyor", accept_schema: "Bilgi yapısı kontrol ediliyor",
@@ -127,7 +129,10 @@ export function RecordJobProgress({ job, error }: { job: RecordJob | null; error
     <h3 className="text-base font-semibold wrap-anywhere">{title}</h3>
     {job && <p className="text-sm text-muted">{job.completed_stages} / {job.total_stages} aşama tamamlandı{job.status === "failed" && job.stage ? ` · ${stages[job.stage] || "Bilgi hazırlığı"}` : ""}</p>}
     {job?.status === "needs_review" && <p className="text-sm text-warn">Bilgi yapısı güvenle belirlenemedi. Bu iş burada durdu; sorumlu kişiden kontrol isteyin.</p>}
-    {job?.status === "failed" && <p className="text-sm text-danger">{job.error_code?.includes("timeout") ? "İşin bekleme süresi doldu." : "Bu aşama tamamlanamadı."} Önceki bilgiler korunuyor. Bağlantıyı ve belgeleri kontrol edin.</p>}
+    {job?.status === "failed" && <p className="text-sm text-danger">{job.error_code?.includes("timeout") ? "İşin bekleme süresi doldu." : job.error_code === "sections_failed" ? "Belge bölümlerinin yüzde 20'sinden fazlası okunamadı." : "Bu aşama tamamlanamadı."} Önceki bilgiler korunuyor. Bağlantıyı ve belgeleri kontrol edin.</p>}
+    {job && !jobActive(job) && !!job.summary?.notes?.length && <ul className="list-disc space-y-1 pl-5 text-sm text-muted">
+      {job.summary.notes.map(note => <li key={note} className="wrap-anywhere">{note}</li>)}
+    </ul>}
     {error && <p className="text-sm text-danger wrap-anywhere">{error}</p>}
   </Card>;
 }

@@ -22,7 +22,10 @@ ERRORS = {
     "publication_changed": "Yayın değişti; sayfayı yenileyin.",
     "schema_review": "Bilgi yapısı kontrol edilmeli.",
     "empty": "Yayınlanacak bilgi bulunamadı.",
+    # KULLANILMIYOR (karar 18, WP110): işi artık reddedilen alan ya da tek başarısız bölüm durdurmuyor.
     "incomplete": "Bilgilerin tamamı çıkarılamadı; işlemi yeniden başlatın.",
+    "sections_failed": "Belge bölümlerinin yüzde 20'sinden fazlası okunamadı; model bağlantısını "
+                       "kontrol edip işlemi yeniden başlatın.",
     "timeout": "İşlem süresi doldu; işlemi yeniden başlatın.",
     "worker_stale": "İşlem durdu; işlemi yeniden başlatın.",
     "dispatch": "İşlem başlatılamadı; yeniden deneyin.",
@@ -31,6 +34,8 @@ ERRORS = {
 # A queue without a worker must also eventually become visibly terminal.
 QUEUE_TIMEOUT = 300
 HEARTBEAT_TIMEOUT = 90
+# WP110: more failed sections than this (after one more try) fail the job.
+MAX_FAILED_SECTIONS_PERCENT = 20
 STAGE_TIMEOUTS = dict(zip(STAGES, (1800, 120, 3600, 600, 600, 300), strict=True))
 
 
@@ -134,6 +139,25 @@ def finish(workspace, job_id, code=None, revision_id=None):
         if not code:
             job["completed_stages"] = 6
     return jobs.change(workspace, job_id, mutate)
+
+
+def summary(job):
+    """Plain notes for a job, from metadata counts only: no source text, model output or secrets."""
+    metadata = job.get("metadata") or {}
+    rejected = sum(count for reasons in (metadata.get("rejected_fields") or {}).values()
+                   for count in reasons.values())
+    failed = len(metadata.get("failed_sections") or [])
+    review = list(dict.fromkeys(item["label"] for item in metadata.get("schema_needs_review") or []))
+    notes = []
+    if rejected:
+        notes.append(f"{rejected} alan doğrulanamadığı için alınmadı")
+    if failed:
+        notes.append(f"{failed} bölüm okunamadı")
+    if review:
+        notes.append("İncelenmeyi bekleyen yapı: " + ", ".join(review))
+    return {"rejected_fields": rejected, "failed_sections": failed,
+            "total_sections": (metadata.get("extraction_sections") or {}).get("total", 0),
+            "needs_review": review, "notes": notes}
 
 
 def reap_locked(workspace):
