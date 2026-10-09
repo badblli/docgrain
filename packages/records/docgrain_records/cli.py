@@ -21,6 +21,7 @@ from .match import (
     summarize_matches,
 )
 from .match_merge import merge_matches, write_json
+from .match_runner import MatchBudgetExceeded, MatchStats
 from .model import ChatClient
 from .models import ExtractionUsage
 from .runtime import HOSPITALITY, load_runtime
@@ -132,6 +133,14 @@ def main(argv=None):
     matcher.add_argument("--api-key-env")
     matcher.add_argument("--timeout", type=float, default=60)
     matcher.add_argument("--retries", type=int, default=3)
+    matcher.add_argument("--concurrency", type=int, default=4,
+                         help="Aynı anda gönderilen eşleştirme isteği sayısı (1–32)")
+    matcher.add_argument("--batch-size", type=int, default=8,
+                         help="Bir istekteki en fazla kayıt çifti")
+    matcher.add_argument("--batch-chars", type=int, default=32000,
+                         help="Bir isteğin metni için en fazla karakter sayısı")
+    matcher.add_argument("--max-minutes", type=float,
+                         help="Süre dolunca yeni istek gönderme; aynı komutla devam et")
     merger = commands.add_parser("merge")
     merger.add_argument("--records", required=True)
     merger.add_argument("--schema", help="Onaylanmış çalışma alanı şeması")
@@ -161,7 +170,20 @@ def main(argv=None):
                 chat = PairClient(args.base_url, args.model, key, args.timeout, args.retries)
             try:
                 results = load_records(args.records, runtime=load_runtime(args.schema) if args.schema else None)
-                matches = propose_matches(results, chat)
+                stats = MatchStats()
+
+                def report(stats):
+                    print(f"Eşleştirme: {stats.decided}/{stats.total} çift kararlaştırıldı; "
+                          f"{stats.model_calls} model isteği; {stats.elapsed:.0f} saniye; "
+                          f"{stats.resumed} çift önceki çalışmadan", file=sys.stderr, flush=True)
+
+                matches = propose_matches(
+                    results, chat, strong_names=args.auto_accept == "strong",
+                    progress_path=Path(args.out) / "match_progress.jsonl",
+                    concurrency=args.concurrency, batch_size=args.batch_size,
+                    batch_chars=args.batch_chars, max_minutes=args.max_minutes,
+                    progress=report, stats=stats,
+                )
                 if args.auto_accept == "strong":
                     matches = accept_strong_matches(results, matches)
             finally:
@@ -182,6 +204,10 @@ def main(argv=None):
             revision = merge_matches(args.records, results, matches,
                                      args.out, args.workspace, args.revision, args.auto_accept)
             print(f"{len(revision.records)} kayıt; alan değerleri inceleme bekliyor")
+    except MatchBudgetExceeded:
+        print("Süre doldu; ilerleme kaydedildi. Aynı komutu çalıştırarak devam edebilirsiniz. "
+              "Sonuç dosyaları bu çalışmada yazılmadı.", file=sys.stderr)
+        return 2
     except httpx.HTTPStatusError as exc:
         print(f"Hata: HTTP {exc.response.status_code}", file=sys.stderr)
         return 1
