@@ -271,3 +271,24 @@ def test_workspace_name_and_server_id_validation(settings_store, body):
     client, catalog, _, _ = settings_store
     assert client.post("/v1/workspaces", json=body).status_code == 422
     assert catalog == {}
+
+
+def test_archive_hides_without_deleting(monkeypatch):
+    # Archiving only flips a catalog flag; documents and publications are untouched.
+    from docgrain_api import workspace_settings_repository as store_module
+    from docgrain_api.routers import workspace_settings as router_module
+    from docgrain_api.settings import get_settings
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(get_settings(), "use_fixtures", False)
+    calls = []
+    monkeypatch.setattr(store_module, "set_archived",
+                        lambda ws, archived: calls.append((ws, archived)) or ws == "ws_known")
+    app = FastAPI()
+    app.include_router(router_module.router)
+    client = TestClient(app)
+    assert client.post("/v1/workspaces/ws_known/archive").json() == {"id": "ws_known", "archived": True}
+    assert client.post("/v1/workspaces/ws_known/unarchive").json() == {"id": "ws_known", "archived": False}
+    assert client.post("/v1/workspaces/ws_missing/archive").status_code == 404
+    assert calls == [("ws_known", True), ("ws_known", False), ("ws_missing", True)]
