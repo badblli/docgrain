@@ -88,6 +88,10 @@ services:
       USE_FIXTURES: ${USE_FIXTURES:-false}
       CANONICAL_PERSISTENCE_ENABLED: ${CANONICAL_PERSISTENCE_ENABLED:-true}
       RECORDS_PUBLICATION_ROOT: ${RECORDS_PUBLICATION_ROOT:-/srv/storage/records}
+      # WP113 accuracy gate passed 2026-10-12: Dene 9/9 correct (was 8/9), p50 11 s (was 34 s), no invented
+      # items or sources; extraction 100 % on the synthetic key. Code defaults stay off for tests.
+      RECORDS_EXTRACTION_GROUPED_PASSES: ${RECORDS_EXTRACTION_GROUPED_PASSES:-true}
+      DENE_SERVER_LISTS: ${DENE_SERVER_LISTS:-true}
       # Inherit when supplied; otherwise Settings keeps its empty {} default.
       DOCGRAIN_MODEL_CREDENTIAL_PROFILES:
     volumes:
@@ -150,6 +154,10 @@ services:
       USE_FIXTURES: ${USE_FIXTURES:-false}
       DOCGRAIN_INTERNAL_API_URL: http://api:8000
       RECORDS_PUBLICATION_ROOT: ${RECORDS_PUBLICATION_ROOT:-/srv/storage/records}
+      # WP113 accuracy gate passed 2026-10-12: Dene 9/9 correct (was 8/9), p50 11 s (was 34 s), no invented
+      # items or sources; extraction 100 % on the synthetic key. Code defaults stay off for tests.
+      RECORDS_EXTRACTION_GROUPED_PASSES: ${RECORDS_EXTRACTION_GROUPED_PASSES:-true}
+      DENE_SERVER_LISTS: ${DENE_SERVER_LISTS:-true}
       DOCGRAIN_MODEL_CREDENTIAL_PROFILES:
     volumes:
       - ./storage/records:/srv/storage/records:rw
