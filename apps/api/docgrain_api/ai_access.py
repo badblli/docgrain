@@ -136,6 +136,8 @@ class AIAccess:
     def _list_item(self, row, fields, mode):
         """Compact row: only the requested fields, their translations and their evidence."""
         meta = row["_meta"]
+        identity = meta.get("identity", "name")
+        fields = list(dict.fromkeys([identity, *fields]))
         record = {"id": row["id"]}
         record.update({key: row[key] for key in fields if key in row})
         i18n = {language: {key: value for key, value in values.items() if key in fields}
@@ -147,6 +149,13 @@ class AIAccess:
         evidence += [item for conflict in meta["conflicts"] if conflict["field"] in fields
                      for candidate in conflict["candidates"] for item in candidate["evidence"]]
         item = {"record": record, "sources": evidence}
+        item["identity"] = identity
+        # WP113: tie rendered values to their own evidence, including Turkish alternatives.
+        item["field_sources"] = {
+            key: {"primary": [source["id"] for source in self._evidence_sources(value["evidence"])],
+                  **{lang: [source["id"] for source in self._evidence_sources(proof)]
+                     for lang, proof in value["i18n"].items()}}
+            for key, value in meta["fields"].items() if key in fields}
         if mode == "preview":
             item["review_state"] = meta["review_state"]
         return item

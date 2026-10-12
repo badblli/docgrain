@@ -370,7 +370,7 @@ def test_real_six_stage_run_questions_answer_and_old_bytes(setup):
     ("empty_records", "empty", "extract"),
 ])
 def test_ambiguous_partial_empty_not_success(setup, mode, code, stage, monkeypatch):
-    monkeypatch.setattr(chat_model, "time", SimpleNamespace(sleep=lambda _: None))
+    monkeypatch.setattr(chat_model.time, "sleep", lambda _: None)
     setup.model.mode = mode
     result = run(setup, start(setup))
     assert result["status"] == ("needs_review" if code == "schema_review" else "failed")
@@ -657,7 +657,7 @@ def add_documents(setup, count):
 
 @pytest.fixture
 def no_backoff(monkeypatch):
-    monkeypatch.setattr(chat_model, "time", SimpleNamespace(sleep=lambda _: None))
+    monkeypatch.setattr(chat_model.time, "sleep", lambda _: None)
 
 
 def records_files(setup, key):
@@ -797,7 +797,9 @@ def test_concurrency_four_matches_concurrency_one(setup, monkeypatch):
         revision = setup.store._source(WORKSPACE, result["revision_id"])
         outputs[level] = (records_files(setup, key),
                           [record.model_dump(mode="json") for record in revision.records])
-    assert outputs[1][0] == outputs[4][0]
+    # KULLANILMIYOR (karar 18): duvar süreleri eşit olamaz; kayıtlar ve token sırası eşit kalır.
+    # assert outputs[1][0] == outputs[4][0]
+    assert without_timings(outputs[1][0]) == without_timings(outputs[4][0])
     assert len(outputs[4][0]) == 5 and all(usage["calls"] for _, usage in outputs[4][0].values())
     assert json.dumps(outputs[1][1]).replace(outputs_job(setup, 1), "") == json.dumps(
         outputs[4][1]).replace(outputs_job(setup, 4), "")
@@ -832,7 +834,9 @@ def test_extraction_run_order_is_independent_of_latency():
             chat.close()
         assert len(passes.plan) >= 3 and not passes.failed
         outputs.append((passes.result().model_dump(mode="json"), usage.model_dump(mode="json")))
-    assert outputs[0] == outputs[1] == outputs[2]
+    # KULLANILMIYOR (karar 18): süreler her koşuda farklıdır.
+    # assert outputs[0] == outputs[1] == outputs[2]
+    assert without_timings(outputs[0]) == without_timings(outputs[1]) == without_timings(outputs[2])
     assert len(outputs[0][0]["records"]) >= 3
 
 
@@ -920,3 +924,12 @@ def test_republish_is_a_no_op_for_a_job_that_already_used_the_rules(setup):
     assert report["published"] is False and "already" in report["note"]
     assert report["before"]["questions"] == report["after"]["questions"] == 1
     assert setup.store.list_revisions(WORKSPACE) == old
+
+
+def without_timings(value):
+    """Compare records, token counts and call order; wall clock is inherently variable."""
+    if isinstance(value, dict):
+        return {key: without_timings(item) for key, item in value.items() if key != "wall_seconds"}
+    if isinstance(value, (list, tuple)):
+        return [without_timings(item) for item in value]
+    return value

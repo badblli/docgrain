@@ -41,13 +41,87 @@ list: one line per item starting with '- ' and the item's exact record name, the
 that record's source ids, e.g. '- <name>: <facts> [src_<id>]'. List only records returned by the
 tools. One short heading line ending with ':' may introduce the list; it states no facts.
 """
+SYSTEM_RENDER = """For list answers, prefer render_list after reading list_collection. Choose the
+collection, record_ids (empty means every returned record) and fields needed to answer the
+question. The server renders their exact approved values and citations; do not repeat the list
+as prose. Never use an unreturned record or field. If the requested fact is unknown, say
+'Bilmiyorum.' Do not select all records when the question asks for a filtered subset.
+"""
+RENDER_TOOL = {"type": "function", "function": {
+    "name": "render_list", "description": "Answer with selected previously read approved records.",
+    "parameters": {"type": "object", "additionalProperties": False,
+                   "properties": {"collection": {"type": "string"},
+                                  "record_ids": {"type": "array", "items": {"type": "string"}},
+                                  "fields": {"type": "array", "items": {"type": "string"}}},
+                   "required": ["collection", "record_ids", "fields"]}}}
+
+FIELD_LABELS = {"capacity": "Kişi sayısı", "size_m2": "Alan (m²)", "heated": "Isıtma",
+                "is_heated": "Isıtma", "opening_hours": "Saatler", "service_hours": "Saatler",
+                "cuisine": "Mutfak", "description": "Açıklama", "price": "Ücret",
+                "location": "Konum", "reservation_required": "Rezervasyon gerekli"}
+
+
+def _display(value):
+    if isinstance(value, bool):
+        return "Evet" if value else "Hayır"
+    if isinstance(value, list):
+        return ", ".join(_display(item) for item in value)
+    # Source data cannot inject list lines, formatting or citation ids into the answer.
+    return " ".join(str(value).split()).replace("[", "［").replace("]", "］")
+
+
+def _render_list(arguments, listings, sources):
+    if (set(arguments) != {"collection", "record_ids", "fields"}
+            or not isinstance(arguments["collection"], str)):
+        return AskResult()
+    data = listings.get(arguments["collection"])
+    ids, fields = arguments["record_ids"], arguments["fields"]
+    if (data is None or not isinstance(ids, list) or not isinstance(fields, list)
+            or any(not isinstance(value, str) for value in ids + fields)
+            or len(ids) != len(set(ids)) or len(fields) != len(set(fields))
+            or any(key in {"id", "i18n", "_meta", "sources"} for key in fields)):
+        return AskResult()
+    rows = {item["record"]["id"]: item for item in data.get("records", [])}
+    if not set(ids) <= rows.keys():
+        return AskResult()
+    selected = ids or list(rows)
+    if not selected:
+        return AskResult()
+    lines, cited = [], set()
+    for record_id in selected:
+        item = rows[record_id]
+        record = item["record"]
+        identity = item.get("identity", "name")
+        translated = record.get("i18n", {}).get("tr", {})
+        chunks, proof = [], set()
+        for key in [identity, *[key for key in fields if key != identity]]:
+            value = translated.get(key, record.get(key))
+            language = "tr" if key in translated else "primary"
+            field_ids = item.get("field_sources", {}).get(key, {}).get(language, [])
+            if (value is None or value == "" or value == [] or not field_ids
+                    or not set(field_ids) <= sources.keys()
+                    or not set(field_ids) <= set(item.get("sources", []))):
+                return AskResult()  # A known name cannot support an unknown requested field.
+            proof.update(field_ids)
+            chunks.append(_display(value) if key == identity else
+                          FIELD_LABELS.get(key, "Bilgi") + ": " + _display(value))
+        cited.update(proof)
+        lines.append("- " + chunks[0] + (": " + "; ".join(chunks[1:]) if len(chunks) > 1 else "")
+                     + " " + " ".join("[" + key + "]" for key in sorted(proof)))
+    return AskResult("\n".join(lines), False, [sources[key] for key in sorted(cited)])
 
 
 class OpenAICompatibleClient:
     def __init__(self, base_url, model, api_key, *, transport=None, timeout=60,
-                 total_timeout=None):
+                 total_timeout=None, reasoning_effort=None, max_tokens=None, on_usage=None):
         self.model = model
         self._api_key = api_key
+        self.options = {key: value for key, value in {
+            "reasoning_effort": reasoning_effort, "max_tokens": max_tokens,
+        }.items() if value is not None}
+        self.calls = []
+        self.usage_calls = self.calls
+        self.on_usage = on_usage
         # WP112: `timeout` bounds one model request; `total_timeout` bounds every request,
         # retry and back-off of this client (one client is built per question).
         self.timeout = timeout
@@ -65,9 +139,8 @@ class OpenAICompatibleClient:
         for attempt in range(attempts):
             remaining = self._remaining()
             try:
-                response = self.client.post("chat/completions", json={
-                    "model": self.model, "messages": messages, "tools": tools,
-                }, **({} if remaining is None else {"timeout": min(self.timeout, remaining)}))
+                response = self._post({"model": self.model, "messages": messages,
+                                       "tools": tools, **self.options}, attempt, remaining)
                 if (response.status_code in (429, 500, 502, 503, 504) and attempt + 1 < attempts
                         and self._can_wait(2 ** attempt)):
                     time.sleep(2 ** attempt)
@@ -87,6 +160,36 @@ class OpenAICompatibleClient:
             except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
                 raise ModelUnavailable("Model service unavailable") from None
         raise RuntimeError("unreachable")
+
+    def _post(self, payload, attempt, remaining):
+        started = time.monotonic()
+        response = None
+        usage = {}
+        try:
+            response = self.client.post("chat/completions", json=payload,
+                **({} if remaining is None else {"timeout": min(self.timeout, remaining)}))
+            try:
+                body = response.json()
+                reported = body.get("usage", {}) if isinstance(body, dict) else {}
+                if isinstance(reported, dict):
+                    for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                        value = reported.get(key)
+                        if type(value) is int and value >= 0:
+                            usage[key] = value
+                    details = reported.get("completion_tokens_details")
+                    value = details.get("reasoning_tokens") if isinstance(details, dict) else None
+                    if type(value) is int and value >= 0:
+                        usage["reasoning_tokens"] = value
+            except ValueError:
+                pass
+            return response
+        finally:
+            values = {"attempt": attempt + 1, "retries": attempt,
+                      "status_code": response.status_code if response is not None else None,
+                      "wall_seconds": time.monotonic() - started, **usage}
+            self.calls.append(values)
+            if self.on_usage:
+                self.on_usage(values)
 
     def _remaining(self):
         if self.deadline is None:
@@ -237,17 +340,18 @@ def _remember_records(result, records, readable):
     """Map each returned record's names to the complete sources returned WITH it."""
     entries = []
     if isinstance(result.get("record"), dict):
-        entries.append((result["record"], result.get("sources")))
+        record = result["record"]
+        entries.append((record, result.get("sources"), record.get("_meta", {}).get("identity", "name")))
     if isinstance(result.get("records"), list):
-        entries.extend((entry.get("record"), entry.get("sources"))
+        entries.extend((entry.get("record"), entry.get("sources"), entry.get("identity", "name"))
                        for entry in result["records"] if isinstance(entry, dict))
-    for record, sources in entries:
+    for record, sources, identity in entries:
         if not isinstance(record, dict) or not isinstance(sources, list):
             continue
         ids = {key for key in (source.get("id") if isinstance(source, dict) else source
                                for source in sources) if isinstance(key, str) and key in readable}
         translations = record.get("i18n")
-        names = [record.get("name")] + ([values.get("name") for values in translations.values()
+        names = [record.get(identity)] + ([values.get(identity) for values in translations.values()
                                          if isinstance(values, dict)]
                                         if isinstance(translations, dict) else [])
         for name in names:
@@ -314,7 +418,7 @@ def _check_deadline(deadline):
 
 
 def ask_result(question, access, model, *, preview=False, max_turns=8,
-               strict_errors=True, deadline=None):
+               strict_errors=True, deadline=None, render_lists=False):
     """Fake clients can implement specs/call and complete; no model is constructed here.
 
     Citation presence is checked mechanically; relevance is the consuming model's responsibility.
@@ -322,11 +426,16 @@ def ask_result(question, access, model, *, preview=False, max_turns=8,
     """
     mode = "preview" if preview else "approved"
     tools = _safe_tools(access.specs(), mode)
-    messages = [{"role": "system", "content": SYSTEM + SYSTEM_LISTS + "\nEnabled mode: " + mode},
+    render_lists = render_lists and not preview and strict_errors
+    if render_lists:
+        tools.append(deepcopy(RENDER_TOOL))
+    messages = [{"role": "system", "content": SYSTEM + SYSTEM_LISTS +
+                (SYSTEM_RENDER if render_lists else "") + "\nEnabled mode: " + mode},
                 {"role": "user", "content": question}]
     sources = {}
     records = {}  # WP112: record name -> source ids returned together with that record.
     listed = False  # WP112: list_collection was read for this question.
+    listings = {}
     turn_limit = min(8, max_turns)
     for turn in range(turn_limit):
         _check_deadline(deadline)
@@ -369,6 +478,11 @@ def ask_result(question, access, model, *, preview=False, max_turns=8,
                 arguments = json.loads(call["function"]["arguments"])
                 if not isinstance(arguments, dict):
                     raise TypeError("tool arguments must be an object")
+                _check_deadline(deadline)
+                if call["function"]["name"] == "render_list":
+                    if not render_lists or len(calls) != 1:
+                        return AskResult()
+                    return _render_list(arguments, listings, sources)
                 if arguments.get("mode", mode) != mode:
                     raise ValueError("publication mode was not enabled by the caller")
                 arguments["mode"] = mode
@@ -378,6 +492,8 @@ def ask_result(question, access, model, *, preview=False, max_turns=8,
                                 and source.get("quote")})
                 _remember_records(result, records, sources.keys())
                 listed = listed or call["function"]["name"] == "list_collection"
+                if call["function"]["name"] == "list_collection" and result.get("mode") == "approved":
+                    listings[result.get("collection")] = result
             except AccessError:
                 if strict_errors:
                     raise ModelUnavailable("Knowledge service unavailable") from None

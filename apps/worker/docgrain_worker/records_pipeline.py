@@ -7,10 +7,11 @@ All source bodies and model proposals stay under the private runtime directory.
 import logging
 import multiprocessing
 import os
+import time
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
-from threading import Event, Thread
+from threading import Event, Lock, Thread
 
 import httpx
 from docgrain_api import records_jobs as lifecycle
@@ -69,9 +70,12 @@ class GuardTransport(httpx.BaseTransport):
         self.transport.close()
 
 
-def model_client(kind, resolved, guard, transport=None):
+def model_client(kind, resolved, guard, transport=None, on_usage=None):
     chat = kind(resolved.base_url, resolved.model, resolved.api_key or "local-profile",
-                timeout=180, retries=3, transport=GuardTransport(guard, transport))
+                timeout=180, retries=3, transport=GuardTransport(guard, transport),
+                reasoning_effort=getattr(resolved, "reasoning_effort", None),
+                max_tokens=getattr(resolved, "max_tokens", None),
+                on_usage=on_usage)
     # Existing ChatClient requires a nonempty key. An explicitly keyless server profile
     # still uses that same client, with no invented credential sent to the endpoint.
     if not resolved.api_key:
@@ -147,7 +151,9 @@ class Pipeline:
         self.revision = None
         self.schema_review = False
         self.unverified = []
-        # WP110: parallel extraction calls (1-4); record order and usage do not depend on it.
+        self.measurements = {"stages": {}, "calls": []}
+        self.measurement_lock = Lock()
+        # WP113: parallel extraction calls (1-32); record and usage order stay in plan order.
         self.concurrency = concurrency or get_settings().records_extraction_concurrency
         self.root.mkdir(parents=True, mode=0o700, exist_ok=True)
 
@@ -176,8 +182,20 @@ class Pipeline:
         if not jobs.change(self.workspace, self.job_id, mutate, {"running"}):
             raise PipelineError("worker_stale")
 
+    def account(self, stage):
+        def record(values):
+            with self.measurement_lock:
+                self.measurements["calls"].append({"stage": stage, **values})
+                self.metadata(speed=self.measurements)
+        return record
+
     def discover(self):
         resolved = self.guard()
+        self.measurements["options"] = {
+            "reasoning_effort": resolved.reasoning_effort, "max_tokens": resolved.max_tokens,
+            "extraction_concurrency": self.concurrency,
+            "grouped_passes": get_settings().records_extraction_grouped_passes,
+        }
         self.sources_unchanged()
         self.publication_unchanged()
         # Failed documents are not pinned at start (records_jobs.source_snapshot skips them); load only pins.
@@ -201,7 +219,8 @@ class Pipeline:
             path = self.root / "records" / sha256(doc.source.document_id.encode()).hexdigest()
             write_json(path / "source.json", doc.source.model_dump(mode="json"))
             (path / "context.md").write_bytes(doc.context.encode("utf-8"))
-        chat = model_client(DiscoveryClient, resolved, self.guard, self.transport)
+        chat = model_client(DiscoveryClient, resolved, self.guard, self.transport,
+                            self.account("discover"))
         checked = CheckedDiscovery(chat, self.documents, self.root)
         try:
             self.schema = discover(self.documents, self.workspace, checked)
@@ -333,14 +352,16 @@ class Pipeline:
 
     def extract(self):
         """WP110: rejected fields are reported; failed sections are retried once, then reported."""
-        chat = model_client(ChatClient, self.guard(), self.guard, self.transport)
+        chat = model_client(ChatClient, self.guard(), self.guard, self.transport,
+                            self.account("extract"))
         plans, runs, retried = {}, [], 0
         try:
             for doc in self.documents:
                 self.guard()
                 usage = ExtractionUsage()
                 run = ExtractionRun(doc.context, doc.source.document_id, doc.source.lang, chat,
-                                    concurrency=self.concurrency, usage=usage, runtime=self.runtime)
+                                    concurrency=self.concurrency, usage=usage, runtime=self.runtime,
+                                    grouped_passes=get_settings().records_extraction_grouped_passes)
                 plans[doc.source.document_id] = len(run.plan)
                 runs.append((doc, usage, run.run()))
             # Model/network failures left after the client's own retries get one more try here.
@@ -460,7 +481,22 @@ class Pipeline:
                 job["stages"][stage].update(status="running", started_at=stamp)
             if not jobs.change(self.workspace, self.job_id, begin, {"running"}):
                 raise PipelineError("worker_stale")
-            getattr(self, stage)()
+            started = time.monotonic()
+            try:
+                getattr(self, stage)()
+            finally:
+                calls = [call for call in self.measurements["calls"] if call["stage"] == stage]
+                values = {"wall_seconds": time.monotonic() - started, "calls": len(calls),
+                          "retries": sum(call["attempt"] > 1 for call in calls)}
+                for key in ("prompt_tokens", "completion_tokens", "reasoning_tokens", "total_tokens"):
+                    reported = [call[key] for call in calls if key in call]
+                    values[key] = sum(reported) if reported else None
+                    values["missing_" + key + "_calls"] = len(calls) - len(reported)
+                self.measurements["stages"][stage] = values
+                # publish() writes done inside its lock; persist its duration afterwards too.
+                jobs.change(self.workspace, self.job_id,
+                            lambda job: job["metadata"].update(speed=self.measurements),
+                            {"running", "done", "failed"})
             if stage == "publish":
                 return  # Publication read verification and terminal write share its lock.
             self.guard()

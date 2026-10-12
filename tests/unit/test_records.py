@@ -384,18 +384,24 @@ def test_cli_writes_verified_json(tmp_path, monkeypatch, capsys):
     assert artifact["rejected"][0]["field"] == "view"
     assert (tmp_path / "context.md").read_text(encoding="utf-8") == CONTEXT
     assert (tmp_path / "context.md").read_bytes() == CONTEXT.encode("utf-8")
-    assert json.loads((tmp_path / "source.json").read_text(encoding="utf-8")) == {
+    source = json.loads((tmp_path / "source.json").read_text(encoding="utf-8"))
+    usage = source["usage"]
+    assert usage["wall_seconds"] >= 0
+    assert usage["wall_seconds"] == sum(call["wall_seconds"] for call in usage["calls"])
+    assert source == {
         "document_id": "doc_example", "workspace_id": "workspace-example",
         "knowledge_revision_id": "rev_example", "source_version_id": "source-example-v1",
         "content_sha256": "a" * 64, "lang": "en",
         "filename": "Oda bilgileri.pdf",
         "usage": {
+            "reasoning_tokens": 0, "wall_seconds": usage["wall_seconds"], "missing_reasoning_calls": 5,
             "prompt_tokens": 50, "completion_tokens": 25, "total_tokens": 75,
             "missing_usage_calls": 0,
             "calls": [{"section": 1, "collection": collection, "attempt": 1,
                        "status_code": 200, "prompt_tokens": 10, "completion_tokens": 5,
-                       "total_tokens": 15}
-                      for collection in [None, "policy", "service_price", "activity", "facility"]],
+                       "total_tokens": 15, "reasoning_tokens": None,
+                       "wall_seconds": usage["calls"][index]["wall_seconds"], "retries": 0}
+                      for index, collection in enumerate([None, "policy", "service_price", "activity", "facility"])],
         },
     }
     assert "fake-key" not in capsys.readouterr().out

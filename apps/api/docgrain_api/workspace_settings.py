@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from typing import Literal
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError
@@ -29,6 +30,8 @@ class ModelUpdate(BaseModel):
     base_url: str = Field(default="", max_length=2048)
     model: str = Field(default="", max_length=256)
     credential_id: str = Field(default="", max_length=128)
+    reasoning_effort: Literal["none", "minimal", "low", "medium", "high"] | None = None
+    max_tokens: int | None = Field(default=None, ge=1, le=1048576)
 
 
 class CredentialProfile(BaseModel):
@@ -48,6 +51,8 @@ class ResolvedWorkspaceModel(BaseModel):
     model: str
     api_key: str = Field(repr=False, exclude=True)
     settings_version: int
+    reasoning_effort: str | None = None
+    max_tokens: int | None = None
 
 
 def _profiles() -> dict[str, CredentialProfile]:
@@ -92,7 +97,8 @@ def get_workspace_model(ws: str) -> dict[str, object]:
         "settings_version": 0,
     }
     profile = _profiles().get(str(values["credential_id"]))
-    return {**values, "credential_ready": bool(profile and _ready(profile))}
+    return {"reasoning_effort": None, "max_tokens": None, **values,
+            "credential_ready": bool(profile and _ready(profile))}
 
 
 def _valid_url(value: str) -> bool:
@@ -135,6 +141,11 @@ def put_workspace_model(ws: str, update: ModelUpdate) -> dict[str, object]:
     if update.enabled and (not values["base_url"] or not values["model"]
                            or profile is None or not _ready(profile)):
         raise ModelSettingsError("Açmak için bağlantı, model adı ve hazır bir seçenek seçin.", 422)
+    # Google's documented OpenAI adapter cannot disable thinking on Gemini 3 / 2.5 Pro.
+    if (values["reasoning_effort"] == "none"
+            and "generativelanguage.googleapis.com" == urlsplit(values["base_url"]).hostname
+            and values["model"].startswith(("gemini-3", "gemini-2.5-pro"))):
+        raise ModelSettingsError("Bu model düşünmeyi kapatmayı desteklemiyor; düşük seçin.", 422)
     store.save_model(ws, values)
     return get_workspace_model(ws)
 
@@ -154,4 +165,5 @@ def resolve_workspace_model(ws: str, expected_version: int | None = None) -> Res
     return ResolvedWorkspaceModel(
         enabled=True, base_url=str(values["base_url"]), model=str(values["model"]),
         api_key=key, settings_version=int(values["settings_version"]),
+        reasoning_effort=values.get("reasoning_effort"), max_tokens=values.get("max_tokens"),
     )

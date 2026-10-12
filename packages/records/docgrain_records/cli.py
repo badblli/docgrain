@@ -29,8 +29,8 @@ from .runtime import HOSPITALITY, load_runtime
 def run(args):
     runtime = load_runtime(args.schema) if args.schema else HOSPITALITY
     engine = getattr(args, "engine", "docgrain")
-    if not 1 <= args.concurrency <= 4:
-        raise ValueError("concurrency must be between 1 and 4")
+    if not 1 <= args.concurrency <= 32:
+        raise ValueError("concurrency must be between 1 and 32")
     if not 1000 <= args.section_chars <= 10000:
         raise ValueError("section size must be between 1000 and 10000 characters")
     key = None
@@ -54,7 +54,8 @@ def run(args):
             print(f"İstek boyutu: {size} karakter, yaklaşık {(size + 3) // 4} belirteç; "
                   "motorun yeniden denemeleri ve ek istekleri bu tahmine dahil değil")
             return 0
-        plan = extraction_plan(context, args.section_chars, not args.no_focused_passes, runtime=runtime)
+        plan = extraction_plan(context, args.section_chars, not args.no_focused_passes, runtime=runtime,
+                               grouped_passes=getattr(args, "grouped_passes", False))
         size = sum(len(message["content"]) for section, collection in plan
                    for message in build_messages(section.context, args.document, lang, collection,
                                                  runtime=runtime))
@@ -74,7 +75,8 @@ def run(args):
         try:
             result = extract(context, args.document, lang, chat, section_chars=args.section_chars,
                              concurrency=args.concurrency, focused_passes=not args.no_focused_passes,
-                             usage=usage, runtime=runtime)
+                             usage=usage, runtime=runtime,
+                             grouped_passes=getattr(args, "grouped_passes", False))
         finally:
             chat.close()
     out = Path(args.out)
@@ -117,8 +119,10 @@ def main(argv=None):
     runner.add_argument("--retries", type=int, default=3)
     runner.add_argument("--section-chars", type=int, default=8000,
                         help="Her bölüm için hedef karakter sayısı (1000–10000)")
-    runner.add_argument("--concurrency", type=int, default=3,
-                        help="Aynı anda gönderilen istek sayısı (1–4)")
+    runner.add_argument("--concurrency", type=int, default=6,
+                        help="Aynı anda gönderilen istek sayısı (1–32)")
+    runner.add_argument("--grouped-passes", action="store_true",
+                        help="Aynı bölümdeki tüm bilgi listelerini birlikte çıkar; doğruluğu kıyasla")
     runner.add_argument("--no-focused-passes", action="store_true",
                         help="Bilgi listeleri için ek tamlık taramalarını kapat")
     matcher = commands.add_parser("match")

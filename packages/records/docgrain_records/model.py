@@ -13,13 +13,20 @@ class ModelResponseError(ValueError):
 
 class ChatClient:
     def __init__(self, base_url: str, model: str, api_key: str, timeout: float = 60,
-                 retries: int = 3, transport: httpx.BaseTransport | None = None):
+                 retries: int = 3, transport: httpx.BaseTransport | None = None,
+                 reasoning_effort: str | None = None, max_tokens: int | None = None,
+                 on_usage=None):
         if not base_url or not model or not api_key:
             raise ValueError("model calls require explicit base_url, model and api_key")
         if retries < 0:
             raise ValueError("retries must be nonnegative")
         self.model = model
         self.retries = retries
+        self.options = {key: value for key, value in {
+            "reasoning_effort": reasoning_effort, "max_tokens": max_tokens,
+        }.items() if value is not None}
+        self.on_usage = on_usage
+        self.calls = []
         self.client = httpx.Client(
             base_url=base_url.rstrip("/") + "/", timeout=timeout, transport=transport,
             headers={"Authorization": f"Bearer {api_key}"},
@@ -37,6 +44,7 @@ class ChatClient:
         name, default_schema = self.response_schema()
         schema = schema if schema is not None else default_schema
         payload = {
+            **self.options,
             "model": self.model, "messages": messages, "temperature": 0,
             "response_format": {"type": "json_schema", "json_schema": {
                 "name": name, "strict": True, "schema": schema,
@@ -47,11 +55,20 @@ class ChatClient:
         def post():
             nonlocal requests
             requests += 1
+            started = time.monotonic()
+            def account(status, usage=None):
+                values = {"attempt": requests, "status_code": status,
+                          "wall_seconds": time.monotonic() - started,
+                          "retries": requests - 1, **(usage or {})}
+                self.calls.append(values)
+                if self.on_usage:
+                    self.on_usage(values)
+                if on_usage:
+                    on_usage(values)
             try:
                 response = self.client.post("chat/completions", json=payload)
             except httpx.TransportError:
-                if on_usage:
-                    on_usage({"attempt": requests, "status_code": None})
+                account(None)
                 raise
             usage = {}
             try:
@@ -66,10 +83,13 @@ class ChatClient:
                         key in usage for key in ("prompt_tokens", "completion_tokens")
                     ):
                         usage["total_tokens"] = usage["prompt_tokens"] + usage["completion_tokens"]
+                    details = reported.get("completion_tokens_details") or {}
+                    reasoning = details.get("reasoning_tokens") if isinstance(details, dict) else None
+                    if type(reasoning) is int and reasoning >= 0:
+                        usage["reasoning_tokens"] = reasoning
             except ValueError:
                 pass
-            if on_usage:
-                on_usage({"attempt": requests, "status_code": response.status_code, **usage})
+            account(response.status_code, usage)
             return response
 
         for attempt in range(self.retries + 1):

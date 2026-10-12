@@ -320,7 +320,7 @@ def test_measurement_scores_list_questions_items_and_latency(access):
     assert report["passed"] and report["correct_with_sources"] == report["known_runs"] == 3
     assert report["invented_items"] == report["missing_items"] == report["answered_on_unknown"] == 0
     assert report["invented_sources"] == report["timeouts"] == 0
-    assert set(report["latency_seconds"]) == {"mean", "p50", "max"}
+    assert set(report["latency_seconds"]) == {"mean", "p50", "p95", "max"}
     assert all(isinstance(row["seconds"], float) for row in report["results"])
     assert "Garden room" not in json.dumps(report) and all(model.closed for model in models)
 
