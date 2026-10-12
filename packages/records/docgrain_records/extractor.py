@@ -19,6 +19,7 @@ from .models import (
 from .runtime import HOSPITALITY
 from .schema import proposal_schema
 from .sections import split_context
+from .structure_context import StructureIndex, without_structure
 from .verify import (
     _blocks,
     _coalesce_document_records,
@@ -58,6 +59,11 @@ Prefer the full label:value clause including its unit (e.g. "Size: 32 m2",
 For a table cell containing only the value, record a source header in the locator:
 §2 cell={"row":1,"column":2,"column_header":"Size"}. Row and column are one-based;
 row counts data rows. row_header may instead name the first cell of that row.
+For category, type, floor or section inherited from a containing heading, cite that
+heading's exact title (or one language segment of it, e.g. "Soup" in "Çorba / Soup")
+and the heading's own locator; also cite the item's own identity below it.
+Identical item names under different floors/units/sections are separate records.
+Structural metadata is derived by the verifier from the source, never proposed.
 Headers must match that source table, never be invented. Use [] if context is absent.
 Use [] for absent facts. Include a quoted identity field to identify each real thing.
 Keep source languages; use the caller's lang for monolingual content, detect languages
@@ -72,10 +78,11 @@ Schema:
 
 
 def build_messages(context: str, document_id: str, lang: str,
-                   collection: str | None = None, *, runtime=None) -> list[dict]:
+                   collection: str | None = None, *, runtime=None, source_context=None) -> list[dict]:
     runtime = runtime or HOSPITALITY
     TypeAdapter(Text).validate_python(document_id)
     TypeAdapter(Language).validate_python(lang)
+    context = without_structure(context)
     if not context.strip():
         raise ValueError("source context is empty")
     focus = ""
@@ -99,19 +106,33 @@ def build_messages(context: str, document_id: str, lang: str,
             proposal_schema(collection, runtime=runtime), ensure_ascii=False)},
         {"role": "user", "content": json.dumps({
             "document_id": document_id, "lang": lang, "untrusted_source_context": context,
+            **({"untrusted_containing_headings": containing_headings(context, source_context)}
+               if source_context is not None else {}),
             **({"untrusted_collection_definitions": runtime.schema["collections"]}
                if runtime.schema else {}),
         }, ensure_ascii=False)},
     ]
 
 
+def containing_headings(context, source_context):
+    """Source-derived heading paths of the supplied blocks (sections may omit the heading)."""
+    index = StructureIndex(source_context)
+    headings = {}
+    for key in _blocks(context):
+        for heading in index.at(key).heading_path:
+            headings[heading.locator] = heading.title
+    return headings
+
+
 def extraction_plan(context: str, section_chars: int = 8000, focused_passes: bool = True,
                     *, runtime=None, grouped_passes: bool = False):
     """Stable section/pass ordering also makes IDs and usage independent of latency."""
     runtime = runtime or HOSPITALITY
+    # Pinned structure lines are verifier metadata; they must not change section sizes.
+    sections = split_context(without_structure(context), section_chars)
     if grouped_passes:
-        return [(section, None) for section in split_context(context, section_chars)]
-    return [(section, collection) for section in split_context(context, section_chars)
+        return [(section, None) for section in sections]
+    return [(section, collection) for section in sections
             for collection in (None, *runtime.focused) if focused_passes or collection is None]
 
 
@@ -148,7 +169,7 @@ class ExtractionRun:
 
         try:
             messages = build_messages(section.context, self.document_id, self.lang, collection,
-                                      runtime=self.runtime)
+                                      runtime=self.runtime, source_context=self.context)
             if self.grouped_passes:
                 messages[0]["content"] += (
                     "\nEnumerate ALL items of EVERY supplied collection in this section, including "
@@ -255,7 +276,8 @@ def _extract_before_wp110(context: str, document_id: str, lang: str, chat: ChatC
             calls.append(CallUsage(section=section.index, collection=collection, **values))
 
         try:
-            messages = build_messages(section.context, document_id, lang, collection, runtime=runtime)
+            messages = build_messages(section.context, document_id, lang, collection,
+                                      runtime=runtime, source_context=context)
             raw = chat.complete(messages, schema=proposal_schema(collection, runtime=runtime), on_usage=account)
             result = verify_response(raw, section.context, document_id, lang, collection,
                                      source_context=context, runtime=runtime)

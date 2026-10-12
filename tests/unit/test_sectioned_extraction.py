@@ -20,8 +20,8 @@ from docgrain_records.sections import split_context
 from jsonschema import Draft202012Validator
 
 
-def context_for(bodies, *, padding=False):
-    blocks = [f"[§{i} p.{i}]\n# Section {i}\n{body}\n" +
+def context_for(bodies, *, padding=False, same_heading=False):
+    blocks = [f"[§{i} p.{i}]\n# Section {1 if same_heading else i}\n{body}\n" +
               ("Source note. " * 550 + "\n" if padding else "")
               for i, body in enumerate(bodies, 1)]
     return "# Example document\n\n" + "\n".join(blocks) + "\n## Kaynak anahtarları\n" + "\n".join(
@@ -113,7 +113,7 @@ def test_sectioned_extraction_merges_with_original_locator_rules(tmp_path):
         "Garden room; capacity 2; 32 m².",
         "Garden room; capacity 3; 32 m².",
         "Garden room; sea view; 32 m².",
-    ], padding=True)
+    ], padding=True, same_heading=True)
     locators = ["[§1 p.1]", "§2 p.2", "node_3"]
 
     def handler(request):
@@ -159,7 +159,7 @@ def test_cross_section_duplicates_union_evidence_i18n_and_conflicts(tmp_path):
     source = context_for([
         "Garden room; capacity 2; 32 m²; Bahçe odası; Pets are not allowed.",
         "Garden room; capacity 3; 32 m²; sea view; Pets are not allowed.",
-    ], padding=True)
+    ], padding=True, same_heading=True)
 
     def handler(request):
         context, focus, _ = request_parts(request)

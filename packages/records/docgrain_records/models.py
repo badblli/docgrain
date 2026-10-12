@@ -15,10 +15,26 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, allow_inf_nan=False)
 
 
+class StructureHeading(StrictModel):
+    locator: Text
+    title: Text
+
+
+class StructureContext(StrictModel):
+    heading_path: list[StructureHeading] = Field(default_factory=list)
+    section_title: str | None = None
+    table_row: int | None = None
+    table_column: int | None = None
+    row_header: str | None = None
+    column_header: str | None = None
+
+
 class Evidence(StrictModel):
     document_id: Text
     locator: Text
     quote: Text
+    # Derived from the pinned source, never trusted from model output.
+    structure_context: StructureContext | None = None
 
 
 class FieldValue(StrictModel, Generic[T]):
@@ -88,6 +104,7 @@ class RecordBase(StrictModel):
     id: Text
     review_state: Literal["proposed", "needs_review"] = "proposed"
     conflicts: dict[str, list[FieldValue[JsonValue]]] = Field(default_factory=dict)
+    structure_context: list[StructureContext] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def language_placement(self):
@@ -112,7 +129,7 @@ class RecordBase(StrictModel):
     @classmethod
     def field_names(cls):
         return tuple(key for key in cls.model_fields
-                     if key not in {"id", "type", "review_state", "conflicts", "i18n"})
+                     if key not in {"id", "type", "review_state", "conflicts", "i18n", "structure_context"})
 
 
 class Property(PropertyFields, RecordBase):

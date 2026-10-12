@@ -19,6 +19,7 @@ from .match import (
 from .merge import JsonMergeStore, _source_key
 from .merge_models import AliasDecision
 from .runtime import HOSPITALITY, RuntimeRecords
+from .structure_context import structure_vocabulary
 
 
 def load_merge_documents(directory, results, workspace_id=None, *, runtime=None):
@@ -77,6 +78,7 @@ def apply_matches(documents, matches):
             if ref_key(ref) not in entries:
                 raise ValueError("match proposal is stale or targets a different records input")
     groups = candidate_groups(matches.proposals, accepted_only=True)
+    vocabulary = structure_vocabulary(entry[1].record for entry in entries.values())
     for group in groups:
         docs = [key[0] for key in group]
         if len(docs) != len(set(docs)):
@@ -86,7 +88,8 @@ def apply_matches(documents, matches):
                for p in matches.proposals):
             raise ValueError("accepted aliases would bypass a conflicting pair")
         ordered = sorted(group)
-        if any(identity_conflict(entries[a][1].record, entries[b][1].record, strong_names=True)
+        if any(identity_conflict(entries[a][1].record, entries[b][1].record, strong_names=True,
+                                 vocabulary=vocabulary)
                for i, a in enumerate(ordered) for b in ordered[i + 1:]):
             raise ValueError("accepted aliases would bypass a conflicting pair")
         alias = "reviewed-match:" + fingerprint(sorted(group))

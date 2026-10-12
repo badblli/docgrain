@@ -141,6 +141,8 @@ class WorkspaceSchema(StrictModel):
 def discovery_schema() -> dict:
     """Strict compatible model output: no arbitrary object properties or review authority."""
     schema = DiscoveryResponse.model_json_schema()
+    # Structure is verifier-owned, not a discovery proposal.
+    schema["$defs"]["Evidence"]["properties"].pop("structure_context", None)
 
     def strict(node):
         if isinstance(node, dict):
@@ -166,6 +168,7 @@ def collection_record_schema(schema: WorkspaceSchema, key: str) -> dict:
     if collection is None or collection.review_state != "accepted":
         raise ValueError("collection is not accepted in this workspace schema")
     evidence = Evidence.model_json_schema()
+    definitions = evidence.pop("$defs", {})
     properties = {}
     for field in collection.fields:
         if field.review_state != "accepted" or field.alternatives:
@@ -180,6 +183,7 @@ def collection_record_schema(schema: WorkspaceSchema, key: str) -> dict:
                  }}
         properties[field.key] = {"anyOf": [value, {"type": "null"}]}
     return {"$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$defs": definitions,
             "title": f"{key} (workspace schema v{schema.version})",
             "type": "object", "additionalProperties": False,
             "properties": properties, "required": list(properties)}
