@@ -83,6 +83,7 @@ def test_empty_company_default_off_and_reopened_client(settings_store):
     assert client.get(f"/v1/workspaces/{ws}/model").json() == {
         "enabled": False, "base_url": "", "model": "", "credential_id": "",
         "credential_ready": False, "settings_version": 0,
+        "reasoning_effort": None, "max_tokens": None,
     }
     assert models == {}
     with pytest.raises(service.ModelSettingsError) as error:

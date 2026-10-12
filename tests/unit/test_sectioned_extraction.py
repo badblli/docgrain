@@ -405,4 +405,4 @@ def test_guard_options_and_opt_out_plan():
     with pytest.raises(ValueError, match="section size"):
         split_context(context, 0)
     with pytest.raises(ValueError, match="concurrency"):
-        run(context, lambda _: response([]), concurrency=10)
+        run(context, lambda _: response([]), concurrency=33)

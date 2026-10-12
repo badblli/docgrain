@@ -7,6 +7,7 @@ See docs/examples/dene-abstain.md for the private question-key format and live c
 
 import argparse
 import json
+import math
 import os
 import re
 import statistics
@@ -132,7 +133,8 @@ def list_score(item, result):
     return listed, invented
 
 
-def measure(questions, access, model_factory, *, repetitions=10, question_timeout=None):
+def measure(questions, access, model_factory, *, repetitions=10, question_timeout=None,
+            render_lists=False):
     """Fresh model/history per question; one immutable publication for the whole run.
 
     question_timeout (seconds) bounds each question like Dene does (WP112).
@@ -158,11 +160,12 @@ def measure(questions, access, model_factory, *, repetitions=10, question_timeou
             started = time.monotonic()
             try:
                 model = model_factory()
+                options = {"render_lists": True} if render_lists else {}
                 if question_timeout is None:
-                    result = ask_result(item["question"], trace, model)
+                    result = ask_result(item["question"], trace, model, **options)
                 else:
                     result = ask_result(item["question"], trace, model,
-                                        deadline=started + question_timeout)
+                                        deadline=started + question_timeout, **options)
                 citations = set(CITATION.findall(result.answer))
                 returned = {source["id"]: source for source in result.sources}
                 invented = ((citations | returned.keys()) - trace.sources.keys()) | {
@@ -205,9 +208,11 @@ def measure(questions, access, model_factory, *, repetitions=10, question_timeou
             seconds = round(time.monotonic() - started, 2)
             latencies.append(seconds)
             report["results"].append({"question_id": item["id"], "repetition": repetition + 1,
-                                      "outcome": outcome, "seconds": seconds})
+                                      "outcome": outcome, "seconds": seconds,
+                                      "calls": list(getattr(model, "usage_calls", []))})
     report["latency_seconds"] = {"mean": round(statistics.fmean(latencies), 2),
                                  "p50": round(statistics.median(latencies), 2),
+                                 "p95": sorted(latencies)[math.ceil(len(latencies) * 0.95) - 1],
                                  "max": max(latencies)}
     # KULLANILMIYOR (karar 18) — before WP112 only "known" questions were answerable:
     # known = repetitions * sum(item["kind"] == "known" for item in questions)

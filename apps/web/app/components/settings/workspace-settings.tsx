@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { CredentialProfile, WorkspaceModelSettings, WorkspaceModelUpdate, WorkspaceSettingsProps } from "./types";
 
-const emptyForm: WorkspaceModelUpdate = { enabled: false, base_url: "", model: "", credential_id: "" };
+const emptyForm: WorkspaceModelUpdate = { enabled: false, base_url: "", model: "", credential_id: "", reasoning_effort: null, max_tokens: null };
 const focus = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]";
 
 /** The keyed form resets before rendering another company's values, including pending saves. */
@@ -46,7 +46,8 @@ function SettingsForm({ apiUrl, workspaceId, mode, onSaved }: WorkspaceSettingsP
     void Promise.all([read<WorkspaceModelSettings>(base), read<CredentialProfile[]>(`${base}/profiles`)])
       .then(([settings, options]) => {
         if (controller.signal.aborted) return;
-        setForm({ enabled: settings.enabled, base_url: settings.base_url, model: settings.model, credential_id: settings.credential_id });
+        setForm({ enabled: settings.enabled, base_url: settings.base_url, model: settings.model, credential_id: settings.credential_id,
+          reasoning_effort: settings.reasoning_effort ?? null, max_tokens: settings.max_tokens ?? null });
         setProfiles(options); setState("ready");
       }).catch(error => {
         if (!controller.signal.aborted) setState(error instanceof Error && error.message === "404" ? "empty" : "error");
@@ -77,7 +78,8 @@ function SettingsForm({ apiUrl, workspaceId, mode, onSaved }: WorkspaceSettingsP
       }
       const settings: WorkspaceModelSettings = await response.json();
       if (controller.signal.aborted || !mounted.current) return;
-      setForm({ enabled: settings.enabled, base_url: settings.base_url, model: settings.model, credential_id: settings.credential_id });
+      setForm({ enabled: settings.enabled, base_url: settings.base_url, model: settings.model, credential_id: settings.credential_id,
+        reasoning_effort: settings.reasoning_effort ?? null, max_tokens: settings.max_tokens ?? null });
       setMessage("Kaydedildi."); setSaveError(false);
       onSaved?.(settings);
     } catch (error) {
@@ -149,6 +151,25 @@ function SettingsForm({ apiUrl, workspaceId, mode, onSaved }: WorkspaceSettingsP
                   : "Bağlantı anahtarları sunucuda tutulur; bu ekrana gönderilmez."}
             </p>
           </div>
+          <details className="rounded-lg border border-line bg-sheet p-4">
+            <summary className="cursor-pointer text-base font-medium">Yanıt tercihleri</summary>
+            <div className="mt-4 space-y-2">
+              <Label htmlFor={`${id}-effort`}>Düşünme düzeyi</Label>
+              <select id={`${id}-effort`} className={`h-[38px] w-full rounded-lg border border-line bg-paper px-2.5 ${focus}`}
+                value={form.reasoning_effort ?? ""} onChange={event => change({ reasoning_effort: (event.target.value || null) as WorkspaceModelUpdate["reasoning_effort"] })}>
+                <option value="">Modelin kendi seçimi</option><option value="none">Kapalı</option>
+                <option value="minimal">En az</option><option value="low">Düşük</option>
+                <option value="medium">Orta</option><option value="high">Yüksek</option>
+              </select>
+              <p className="text-xs text-muted">Desteklenen düzeyler modele göre değişir. Daha düşük düzeyi doğruluğu ölçerek seçin.</p>
+            </div>
+            <div className="mt-4 space-y-2">
+              <Label htmlFor={`${id}-limit`}>Yanıt uzunluğu sınırı</Label>
+              <Input id={`${id}-limit`} type="number" min={1} max={1048576} step={1}
+                value={form.max_tokens ?? ""} onChange={event => change({ max_tokens: event.target.value === "" ? null : Number(event.target.value) })} />
+              <p className="text-xs text-muted">Boş bırakırsanız modelin kendi sınırı kullanılır. Düşük sınır bilgilerin eksik gelmesine neden olabilir.</p>
+            </div>
+          </details>
           <div className="rounded-lg border border-line bg-sheet p-4">
             <label htmlFor={`${id}-enabled`} className="flex cursor-pointer items-start gap-3">
               <input id={`${id}-enabled`} type="checkbox" className={`mt-1 size-4 shrink-0 accent-[var(--accent)] ${focus}`}

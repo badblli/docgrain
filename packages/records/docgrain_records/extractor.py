@@ -106,9 +106,11 @@ def build_messages(context: str, document_id: str, lang: str,
 
 
 def extraction_plan(context: str, section_chars: int = 8000, focused_passes: bool = True,
-                    *, runtime=None):
+                    *, runtime=None, grouped_passes: bool = False):
     """Stable section/pass ordering also makes IDs and usage independent of latency."""
     runtime = runtime or HOSPITALITY
+    if grouped_passes:
+        return [(section, None) for section in split_context(context, section_chars)]
     return [(section, collection) for section in split_context(context, section_chars)
             for collection in (None, *runtime.focused) if focused_passes or collection is None]
 
@@ -122,17 +124,19 @@ class ExtractionRun:
     """
 
     def __init__(self, context: str, document_id: str, lang: str, chat: ChatClient | None = None, *,
-                 section_chars: int = 8000, concurrency: int = 3, focused_passes: bool = True,
-                 usage: ExtractionUsage | None = None, runtime=None):
+                 section_chars: int = 8000, concurrency: int = 6, focused_passes: bool = True,
+                 usage: ExtractionUsage | None = None, runtime=None, grouped_passes: bool = False):
         if chat is None:
             raise ValueError("extraction requires an explicitly configured chat client")
-        if not 1 <= concurrency <= 4:
-            raise ValueError("concurrency must be between 1 and 4")
+        if not 1 <= concurrency <= 32:
+            raise ValueError("concurrency must be between 1 and 32")
         self.runtime = runtime or HOSPITALITY
         build_messages(context, document_id, lang, runtime=self.runtime)
         self.context, self.document_id, self.lang = context, document_id, lang
         self.chat, self.concurrency, self.usage = chat, concurrency, usage
-        self.plan = extraction_plan(context, section_chars, focused_passes, runtime=self.runtime)
+        self.grouped_passes = grouped_passes
+        self.plan = extraction_plan(context, section_chars, focused_passes, runtime=self.runtime,
+                                    grouped_passes=grouped_passes)
         self.outcomes = [None] * len(self.plan)
 
     def _pass(self, task):
@@ -145,6 +149,12 @@ class ExtractionRun:
         try:
             messages = build_messages(section.context, self.document_id, self.lang, collection,
                                       runtime=self.runtime)
+            if self.grouped_passes:
+                messages[0]["content"] += (
+                    "\nEnumerate ALL items of EVERY supplied collection in this section, including "
+                    "each list entry and table row. Extract every stated field, schedule, condition "
+                    "and restriction. Re-read each collection before returning; completeness never "
+                    "permits inventing a name, fact or translation. Return [] for absent facts.")
             raw = self.chat.complete(messages, schema=proposal_schema(collection, runtime=self.runtime),
                                      on_usage=account)
             result = verify_response(raw, section.context, self.document_id, self.lang, collection,
@@ -214,12 +224,13 @@ class ExtractionRun:
 
 
 def extract(context: str, document_id: str, lang: str, chat: ChatClient | None = None, *,
-            section_chars: int = 8000, concurrency: int = 3, focused_passes: bool = True,
-            usage: ExtractionUsage | None = None, runtime=None) -> ExtractionResult:
+            section_chars: int = 8000, concurrency: int = 6, focused_passes: bool = True,
+            usage: ExtractionUsage | None = None, runtime=None,
+            grouped_passes: bool = False) -> ExtractionResult:
     """Opt-in, bounded parallel extraction; failed passes never erase successful ones."""
     return ExtractionRun(context, document_id, lang, chat, section_chars=section_chars,
                          concurrency=concurrency, focused_passes=focused_passes, usage=usage,
-                         runtime=runtime).run().result()
+                         runtime=runtime, grouped_passes=grouped_passes).run().result()
 
 
 # KULLANILMIYOR (karar 18, WP110): extract() artık ExtractionRun ile çalışıyor; başarısız bölümler

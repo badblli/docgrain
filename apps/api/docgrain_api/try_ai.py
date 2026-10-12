@@ -116,8 +116,12 @@ def answer_question(workspace_id, repository, *, question, model_factory=None):
             deadline = time.monotonic() + limit
             model = (model_factory or OpenAICompatibleClient)(
                 base_url, model_name, key, timeout=settings.dene_model_timeout_seconds,
-                total_timeout=limit)
-            result = ask_result(question, approved, model, deadline=deadline)
+                total_timeout=limit, **{
+                    name: value for name in ("reasoning_effort", "max_tokens")
+                    if (value := (config.get(name) if isinstance(config, Mapping)
+                                  else getattr(config, name, None))) is not None})
+            result = ask_result(question, approved, model, deadline=deadline,
+                                render_lists=settings.dene_server_lists)
             # Even a fake/custom client must never reflect a credential into the API.
             if key and key in result.answer + str(result.sources):
                 raise ModelUnavailable("Model service unavailable")

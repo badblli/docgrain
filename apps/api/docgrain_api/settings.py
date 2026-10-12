@@ -37,8 +37,11 @@ class Settings(BaseSettings):
     use_fixtures: bool = False
     canonical_persistence_enabled: bool = False
     records_publication_root: str = ""
-    # WP110: parallel model calls while extracting records (1-4).
-    records_extraction_concurrency: int = Field(default=4, ge=1, le=4)
+    # WP113: bounded parallel extraction (default 6, configurable 1-32).
+    records_extraction_concurrency: int = Field(default=6, ge=1, le=32)
+    # Enable only after the independent field-accuracy comparison (WP113).
+    records_extraction_grouped_passes: bool = False
+    dene_server_lists: bool = False
     # WP112: Dene (POST /ai/ask) bounds one model request and the whole question.
     dene_model_timeout_seconds: float = Field(default=60, gt=0, le=600)
     dene_question_timeout_seconds: float = Field(default=120, gt=0, le=1800)

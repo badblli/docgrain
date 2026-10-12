@@ -201,9 +201,15 @@ class CallUsage(StrictModel):
     prompt_tokens: int | None = Field(default=None, ge=0)
     completion_tokens: int | None = Field(default=None, ge=0)
     total_tokens: int | None = Field(default=None, ge=0)
+    reasoning_tokens: int | None = Field(default=None, ge=0)
+    wall_seconds: float = Field(default=0, ge=0)
+    retries: int = Field(default=0, ge=0)
 
 
 class ExtractionUsage(StrictModel):
+    reasoning_tokens: int = Field(default=0, ge=0)
+    wall_seconds: float = Field(default=0, ge=0)
+    missing_reasoning_calls: int = Field(default=0, ge=0)
     prompt_tokens: int = Field(default=0, ge=0)
     completion_tokens: int = Field(default=0, ge=0)
     total_tokens: int = Field(default=0, ge=0)
@@ -212,6 +218,9 @@ class ExtractionUsage(StrictModel):
 
     def add(self, call: CallUsage):
         self.calls.append(call)
+        self.reasoning_tokens += call.reasoning_tokens or 0
+        self.missing_reasoning_calls += call.reasoning_tokens is None
+        self.wall_seconds += call.wall_seconds
         self.prompt_tokens += call.prompt_tokens or 0
         self.completion_tokens += call.completion_tokens or 0
         self.total_tokens += call.total_tokens or 0
