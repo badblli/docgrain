@@ -167,6 +167,25 @@ def _numeric(text: str) -> bool:
     return bool(re.fullmatch(r"[\d\s.,:/%+\-–]*", text))
 
 
+# WP119: "3.2 Restoranlar" — a numbered section title written as plain text or a one-item list.
+_NUMBERED = re.compile(r"^(\d{1,2}(?:\.\d{1,2})*)[.)]?\s+(\S.*)$")
+
+
+def _strip_number(text: str | None) -> str | None:
+    """"3.2 Restoranlar" -> "Restoranlar"; other names unchanged."""
+    if not text:
+        return text
+    match = _NUMBERED.match(text)
+    return match.group(2).strip() if match and not _numeric(match.group(2)) else text
+
+
+def _heading_like(text: str) -> bool:
+    """Short title-like text: no sentence end, no label:value, a few words."""
+    return (bool(text) and len(text) <= 60 and len(text.split()) <= 8
+            and not text.endswith((".", "!", "?", ":", ";", ","))
+            and ":" not in text and not _numeric(text))
+
+
 class _Walker:
     def __init__(self, doc: _Doc):
         self.doc = doc
@@ -191,6 +210,8 @@ class _Walker:
 
     def _unit(self, kind: str, item: dict, name: str | None, source: str, **kwargs) -> StructureUnit:
         ref = item.get("self_ref", "")
+        if source in {"heading", "preceding_text", "list_parent"}:
+            name = _strip_number(name)  # WP119: "3.2 Restoranlar" and "Restoranlar" are one name.
         unit = StructureUnit(id=f"{self.doc.document_id}{ref}", kind=kind,
                              document_id=self.doc.document_id, ref=ref, name=name,
                              name_source=source if name else "none", heading_path=self._path(),
@@ -229,10 +250,33 @@ class _Walker:
             level = 0 if label == "title" else int(item.get("level") or 1)
             self.headings = [(lvl, t) for lvl, t in self.headings if lvl < level] + [(level, text)]
             self.preceding = None
+        elif (label in {"text", "paragraph"} and _NUMBERED.match(text)
+              and _heading_like(_NUMBERED.match(text).group(2))):
+            # WP119: a numbered section title Docling read as plain text is the nearest specific
+            # heading; its depth ("3.2" -> 2) orders it against the real headings.
+            self._push_heading(text, len(_NUMBERED.match(text).group(1).split(".")))
         elif label in {"text", "paragraph", "caption"} and text:
             short = len(text) <= _SHORT_TEXT and not text.endswith((".", "!", "?"))
             self.preceding = text if short else None
         self._children(item)
+
+    def _push_heading(self, text: str, level: int) -> None:
+        self.headings = [(lvl, t) for lvl, t in self.headings if lvl < level] + [(level, text)]
+        self.preceding = None
+
+    def _list_title(self, group: dict) -> str | None:
+        """WP119: a one-item list holding only a short title (Word numbered headings) is a heading."""
+        children = [self.doc.resolve(child.get("$ref", "")) for child in group.get("children") or []]
+        children = [entry for entry in children if entry and _is_body(entry)]
+        if len(children) != 1 or children[0].get("children"):
+            return None
+        text = _text(children[0])
+        title = _strip_number(text)
+        numbered = title != text
+        if title and _heading_like(title) and (numbered or group.get("label") == "ordered_list"):
+            self.visited.add(children[0].get("self_ref", ""))
+            return text
+        return None
 
     def _group(self, item: dict, label: str) -> None:
         name = str(item.get("name") or "").strip()
@@ -244,6 +288,9 @@ class _Walker:
             self._children(item)
             unit.children = [u.id for u in self.units[start:] if u.kind != "sheet"]
             self.sheet = outer
+        elif label in {"list", "ordered_list"} and (title := self._list_title(item)):
+            numbered = _NUMBERED.match(title)
+            self._push_heading(title, len(numbered.group(1).split(".")) if numbered else 99)
         elif label in {"list", "ordered_list"}:
             self._list(item, name)
         elif label in {"key_value_area", "form_area"}:
@@ -447,12 +494,94 @@ def _table_view(doc: _Doc, item: dict) -> tuple[list[list[dict | None]], list[li
     return grid, [[_text(cell) for cell in row] for row in grid], _header_rows(grid)
 
 
+def _shape(text: str) -> str:
+    """Coarse cell shape for comparing rows: empty, number-like (numbers, times, dates) or text."""
+    return "" if not text else "num" if _numeric(text) else "text"
+
+
+def _row_shape(texts: list[list[str]], r: int) -> tuple[str, ...]:
+    return tuple(_shape(text) for text in texts[r])
+
+
+def checked_header_rows(texts: list[list[str]], headers: int) -> int:
+    """WP119: drop header flags Docling put on rows that look like data (seen in DOCX tables).
+
+    A flagged row is data when it has the shape of the body rows (same empty/number/text pattern)
+    and carries a number-like cell: real header rows are labels. When every row is flagged, only
+    a first row of distinct labels stays a header.
+    """
+    rows = len(texts)
+    if not headers or not rows:
+        return headers
+    if headers >= rows:
+        first = texts[0]
+        labels = [t for t in first if t]
+        return 1 if (rows > 1 and labels and len(set(labels)) == len(labels)
+                     and not any(_numeric(t) for t in labels)) else 0
+    body = Counter(_row_shape(texts, r) for r in range(headers, rows))
+    pattern = body.most_common(1)[0][0]
+    for r in range(headers):
+        shape = _row_shape(texts, r)
+        if shape == pattern and "num" in shape:
+            return r
+    return headers
+
+
+def is_transposed(texts: list[list[str]], headers: int) -> bool:
+    """WP119: items in columns (first column = field labels, each row one kind of value).
+
+    Transposed when every row's values share one shape while the columns do not, and the first
+    column holds distinct text labels; at least two items (columns) and two labelled rows.
+    """
+    rows, cols = len(texts), len(texts[0]) if texts else 0
+    start = max(headers, 1)
+    if rows - start < 2 or cols < 3:
+        return False
+    labels = [texts[r][0] for r in range(start, rows)]
+    if not all(labels) or len(set(labels)) != len(labels) or any(_numeric(t) for t in labels):
+        return False
+
+    def same(values: list[str]) -> bool:
+        shapes = {_shape(v) for v in values if v}
+        return len(shapes) == 1
+
+    by_row = sum(same(texts[r][1:]) for r in range(start, rows)) / (rows - start)
+    by_col = sum(same([texts[r][c] for r in range(start, rows)]) for c in range(1, cols)) / (cols - 1)
+    return by_row == 1.0 and by_col < by_row
+
+
+_SWAPPED = (("start_row_offset_idx", "start_col_offset_idx"), ("end_row_offset_idx", "end_col_offset_idx"),
+            ("row_span", "col_span"), ("column_header", "row_header"))
+
+
+def _transpose_cell(cell: dict | None) -> dict | None:
+    if cell is None:
+        return None
+    swapped = dict(cell)
+    for left, right in _SWAPPED:
+        swapped[left], swapped[right] = cell.get(right), cell.get(left)
+    swapped["row_section"] = False
+    return swapped
+
+
 def _read_table(doc: _Doc, item: dict, unit: StructureUnit) -> None:
     data = item.get("data") or {}
     rows, cols = int(data.get("num_rows") or 0), int(data.get("num_cols") or 0)
     if not data.get("table_cells") or not rows or not cols:
         return
     grid, texts, headers = _table_view(doc, item)
+    # WP119 robustness: mislabelled header rows, then items written in columns.
+    flagged = headers
+    headers = checked_header_rows(texts, headers)
+    transposed = is_transposed(texts, headers)
+    if transposed:
+        grid = [[_transpose_cell(grid[r][c]) for r in range(rows)] for c in range(cols)]
+        texts = [[texts[r][c] for r in range(rows)] for c in range(cols)]
+        rows, cols, headers = cols, rows, 1
+
+    def place(r: int, c: int) -> tuple[int, int]:
+        """Cell coordinates in the source table (the view may be transposed)."""
+        return (c, r) if transposed else (r, c)
 
     def text(r: int, c: int) -> str:
         return texts[r][c]
@@ -462,6 +591,10 @@ def _read_table(doc: _Doc, item: dict, unit: StructureUnit) -> None:
 
     header_rows = list(range(headers))
     unit.header_source = "column_header" if header_rows else None
+    if transposed:
+        unit.header_source = "transposed"
+    elif headers != flagged:
+        unit.header_source = "column_header_corrected" if header_rows else None
     if not header_rows and rows >= 2:
         # Our fallback (Docling's dataframe would number the columns): a distinct, non-numeric
         # first row names the fields.
@@ -505,7 +638,8 @@ def _read_table(doc: _Doc, item: dict, unit: StructureUnit) -> None:
             cell = grid[r][c] or {}
             if cell.get("start_col_offset_idx", c) < c:
                 continue  # spanned cell already read at its first column
-            evidence = doc.evidence(item, text(r, c), row=r, col=c, bbox=cell.get("bbox"))
+            row, col = place(r, c)
+            evidence = doc.evidence(item, text(r, c), row=row, col=col, bbox=cell.get("bbox"))
             if c == name_col:
                 entry.name, entry.name_evidence = text(r, c), evidence
             else:

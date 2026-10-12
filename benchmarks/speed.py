@@ -126,7 +126,7 @@ def stage_table(job):
     if not stages:
         raise ValueError("stage measurements unavailable")
     header = "| Aşama | Saniye | Çağrı | Tekrar | Girdi | Çıktı | Düşünme |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: |"
-    names = {"discover": "Listeleri bul", "accept_schema": "Yapıyı kontrol et", "extract": "Bilgileri çıkar",
+    names = {"structure": "Tabloları oku", "discover": "Listeleri bul", "accept_schema": "Yapıyı kontrol et", "extract": "Bilgileri çıkar",
              "match": "Karşılaştır", "merge": "Birleştir", "publish": "Yayınla"}
     rows = []
     for stage, label in names.items():

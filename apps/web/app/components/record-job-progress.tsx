@@ -10,7 +10,7 @@ export type RecordJob = {
   summary?: { rejected_fields: number; failed_sections: number; total_sections: number; needs_review: string[]; notes: string[] };
 };
 const stages: Record<string, string> = {
-  discover: "Listeler bulunuyor", accept_schema: "Bilgi yapısı kontrol ediliyor",
+  structure: "Tablolar ve listeler okunuyor", discover: "Listeler bulunuyor", accept_schema: "Bilgi yapısı kontrol ediliyor",
   extract: "Bilgiler çıkarılıyor", match: "Aynı kayıtlar karşılaştırılıyor",
   merge: "Bilgiler birleştiriliyor", publish: "Yayın hazırlanıyor",
 };
@@ -84,7 +84,8 @@ export function useRecordJob(apiUrl: string, workspaceId: string, mode: Mode | n
 
   async function start(allowed: boolean) {
     const session = scope.current;
-    if (!allowed || mode !== "live" || modelState !== "ready" || !loaded || !session || session.controller.signal.aborted || session.posting || jobActive(job)) return;
+    // WP119: with the model off the job still reads tables and lists (no model call).
+    if (!allowed || mode !== "live" || !["ready", "off"].includes(modelState) || !loaded || !session || session.controller.signal.aborted || session.posting || jobActive(job)) return;
     session.posting = true; setStarting(true); setError("");
     const active = () => scope.current === session && !session.controller.signal.aborted;
     try {

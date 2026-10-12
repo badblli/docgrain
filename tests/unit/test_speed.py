@@ -166,7 +166,8 @@ def test_pipeline_records_all_stages_calls_tokens_and_passes_workspace_options(p
     job = setup.memory.locate(key)
     assert job["status"] == "done"
     telemetry = job["metadata"]["speed"]
-    assert set(telemetry["stages"]) == {"discover", "accept_schema", "extract", "match", "merge", "publish"}
+    assert set(telemetry["stages"]) == {"structure", "discover", "accept_schema", "extract", "match",
+                                        "merge", "publish"}
     assert len(telemetry["calls"]) == 5
     assert telemetry["stages"]["discover"]["prompt_tokens"] == 20
     assert telemetry["stages"]["discover"]["wall_seconds"] == 2
