@@ -251,8 +251,20 @@ def test_cli_default_and_explicit_docgrain_are_identical(tmp_path, monkeypatch):
             "--api-key-env", "TEST_GRAPH_KEY", "--no-focused-passes"]
     for name, extra in [("default", []), ("explicit", ["--engine", "docgrain"])]:
         assert cli.main([*base, *extra, "--out", str(tmp_path / name)]) == 0
+    def stable(path):
+        # WP113 timing (wall_seconds) differs between any two runs; everything else must be identical.
+        if path.suffix != ".json":
+            return path.read_bytes()
+        def strip(value):
+            if isinstance(value, dict):
+                return {k: strip(v) for k, v in value.items() if k != "wall_seconds"}
+            if isinstance(value, list):
+                return [strip(v) for v in value]
+            return value
+        return strip(json.loads(path.read_text(encoding="utf-8")))
+
     for name in ("records.json", "source.json", "context.md"):
-        assert (tmp_path / "default" / name).read_bytes() == (tmp_path / "explicit" / name).read_bytes()
+        assert stable(tmp_path / "default" / name) == stable(tmp_path / "explicit" / name)
 
 
 def test_cli_graph_dry_run_is_dependency_free(monkeypatch, capsys):
