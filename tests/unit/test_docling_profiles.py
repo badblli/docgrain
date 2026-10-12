@@ -86,9 +86,12 @@ def test_current_txt_golden_and_profile_in_spec(tmp_path):
     path.write_bytes(data)
     source = VerifiedSource(path, sha256(data).hexdigest(), len(data))
     result = DocumentParser().parse(source, SourceFormat.TXT)
+    # WP118: with Docling installed (worker image) TXT goes through its Markdown backend and the heading
+    # span leaves out the "# " marker; the host keeps the old exact-text reader.
+    start = 2 if result.parser == "docling" else 0
     assert [asdict(item) for item in result.items] == [
-        {"kind": "heading", "anchor": "chars:0:9", "locator": {"kind": "text_span", "start": 0, "end": 9},
-         "text": "# Heading", "level": 1, "cells": [], "asset_path": None, "asset_bytes": None,
+        {"kind": "heading", "anchor": f"chars:{start}:9", "locator": {"kind": "text_span", "start": start, "end": 9},
+         "text": "# Heading"[start:], "level": 1, "cells": [], "asset_path": None, "asset_bytes": None,
          "asset_mime": None, "page_size": None, "line_range": (1, 1), "text_origin": "native",
          "ocr_confidence": None, "source_data": None, "field_locators": {}},
         {"kind": "paragraph", "anchor": "chars:10:25", "locator": {"kind": "text_span", "start": 10, "end": 25},

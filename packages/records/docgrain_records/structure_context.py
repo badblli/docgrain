@@ -13,7 +13,10 @@ from .models import StructureContext, StructureHeading
 
 MARKER = re.compile(r"(?m)^\[§(\d+) p\.[^\r\n]*\]\r?$")
 FOOTER = re.compile(r"(?m)^## Kaynak anahtarları\r?$")
-STRUCTURE_LINE = re.compile(r"(?m)^§\d+ structure=[^\r\n]*(?:\r?\n|$)")
+# KULLANILMIYOR (karar 18, WP118): STRUCTURE_LINE = re.compile(r"(?m)^§\d+ structure=[^\r\n]*(?:\r?\n|$)")
+# WP118: tables also pin Docling's row-header column ("§N table={...}").
+STRUCTURE_LINE = re.compile(r"(?m)^§\d+ (?:structure|table)=[^\r\n]*(?:\r?\n|$)")
+TABLE_LINE = re.compile(r"(?m)^(§\d+) table=(.+)$")
 # Bilingual headings ("Çorba / Soup") may be cited per language segment.
 HEADING_SEGMENTS = re.compile(r"\s*[/|·•–—]\s*|\s+-\s+|\s*[()]\s*")
 
@@ -69,6 +72,15 @@ class StructureIndex:
         for key, payload in re.findall(r"(?m)^(§\d+) structure=(.+)$", context[boundary:]):
             if key in self.contexts:
                 self.contexts[key] = StructureContext.model_validate_json(payload)
+        # WP118: Docling's row-header column per table (canonical TableCell source_attributes.row_header).
+        self.tables = {}
+        for key, payload in TABLE_LINE.findall(context[boundary:]):
+            try:
+                pinned = json.loads(payload)
+            except ValueError:
+                continue
+            if isinstance(pinned, dict):
+                self.tables[key] = pinned
         self.aliases = dict(re.findall(r"(?m)^(§\d+) → (\S+)", context[boundary:]))
         self.aliases = {object_id: key for key, object_id in self.aliases.items()}
 
@@ -117,7 +129,12 @@ class StructureIndex:
                         and 1 <= cell["column"] <= len(headers)
                         and cell["column"] <= len(rows[cell["row"] - 1])):
                     result.table_row, result.table_column = cell["row"], cell["column"]
-                    result.row_header = rows[cell["row"] - 1][0]
+                    # KULLANILMIYOR (karar 18, WP118): result.row_header = rows[cell["row"] - 1][0]
+                    row = rows[cell["row"] - 1]
+                    column = self.tables.get(key, {}).get("row_header_column")
+                    if type(column) is not int or not 0 <= column < len(row) or not row[column]:
+                        column = 0
+                    result.row_header = row[column]
                     result.column_header = headers[cell["column"] - 1]
                     break
         return result
@@ -156,7 +173,26 @@ def pin_structure(context, snapshot):
         path = paths.get(object_id, [])
         value = StructureContext(heading_path=path, section_title=path[-1].title if path else None)
         lines.append(f"{key} structure={value.model_dump_json(exclude_defaults=True)}")
+        column = row_header_column(nodes.get(object_id, {}))
+        if column is not None:
+            lines.append(f"{key} table=" + json.dumps({"row_header_column": column}))
     return context.rstrip() + "\n" + "\n".join(lines) + "\n"
+
+
+def header_flags(cell):
+    """WP118: Docling's table cell header flags as kept in the canonical snapshot."""
+    attributes = (cell or {}).get("source_attributes") or {}
+    return {name for name in ("column_header", "row_header", "row_section") if attributes.get(name) is True}
+
+
+def row_header_column(node):
+    """First column Docling flagged as ``row_header`` in a body (non column-header) row, else None."""
+    if node.get("kind") != "table":
+        return None
+    columns = [c for row in node.get("rows") or []
+               if not any("column_header" in header_flags(cell) for cell in row)
+               for c, cell in enumerate(row) if "row_header" in header_flags(cell)]
+    return min(columns) if columns else None
 
 
 def context_signature(context):
