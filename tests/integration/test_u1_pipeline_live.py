@@ -205,7 +205,7 @@ def test_register_queue_worker_shared_publication_and_previous_head(services, mo
         monkeypatch.setattr(httpx, "Client", api_http)
         process_job(job_id, httpx.MockTransport(model_response), load_workspace_documents)
         done = client.get(base + "/record-jobs/latest").json()
-        assert done["status"] == "done" and done["completed_stages"] == 6
+        assert done["status"] == "done" and done["completed_stages"] == 7
         revision = done["revision_id"]
         url = base + f"/revisions/{revision}/collections/rooms"
         preview = client.get(url)

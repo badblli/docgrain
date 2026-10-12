@@ -56,7 +56,8 @@ def test_summary_counts_published_fields_and_questions(setup):
     result = client.get(BASE + "/summary").json()
     assert set(result) == {"workspace_id", "revision_id", "documents", "records",
                            "unsupported_fields", "conflicts", "needs_review", "accepted_ratio",
-                           "updated_at", "collections", "duplicates"}
+                           "updated_at", "collections", "duplicates", "collection_merges"}
+    assert result["collection_merges"] == 0  # WP119: "same list?" questions
     assert result["workspace_id"] == "workspace-example" and result["revision_id"] == "r1"
     assert result["documents"] == 1 and result["records"] == 2
     assert result["conflicts"] == result["needs_review"] == 1

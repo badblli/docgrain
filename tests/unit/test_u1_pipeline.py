@@ -260,7 +260,9 @@ def run(setup, key):
     return setup.client.get(BASE + "/record-jobs/" + key).json()
 
 
-@pytest.mark.parametrize("guard", ["disabled", "missing", "empty", "queued", "running", "demo"])
+# KULLANILMIYOR (karar 18, WP119): "disabled" artık 409 değil; model kapalıyken iş yalnız belge
+# yapısıyla çalışır (test_model_off_runs_structure_only_and_never_calls_a_model).
+@pytest.mark.parametrize("guard", ["missing", "empty", "queued", "running", "demo"])
 def test_guards_409_and_no_model_or_dispatch(setup, guard, monkeypatch):
     if guard == "disabled":
         setup.settings["enabled"] = False
@@ -293,7 +295,7 @@ def test_start_concurrency_idempotency_and_fresh_reads(setup):
     assert detail.status_code == 200
     assert setup.client.get(BASE + "/record-jobs/latest").json() == detail.json()
     assert detail.json()["status"] == "queued" and detail.json()["stage"] is None
-    assert detail.json()["total_stages"] == 6
+    assert detail.json()["total_stages"] == len(lifecycle.STAGES) == 7
     assert setup.client.get(BASE.replace(WORKSPACE, "foreign") + "/record-jobs/" + ids[0]).status_code == 404
     assert setup.model.calls == []
     lifecycle.finish(WORKSPACE, ids[0], "worker_stale")
@@ -308,7 +310,7 @@ def test_real_six_stage_run_questions_answer_and_old_bytes(setup):
     done = run(setup, key)
     assert done["status"] == "done", done
     assert setup.memory.stages == list(lifecycle.STAGES)
-    assert done["completed_stages"] == 6
+    assert done["completed_stages"] == len(lifecycle.STAGES)
     assert all(s["status"] == "done" and s["started_at"] and s["finished_at"]
                for s in done["stages"].values())
     assert len(setup.model.calls) == 5  # discovery + broad/focused extraction per document; no judge.
