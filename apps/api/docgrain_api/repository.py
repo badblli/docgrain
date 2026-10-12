@@ -159,6 +159,7 @@ def list_workspaces() -> list[dict[str, object]]:
             SELECT coalesce(c.id, a.id) AS id, coalesce(c.name, a.id) AS name,
                    coalesce(a.documents, 0) AS documents
             FROM workspace_catalog c FULL OUTER JOIN activity a ON c.id = a.id
+            WHERE NOT coalesce(c.archived, false)
             ORDER BY greatest(c.created_at, a.last_activity) DESC, coalesce(c.id, a.id)"""
         )
         return [dict(row) for row in cursor.fetchall()]

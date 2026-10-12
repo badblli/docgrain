@@ -17,6 +17,7 @@ def initialize(connection: psycopg.Connection) -> None:
                 id TEXT PRIMARY KEY, name TEXT NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now()
             );
+            ALTER TABLE workspace_catalog ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT false;
             CREATE TABLE IF NOT EXISTS workspace_model_settings (
                 workspace_id TEXT PRIMARY KEY, enabled BOOLEAN NOT NULL DEFAULT false,
                 base_url TEXT NOT NULL DEFAULT '', model TEXT NOT NULL DEFAULT '',
@@ -74,3 +75,24 @@ def save_model(workspace_id: str, values: dict[str, object]) -> dict[str, object
         """, (workspace_id, values["enabled"], values["base_url"], values["model"],
               values["credential_id"], values.get("reasoning_effort"), values.get("max_tokens")))
         return dict(cursor.fetchone())
+
+
+def set_archived(workspace_id: str, archived: bool) -> bool:
+    """Hide (or show again) a company in the picker; its documents and publications stay untouched.
+
+    Workspaces created before the catalog (no row) get a row named after their id.
+    Returns False when the workspace is unknown.
+    """
+    _require_writable()
+    with repository._connection() as connection, connection.cursor() as cursor:
+        cursor.execute(
+            """SELECT 1 FROM workspace_catalog WHERE id = %s
+               UNION SELECT 1 FROM documents WHERE workspace_id = %s LIMIT 1""",
+            (workspace_id, workspace_id))
+        if cursor.fetchone() is None:
+            return False
+        cursor.execute(
+            """INSERT INTO workspace_catalog (id, name, archived) VALUES (%s, %s, %s)
+               ON CONFLICT (id) DO UPDATE SET archived = EXCLUDED.archived""",
+            (workspace_id, workspace_id, archived))
+        return True

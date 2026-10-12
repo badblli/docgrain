@@ -55,3 +55,22 @@ async def put_model(ws: str, request: Request) -> dict[str, object]:
 @router.get("/{ws}/model/profiles")
 def get_profiles(ws: str) -> list[dict[str, object]]:
     return _call(service.list_profiles, ws)
+
+
+@router.post("/{ws}/archive")
+def archive_workspace(ws: str) -> dict[str, object]:
+    """Hide a company from the picker (duplicates, test companies). Nothing is deleted."""
+    return _set_archived(ws, True)
+
+
+@router.post("/{ws}/unarchive")
+def unarchive_workspace(ws: str) -> dict[str, object]:
+    return _set_archived(ws, False)
+
+
+def _set_archived(ws: str, archived: bool) -> dict[str, object]:
+    if get_settings().use_fixtures:
+        raise HTTPException(409, "Örnek görünümde şirketler değiştirilemez.")
+    if not store.set_archived(ws, archived):
+        raise HTTPException(404, "Çalışma alanı bulunamadı.")
+    return {"id": ws, "archived": archived}
