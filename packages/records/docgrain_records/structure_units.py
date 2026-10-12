@@ -76,6 +76,9 @@ class StructureUnit:
     fields: list[str] = field(default_factory=list)
     name_field: str | None = None
     header_source: str | None = None
+    # WP118: where the item-name column came from: Docling's ``row_header`` cell flag, else our fallback
+    # ("first_column", or "second_column" when the first holds only numbers).
+    name_field_source: str | None = None
     items: list[UnitItem] = field(default_factory=list)
     heading_path: list[str] = field(default_factory=list)
     sheet: str | None = None
@@ -616,10 +619,12 @@ def _read_table(doc: _Doc, item: dict, unit: StructureUnit) -> None:
     flagged = sorted({c for r in data_rows for c in range(cols)
                       if grid[r][c] and grid[r][c].get("row_header") and text(r, c)})
     name_col = flagged[0] if flagged else 0
+    unit.name_field_source = "row_header" if flagged else "first_column"
     if not flagged:
         values = [text(r, 0) for r in data_rows if text(r, 0)]
         if values and all(_numeric(v) for v in values) and cols > 1:
             name_col = 1
+            unit.name_field_source = "second_column"
     unit.name_field = labels[name_col]
     section = None
     for r in data_rows:
