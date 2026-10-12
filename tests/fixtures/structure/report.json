@@ -1,0 +1,722 @@
+{
+ "schema_name": "DoclingDocument",
+ "version": "1.10.0",
+ "name": "report",
+ "furniture": {
+  "self_ref": "#/furniture",
+  "children": [],
+  "content_layer": "furniture",
+  "name": "_root_",
+  "label": "unspecified"
+ },
+ "body": {
+  "self_ref": "#/body",
+  "children": [
+   {
+    "$ref": "#/texts/0"
+   },
+   {
+    "$ref": "#/texts/1"
+   },
+   {
+    "$ref": "#/tables/0"
+   },
+   {
+    "$ref": "#/texts/2"
+   },
+   {
+    "$ref": "#/groups/0"
+   },
+   {
+    "$ref": "#/texts/6"
+   },
+   {
+    "$ref": "#/groups/1"
+   },
+   {
+    "$ref": "#/texts/7"
+   }
+  ],
+  "content_layer": "body",
+  "name": "_root_",
+  "label": "unspecified"
+ },
+ "groups": [
+  {
+   "self_ref": "#/groups/0",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [
+    {
+     "$ref": "#/texts/3"
+    },
+    {
+     "$ref": "#/texts/4"
+    },
+    {
+     "$ref": "#/texts/5"
+    }
+   ],
+   "content_layer": "body",
+   "name": "group",
+   "label": "list"
+  },
+  {
+   "self_ref": "#/groups/1",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [
+    {
+     "$ref": "#/key_value_items/0"
+    }
+   ],
+   "content_layer": "body",
+   "name": "key-value area",
+   "label": "key_value_area"
+  }
+ ],
+ "texts": [
+  {
+   "self_ref": "#/texts/0",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "title",
+   "prov": [
+    {
+     "page_no": 1,
+     "bbox": {
+      "l": 50.0,
+      "t": 40.0,
+      "r": 500.0,
+      "b": 54.0,
+      "coord_origin": "TOPLEFT"
+     },
+     "charspan": [
+      0,
+      11
+     ]
+    }
+   ],
+   "orig": "Hotel guide",
+   "text": "Hotel guide"
+  },
+  {
+   "self_ref": "#/texts/1",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "section_header",
+   "prov": [
+    {
+     "page_no": 1,
+     "bbox": {
+      "l": 50.0,
+      "t": 70.0,
+      "r": 500.0,
+      "b": 84.0,
+      "coord_origin": "TOPLEFT"
+     },
+     "charspan": [
+      0,
+      11
+     ]
+    }
+   ],
+   "orig": "Restaurants",
+   "text": "Restaurants",
+   "level": 1
+  },
+  {
+   "self_ref": "#/texts/2",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "section_header",
+   "prov": [
+    {
+     "page_no": 1,
+     "bbox": {
+      "l": 50.0,
+      "t": 200.0,
+      "r": 500.0,
+      "b": 214.0,
+      "coord_origin": "TOPLEFT"
+     },
+     "charspan": [
+      0,
+      8
+     ]
+    }
+   ],
+   "orig": "Havuzlar",
+   "text": "Havuzlar",
+   "level": 1
+  },
+  {
+   "self_ref": "#/texts/3",
+   "parent": {
+    "$ref": "#/groups/0"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "list_item",
+   "prov": [
+    {
+     "page_no": 1,
+     "bbox": {
+      "l": 50.0,
+      "t": 220.0,
+      "r": 500.0,
+      "b": 234.0,
+      "coord_origin": "TOPLEFT"
+     },
+     "charspan": [
+      0,
+      9
+     ]
+    }
+   ],
+   "orig": "Ana havuz",
+   "text": "Ana havuz",
+   "enumerated": false,
+   "marker": ""
+  },
+  {
+   "self_ref": "#/texts/4",
+   "parent": {
+    "$ref": "#/groups/0"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "list_item",
+   "prov": [
+    {
+     "page_no": 1,
+     "bbox": {
+      "l": 50.0,
+      "t": 236.0,
+      "r": 500.0,
+      "b": 250.0,
+      "coord_origin": "TOPLEFT"
+     },
+     "charspan": [
+      0,
+      12
+     ]
+    }
+   ],
+   "orig": "Çocuk havuzu",
+   "text": "Çocuk havuzu",
+   "enumerated": false,
+   "marker": ""
+  },
+  {
+   "self_ref": "#/texts/5",
+   "parent": {
+    "$ref": "#/groups/0"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "list_item",
+   "prov": [
+    {
+     "page_no": 1,
+     "bbox": {
+      "l": 50.0,
+      "t": 252.0,
+      "r": 500.0,
+      "b": 266.0,
+      "coord_origin": "TOPLEFT"
+     },
+     "charspan": [
+      0,
+      25
+     ]
+    }
+   ],
+   "orig": "Kapalı havuz: 08:00-20:00",
+   "text": "Kapalı havuz: 08:00-20:00",
+   "enumerated": false,
+   "marker": ""
+  },
+  {
+   "self_ref": "#/texts/6",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "section_header",
+   "prov": [
+    {
+     "page_no": 2,
+     "bbox": {
+      "l": 50.0,
+      "t": 40.0,
+      "r": 500.0,
+      "b": 54.0,
+      "coord_origin": "TOPLEFT"
+     },
+     "charspan": [
+      0,
+      14
+     ]
+    }
+   ],
+   "orig": "Genel bilgiler",
+   "text": "Genel bilgiler",
+   "level": 1
+  },
+  {
+   "self_ref": "#/texts/7",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "text",
+   "prov": [
+    {
+     "page_no": 2,
+     "bbox": {
+      "l": 50.0,
+      "t": 120.0,
+      "r": 500.0,
+      "b": 134.0,
+      "coord_origin": "TOPLEFT"
+     },
+     "charspan": [
+      0,
+      1
+     ]
+    }
+   ],
+   "orig": "Prices are per person.",
+   "text": "Prices are per person."
+  }
+ ],
+ "pictures": [],
+ "tables": [
+  {
+   "self_ref": "#/tables/0",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "table",
+   "prov": [
+    {
+     "page_no": 1,
+     "bbox": {
+      "l": 50.0,
+      "t": 100.0,
+      "r": 500.0,
+      "b": 114.0,
+      "coord_origin": "TOPLEFT"
+     },
+     "charspan": [
+      0,
+      0
+     ]
+    }
+   ],
+   "captions": [],
+   "references": [],
+   "footnotes": [],
+   "data": {
+    "table_cells": [
+     {
+      "bbox": {
+       "l": 50.0,
+       "t": 100.0,
+       "r": 190.0,
+       "b": 118.0,
+       "coord_origin": "TOPLEFT"
+      },
+      "row_span": 1,
+      "col_span": 1,
+      "start_row_offset_idx": 0,
+      "end_row_offset_idx": 1,
+      "start_col_offset_idx": 0,
+      "end_col_offset_idx": 1,
+      "text": "Restaurant",
+      "column_header": true,
+      "row_header": false,
+      "row_section": false,
+      "fillable": false
+     },
+     {
+      "bbox": {
+       "l": 200.0,
+       "t": 100.0,
+       "r": 340.0,
+       "b": 118.0,
+       "coord_origin": "TOPLEFT"
+      },
+      "row_span": 1,
+      "col_span": 1,
+      "start_row_offset_idx": 0,
+      "end_row_offset_idx": 1,
+      "start_col_offset_idx": 1,
+      "end_col_offset_idx": 2,
+      "text": "Hours",
+      "column_header": true,
+      "row_header": false,
+      "row_section": false,
+      "fillable": false
+     },
+     {
+      "bbox": {
+       "l": 50.0,
+       "t": 120.0,
+       "r": 190.0,
+       "b": 138.0,
+       "coord_origin": "TOPLEFT"
+      },
+      "row_span": 1,
+      "col_span": 1,
+      "start_row_offset_idx": 1,
+      "end_row_offset_idx": 2,
+      "start_col_offset_idx": 0,
+      "end_col_offset_idx": 1,
+      "text": "Lagoon Restaurant",
+      "column_header": false,
+      "row_header": false,
+      "row_section": false,
+      "fillable": false
+     },
+     {
+      "bbox": {
+       "l": 200.0,
+       "t": 120.0,
+       "r": 340.0,
+       "b": 138.0,
+       "coord_origin": "TOPLEFT"
+      },
+      "row_span": 1,
+      "col_span": 1,
+      "start_row_offset_idx": 1,
+      "end_row_offset_idx": 2,
+      "start_col_offset_idx": 1,
+      "end_col_offset_idx": 2,
+      "text": "07:00-10:30",
+      "column_header": false,
+      "row_header": false,
+      "row_section": false,
+      "fillable": false
+     },
+     {
+      "bbox": {
+       "l": 50.0,
+       "t": 140.0,
+       "r": 190.0,
+       "b": 158.0,
+       "coord_origin": "TOPLEFT"
+      },
+      "row_span": 1,
+      "col_span": 1,
+      "start_row_offset_idx": 2,
+      "end_row_offset_idx": 3,
+      "start_col_offset_idx": 0,
+      "end_col_offset_idx": 1,
+      "text": "Sunset Grill",
+      "column_header": false,
+      "row_header": false,
+      "row_section": false,
+      "fillable": false
+     },
+     {
+      "bbox": {
+       "l": 200.0,
+       "t": 140.0,
+       "r": 340.0,
+       "b": 158.0,
+       "coord_origin": "TOPLEFT"
+      },
+      "row_span": 1,
+      "col_span": 1,
+      "start_row_offset_idx": 2,
+      "end_row_offset_idx": 3,
+      "start_col_offset_idx": 1,
+      "end_col_offset_idx": 2,
+      "text": "12:30-17:00",
+      "column_header": false,
+      "row_header": false,
+      "row_section": false,
+      "fillable": false
+     }
+    ],
+    "num_rows": 3,
+    "num_cols": 2,
+    "orientation": "rot_0",
+    "grid": [
+     [
+      {
+       "bbox": {
+        "l": 50.0,
+        "t": 100.0,
+        "r": 190.0,
+        "b": 118.0,
+        "coord_origin": "TOPLEFT"
+       },
+       "row_span": 1,
+       "col_span": 1,
+       "start_row_offset_idx": 0,
+       "end_row_offset_idx": 1,
+       "start_col_offset_idx": 0,
+       "end_col_offset_idx": 1,
+       "text": "Restaurant",
+       "column_header": true,
+       "row_header": false,
+       "row_section": false,
+       "fillable": false
+      },
+      {
+       "bbox": {
+        "l": 200.0,
+        "t": 100.0,
+        "r": 340.0,
+        "b": 118.0,
+        "coord_origin": "TOPLEFT"
+       },
+       "row_span": 1,
+       "col_span": 1,
+       "start_row_offset_idx": 0,
+       "end_row_offset_idx": 1,
+       "start_col_offset_idx": 1,
+       "end_col_offset_idx": 2,
+       "text": "Hours",
+       "column_header": true,
+       "row_header": false,
+       "row_section": false,
+       "fillable": false
+      }
+     ],
+     [
+      {
+       "bbox": {
+        "l": 50.0,
+        "t": 120.0,
+        "r": 190.0,
+        "b": 138.0,
+        "coord_origin": "TOPLEFT"
+       },
+       "row_span": 1,
+       "col_span": 1,
+       "start_row_offset_idx": 1,
+       "end_row_offset_idx": 2,
+       "start_col_offset_idx": 0,
+       "end_col_offset_idx": 1,
+       "text": "Lagoon Restaurant",
+       "column_header": false,
+       "row_header": false,
+       "row_section": false,
+       "fillable": false
+      },
+      {
+       "bbox": {
+        "l": 200.0,
+        "t": 120.0,
+        "r": 340.0,
+        "b": 138.0,
+        "coord_origin": "TOPLEFT"
+       },
+       "row_span": 1,
+       "col_span": 1,
+       "start_row_offset_idx": 1,
+       "end_row_offset_idx": 2,
+       "start_col_offset_idx": 1,
+       "end_col_offset_idx": 2,
+       "text": "07:00-10:30",
+       "column_header": false,
+       "row_header": false,
+       "row_section": false,
+       "fillable": false
+      }
+     ],
+     [
+      {
+       "bbox": {
+        "l": 50.0,
+        "t": 140.0,
+        "r": 190.0,
+        "b": 158.0,
+        "coord_origin": "TOPLEFT"
+       },
+       "row_span": 1,
+       "col_span": 1,
+       "start_row_offset_idx": 2,
+       "end_row_offset_idx": 3,
+       "start_col_offset_idx": 0,
+       "end_col_offset_idx": 1,
+       "text": "Sunset Grill",
+       "column_header": false,
+       "row_header": false,
+       "row_section": false,
+       "fillable": false
+      },
+      {
+       "bbox": {
+        "l": 200.0,
+        "t": 140.0,
+        "r": 340.0,
+        "b": 158.0,
+        "coord_origin": "TOPLEFT"
+       },
+       "row_span": 1,
+       "col_span": 1,
+       "start_row_offset_idx": 2,
+       "end_row_offset_idx": 3,
+       "start_col_offset_idx": 1,
+       "end_col_offset_idx": 2,
+       "text": "12:30-17:00",
+       "column_header": false,
+       "row_header": false,
+       "row_section": false,
+       "fillable": false
+      }
+     ]
+    ]
+   },
+   "annotations": []
+  }
+ ],
+ "key_value_items": [
+  {
+   "self_ref": "#/key_value_items/0",
+   "parent": {
+    "$ref": "#/groups/1"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "key_value_region",
+   "prov": [
+    {
+     "page_no": 2,
+     "bbox": {
+      "l": 50.0,
+      "t": 60.0,
+      "r": 500.0,
+      "b": 74.0,
+      "coord_origin": "TOPLEFT"
+     },
+     "charspan": [
+      0,
+      0
+     ]
+    }
+   ],
+   "captions": [],
+   "references": [],
+   "footnotes": [],
+   "graph": {
+    "cells": [
+     {
+      "label": "key",
+      "cell_id": 0,
+      "text": "Check-in",
+      "orig": "Check-in",
+      "prov": {
+       "page_no": 2,
+       "bbox": {
+        "l": 50.0,
+        "t": 60.0,
+        "r": 500.0,
+        "b": 74.0,
+        "coord_origin": "TOPLEFT"
+       },
+       "charspan": [
+        0,
+        8
+       ]
+      }
+     },
+     {
+      "label": "value",
+      "cell_id": 1,
+      "text": "14:00",
+      "orig": "14:00",
+      "prov": {
+       "page_no": 2,
+       "bbox": {
+        "l": 50.0,
+        "t": 60.0,
+        "r": 500.0,
+        "b": 74.0,
+        "coord_origin": "TOPLEFT"
+       },
+       "charspan": [
+        0,
+        5
+       ]
+      }
+     },
+     {
+      "label": "key",
+      "cell_id": 2,
+      "text": "Check-out",
+      "orig": "Check-out",
+      "prov": {
+       "page_no": 2,
+       "bbox": {
+        "l": 50.0,
+        "t": 76.0,
+        "r": 500.0,
+        "b": 90.0,
+        "coord_origin": "TOPLEFT"
+       },
+       "charspan": [
+        0,
+        9
+       ]
+      }
+     },
+     {
+      "label": "value",
+      "cell_id": 3,
+      "text": "12:00",
+      "orig": "12:00",
+      "prov": {
+       "page_no": 2,
+       "bbox": {
+        "l": 50.0,
+        "t": 76.0,
+        "r": 500.0,
+        "b": 90.0,
+        "coord_origin": "TOPLEFT"
+       },
+       "charspan": [
+        0,
+        5
+       ]
+      }
+     }
+    ],
+    "links": [
+     {
+      "label": "to_value",
+      "source_cell_id": 0,
+      "target_cell_id": 1
+     },
+     {
+      "label": "to_value",
+      "source_cell_id": 2,
+      "target_cell_id": 3
+     }
+    ]
+   }
+  }
+ ],
+ "form_items": [],
+ "pages": {}
+}
