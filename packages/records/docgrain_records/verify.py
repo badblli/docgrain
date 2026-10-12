@@ -13,12 +13,19 @@ from pydantic import TypeAdapter, ValidationError
 from .model import ModelResponseError
 from .models import ExtractionResult, Language, RejectedField, Text
 from .runtime import HOSPITALITY
+from .structure_context import (
+    StructureIndex,
+    contexts_conflict,
+    identity_context,
+    record_contexts,
+)
 
 
 def normalize_quote(text: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", text).split())
 
 
+# KULLANILMIYOR (karar 18): eski uygulamanın tam kopyası unused/wp114/verify.py.
 def _coalesce_document_records(records, document_lang, runtime=None):
     """One type/name identity per document, with evidenced same-language conflicts."""
     runtime = runtime or HOSPITALITY
@@ -26,8 +33,27 @@ def _coalesce_document_records(records, document_lang, runtime=None):
     for record in records:
         key = record.type, normalize_quote(record.name.value).casefold()
         grouped[key].append(record)
-    merged = []
+    partitions = []
     for same_name in grouped.values():
+        contextual, sparse = [], []
+        for record in same_name:
+            if not record_contexts(record):
+                sparse.append(record)
+                continue
+            group = next((g for g in contextual if not contexts_conflict(g[0], record)), None)
+            if group is None:
+                contextual.append([record])
+            else:
+                group.append(record)
+        # A context-free record cannot bridge two distinct floors/units.
+        if sparse:
+            if len(contextual) == 1:
+                contextual[0].extend(sparse)
+            else:
+                contextual.append(sparse)
+        partitions.extend(contextual)
+    merged = []
+    for same_name in partitions:
         if len(same_name) == 1:
             merged.append(same_name[0])
             continue
@@ -72,6 +98,8 @@ def _coalesce_document_records(records, document_lang, runtime=None):
             id=min(record.id for record in same_name), **primary,
             i18n={language: fields_model(**fields) for language, fields in i18n.items()},
             conflicts=conflicts,
+            structure_context=list({c.model_dump_json(): c for r in same_name
+                                    for c in r.structure_context}.values()),
             review_state="needs_review" if conflicts else "proposed",
         ))
     return merged
@@ -140,7 +168,15 @@ _DATE = re.compile(r"(?:\d{1,4}[./-]){2}\d{1,4}|\d{1,2}\s+[^\W\d_]+\s+\d{4}"
 _NUMBER_WITH_UNIT = re.compile(r"(?:[$€£₺₽]|[A-Z]{3})?\s*[+\-]?\d+(?:[.,]\d+)?"
                                r"(?:\s*(?:[%€$£₺₽]|[^\W\d_]+\d*))?")
 _CATEGORICAL_FIELDS = {"category", "kind", "type", "status", "state",
-                       "currency", "unit", "availability"}
+                       "currency", "unit", "availability", "floor", "section"}
+
+
+_HEADING_FIELDS = ("category", "type", "kind", "floor", "section")
+
+
+def _heading_field(field):
+    """WP114: label-dependent values a containing heading may state (e.g. dish_category)."""
+    return field in _HEADING_FIELDS or field.endswith(tuple(f"_{name}" for name in _HEADING_FIELDS))
 
 
 def _needs_label(field, value, fields_model, identity):
@@ -331,10 +367,16 @@ def verify_response(raw: str, context: str, document_id: str, lang: str,
     original_blocks = _blocks(source_context) if source_context is not None else blocks
     source_lines = _blocks(context, normalize=False)
     original_lines = _blocks(source_context, normalize=False) if source_context is not None else source_lines
+    structure = StructureIndex(source_context if source_context is not None else context)
     records, rejected = [], []
     for index, candidate in enumerate(proposed.records):
         record_model, fields_model = runtime.models[candidate.type]
         primary, i18n = {}, {}
+        identity = runtime.identities[candidate.type]
+        anchors = [e for fact in getattr(candidate, identity) for e in fact.evidence
+                   if e.document_id == document_id
+                   and normalize_quote(e.quote) in original_blocks.get(_source_key(e.locator), original_source)
+                   and _value_spans(normalize_quote(e.quote), fact.value)]
         for field in fields_model.model_fields:
             verified = []
             seen_languages = set()
@@ -345,11 +387,13 @@ def verify_response(raw: str, context: str, document_id: str, lang: str,
                     quote = normalize_quote(evidence.quote)
                     accepted_quote = evidence.quote
                     source_key = _source_key(evidence.locator)
+                    heading_evidence = (_heading_field(field)
+                                        and structure.contains_heading(evidence, anchors))
                     if evidence.document_id != document_id:
                         reason = "document_mismatch"
-                    elif blocks and source_key not in blocks:
+                    elif blocks and source_key not in blocks and not heading_evidence:
                         reason = "locator_not_found"
-                    elif not quote or quote not in blocks.get(source_key, source):
+                    elif not quote or (quote not in blocks.get(source_key, source) and not heading_evidence):
                         reason = "quote_not_found"
                     elif original_blocks and source_key not in original_blocks:
                         reason = "locator_not_found"
@@ -363,7 +407,7 @@ def verify_response(raw: str, context: str, document_id: str, lang: str,
                                          and _boolean_label(quote, body, field, alternative.value)
                                          and _boolean_label(quote, projected_body, field, alternative.value))
                         if (not boolean_label and (not _value_spans(quote, alternative.value)
-                                or not _value_spans(blocks.get(source_key, source), alternative.value)
+                                or (not heading_evidence and not _value_spans(blocks.get(source_key, source), alternative.value))
                                 or not _value_spans(original_blocks.get(source_key, original_source),
                                                     alternative.value))):
                             reason = "value_not_in_quote"
@@ -373,7 +417,8 @@ def verify_response(raw: str, context: str, document_id: str, lang: str,
                                         and _labelled_quote(quote, projected_body, alternative.value))
                             table_cell = (_table_header(quote, body, alternative.value, evidence.locator)
                                           and _table_header(quote, projected_body, alternative.value, evidence.locator))
-                            if not labelled and not table_cell:
+                            heading = heading_evidence
+                            if not labelled and not table_cell and not heading:
                                 widened = _widen_quote(quote, body, alternative.value)
                                 if widened and _labelled_quote(widened, projected_body, alternative.value):
                                     accepted_quote = widened
@@ -381,7 +426,8 @@ def verify_response(raw: str, context: str, document_id: str, lang: str,
                                     reason = "bare_value_quote"
                     if reason:
                         break
-                    repaired.append(evidence.model_copy(update={"quote": accepted_quote}))
+                    repaired.append(evidence.model_copy(update={"quote": accepted_quote,
+                                                               "structure_context": structure.at(evidence.locator, accepted_quote)}))
                 if not reason and alternative.lang in seen_languages:
                     reason = "duplicate_language"
                 if reason:
@@ -400,10 +446,12 @@ def verify_response(raw: str, context: str, document_id: str, lang: str,
                                       next((v for v in verified if v.lang == lang), verified[0]))
         # An anonymous remainder is not one identifiable real thing.
         if runtime.identities[candidate.type] in primary:
-            records.append(record_model(
+            record = record_model(
                 id=f"{document_id}:{candidate.type}:{index + 1}",
                 **primary, i18n={key: fields_model(**fields) for key, fields in i18n.items()},
-            ))
+            )
+            record.structure_context = identity_context(record, structure)
+            records.append(record)
     return runtime.result(document_id=document_id, lang=lang,
                           records=_coalesce_document_records(records, lang, runtime), rejected=rejected)
 
