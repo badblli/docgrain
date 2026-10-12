@@ -11,11 +11,14 @@ You receive one **work package (WP)** at a time. Do that WP and nothing else.
 
 ## Product in one paragraph
 
-Docgrain turns a company's PDF/DOCX/XLSX/TXT/PNG/JPEG documents into one versioned, source-linked
-canonical model. Typed collections (rooms, restaurants, activities…) are extracted from it and
-published as one shared data pool for AI assistants, mobile apps and websites. AI access is
-model-agnostic (any OpenAI-compatible endpoint); embeddings are optional. End users are
-non-technical (hotel staff): they edit normalized content and upload new file versions.
+Docgrain turns a company's documents — any format Docling reads — into one versioned, source-linked
+canonical model. Reading (parsing, OCR, layout, tables, lists, headings, pictures) is Docling's job
+(decision 18); Docgrain is the knowledge layer on top. Collections are built first from the structure
+Docling returns (tables, lists, headings, key-value areas, sheets), merged across documents into one
+collection per kind of list; a model is only a fallback for information without structure (decision 21).
+Companies come from any sector — never assume hotels. Conflicts are asked, never guessed; users edit and
+approve the normalized data and every change is a tracked revision. Approved data is served to any AI
+(OpenAI-compatible, model-agnostic; API/MCP) and to apps.
 
 ## Hard rules
 
@@ -35,6 +38,13 @@ non-technical (hotel staff): they edit normalized content and upload new file ve
   report instead.
 - Use the glossary names from the roadmap in code, API and UI. UI text is plain Turkish; no
   technical terms in the default view.
+- **Docling first.** Before writing or changing any code that touches documents, read the official Docling
+  skill shipped with our pinned Docling version: `.agents/skills/docling/SKILL.md` and its `references/`
+  (also at `.claude/skills/docling/`). Use Docling's APIs and outputs (DoclingDocument items, tables,
+  lists, headings, chunkers, enrichments) instead of reimplementing them; name the Docling API you use in
+  your report. Docling is installed only in the worker image; the lead can run checks there for you.
+- **Never delete our code.** Replaced code stays in place marked `KULLANILMIYOR (karar 18)` with a short
+  comment (full pre-change copies under `apps/worker/docgrain_worker/unused/` when a live file changes).
 - Do not claim a test passed unless you ran it. "Valid JSON", job `done` or test counts are not
   proof of correct meaning — acceptance criteria in the WP are.
 
