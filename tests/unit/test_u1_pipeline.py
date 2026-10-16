@@ -870,7 +870,8 @@ def test_republish_applies_review_rules_without_extraction(setup, monkeypatch, c
             after["accepted_field_values"], after["duplicates"]) == (1, 1, 1, 0, 2, 0)
     assert report["field_review_counts"] == {"rule:verified-agreeing-sources": 2}
     head = setup.store._source(WORKSPACE)
-    assert head.id == report["revision_id"] == f"u1_{key}_wp111"
+    # KULLANILMIYOR (karar 18): assert head.id == report["revision_id"] == f"u1_{key}_wp111"
+    assert head.id == report["revision_id"] == f"u1_{key}_{republish.RULES_VERSION}"
     assert (head.parent_id, head.lineage_id) == (old.id, old.id)
     approved = json.loads(setup.store.read(WORKSPACE, head.id, "rooms", mode="approved"))
     assert (approved[0]["name"], approved[0]["capacity"]) == ("Garden Room", 2)

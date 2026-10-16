@@ -12,6 +12,13 @@ from pydantic import Field, ValidationError, model_validator
 
 from .model import ChatClient, ModelResponseError
 from .models import ExtractionResult, StrictModel, Text
+from .place_names import (
+    comparison_key,
+    field_support,
+    place_label,
+    record_name_keys,
+    record_values,
+)
 from .runtime import HOSPITALITY, RuntimeRecords
 from .verify import normalize_quote
 
@@ -65,7 +72,8 @@ class RecordRef(StrictModel):
 class Signal(StrictModel):
     kind: Literal["numeric_agreement", "numeric_conflict", "name_agreement", "shared_tokens",
                   "parallel_position", "category_conflict", "model", "ambiguous",
-                  "insufficient_support", "identity_collision", "source_conflict"]
+                  "insufficient_support", "identity_collision", "source_conflict",
+                  "translated_name", "field_agreement", "field_conflict"]
     field: str = ""
     weight: float = 0
     detail: str = ""
@@ -188,6 +196,17 @@ def _numeric_fields(record):
 
 
 def _score(left, right, parallel):
+    if translated_names(left, right):
+        shared, conflicts = field_support(record_values(left), record_values(right))
+        signals = [Signal(kind="translated_name", field="name", weight=.6,
+                          detail="own names/i18n agree after bounded translation and generic stripping")]
+        signals.extend(Signal(kind="field_agreement", field=key, weight=.3) for key in shared)
+        signals.extend(Signal(kind="field_conflict", field=key, weight=-.7) for key in conflicts)
+        # A conflict means uncertainty about identity, not permission to merge.
+        decision = "same" if shared and not conflicts else "unsure"
+        if decision == "unsure":
+            signals.append(Signal(kind="insufficient_support", detail="name alone or conflicting fields"))
+        return round(max(0, min(1, sum(s.weight for s in signals))), 4), signals, decision
     signals = []
     for field in sorted(_numeric_fields(left) | _numeric_fields(right)):
         a, b = _numbers(getattr(left, field, None), field), _numbers(getattr(right, field, None), field)
@@ -238,6 +257,11 @@ def _blocking_keys(record):
         yield "name", transliterate(normalize_quote(name.value))
     for token in _tokens(record):
         yield "token", token
+    for key in record_name_keys(record):
+        yield "translated_name", key
+    for field, values in record_values(record).items():
+        for value in values:
+            yield "field", (field, comparison_key(value, field))
     for field in sorted(_numeric_fields(record)):
         numbers = _numbers(getattr(record, field, None), field)
         if numbers is not None:
@@ -264,6 +288,11 @@ def _strong_rule(left, right, proposal):
         "ambiguous", "identity_collision",
     } for s in proposal.signals):
         return None
+    if translated_names(left, right):
+        if (any(s.kind == "field_agreement" for s in proposal.signals)
+            and not any(s.kind in {"field_conflict", "source_conflict"} for s in proposal.signals)):
+            return "translated-name-and-field"
+        return None
     if identical_name(left, right):
         return "identical-name"
     if any(s.kind in {"numeric_conflict", "category_conflict", "source_conflict"} for s in proposal.signals):
@@ -279,7 +308,16 @@ def identical_name(left, right):
     return transliterate(normalize_quote(left.name.value)) == transliterate(normalize_quote(right.name.value))
 
 
+def translated_names(left, right):
+    """Place labels and new name variants require independent, non-conflicting fields."""
+    return (bool(record_name_keys(left) & record_name_keys(right))
+            and (not identical_name(left, right) or place_label(left) or place_label(right)))
+
+
 def identity_conflict(left, right, *, strong_names=False):
+    if translated_names(left, right):
+        return bool(field_support(record_values(left), record_values(right))[1]
+                    or left.conflicts or right.conflicts)
     return _score(left, right, False)[2] == "different" and not (strong_names and identical_name(left, right))
 
 
@@ -308,6 +346,8 @@ def accept_strong_matches(results, matches):
             proposal.reviewer = "rule:" + rule
             proposal.reason = ("Identical normalized primary names; field disagreements remain visible for review"
                                if rule == "identical-name" else
+                               "Names agree after generic stripping/translation with an independent agreeing field; "
+                               "no conflicting or ambiguous signals" if rule == "translated-name-and-field" else
                                "Distinguishing name token similarity >= 0.75 and agreeing numeric evidence; "
                                "no conflicting or ambiguous signals")
     return matches
@@ -339,7 +379,8 @@ def propose_matches(results: list[ExtractionResult], client: PairClient | None =
             doc_a, pos_a, count_a, a = entries[index]
             doc_b, pos_b, count_b, b = entries[other]
             score, signals, decision = _score(a, b, count_a == count_b and pos_a == pos_b)
-            exact = strong_names and identical_name(a, b)
+            # KULLANILMIYOR (karar 18): exact = strong_names and identical_name(a, b)
+            exact = strong_names and identical_name(a, b) and not translated_names(a, b)
             if exact:
                 decision = "same"
                 score = 1.0
@@ -353,7 +394,9 @@ def propose_matches(results: list[ExtractionResult], client: PairClient | None =
                 signals.append(Signal(kind="source_conflict", detail="same-document field alternatives need review"))
                 if decision == "same" and not exact:
                     decision = "unsure"
-            if client is not None and decision == "unsure" and not collision and not (a.conflicts or b.conflicts):
+            if (client is not None and decision == "unsure" and not collision
+                and not (a.conflicts or b.conflicts)
+                and not any(s.kind == "field_conflict" for s in signals)):
                 raw = client.complete([
                     {"role": "system", "content": SYSTEM},
                     {"role": "user", "content": json.dumps({"untrusted_records": [

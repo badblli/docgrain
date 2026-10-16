@@ -10,6 +10,7 @@ from docgrain_eval.scoring import normalized_value
 from .export import encode
 from .merge_models import DuplicateDecision
 from .multivalue import multiple_values
+from .place_names import field_support, name_keys
 
 _TURKISH = str.maketrans("çğıöşü", "cgiosu")
 _STOP = {"oda", "odasi", "odalar", "room", "rooms", "suite", "suites", "suit", "suits"}
@@ -27,7 +28,8 @@ def _values(field, key):
             if c.review_state != "rejected"}
 
 
-def duplicate_pairs(revision, runtime):
+def _legacy_duplicate_pairs(revision, runtime):
+    # KULLANILMIYOR (karar 18): WP115 name variants use duplicate_pairs below.
     """Require a distinctive name AND corroborating fields, never name similarity alone."""
     dismissed = {tuple(sorted(d.record_ids)) for d in revision.duplicate_decisions if not d.same}
     groups = {}
@@ -59,6 +61,54 @@ def duplicate_pairs(revision, runtime):
             if shared and (similarity == 1 or shared >= 2) and score >= 0.85:
                 result.append((left, right, score))
     return result
+
+
+def duplicate_pairs(revision, runtime):
+    """Translated/stripped own names need a question even with missing or conflicting fields.
+
+    Only same-collection, cross-document pairs are added. Approval is exclusively
+    the deterministic match rule or a person's answer; this function never merges.
+    """
+    result = []
+    dismissed = {tuple(sorted(d.record_ids)) for d in revision.duplicate_decisions if not d.same}
+    for left, right in combinations(sorted(revision.records, key=lambda r: r.id), 2):
+        pair = (left.id, right.id)
+        if left.type != right.type or pair in dismissed:
+            continue
+        identity = runtime.identities[left.type]
+
+        def active(record, key):
+            field = record.fields.get(key)
+            return [c for c in field.candidates if c.review_state != "rejected"] if field else []
+
+        names = [[c.value for c in active(r, identity)] for r in (left, right)]
+        # Preserve the existing conservative fuzzy-name questions (including rooms).
+        fuzzy = [{normalized_name(v) for v in values if normalized_name(v)} for values in names]
+        similarity = max((SequenceMatcher(None, a, b).ratio()
+                          for a in fuzzy[0] for b in fuzzy[1]), default=0)
+        shared = different = 0
+        for key in sorted((left.fields.keys() & right.fields.keys()) - {identity}):
+            a, b = _values(left.fields[key], key), _values(right.fields[key], key)
+            if a and b:
+                shared += len(a) == len(b) == 1 and a == b
+                different += a.isdisjoint(b)
+        score = round(.85 * similarity + .05 * min(shared, 2) - .05 * different, 3)
+        if similarity >= .92 and shared and (similarity == 1 or shared >= 2) and score >= .85:
+            result.append((left, right, score))
+            continue
+        if not name_keys(names[0]) & name_keys(names[1]):
+            continue
+        documents = [{e.document_id for f in r.fields.values() for c in f.candidates
+                      if c.review_state != "rejected" for e in c.evidence if hasattr(e, "document_id")}
+                     for r in (left, right)]
+        if not documents[0] or not documents[1] or documents[0] & documents[1]:
+            continue
+        values = [{key: [c.value for c in active(r, key)] for key in r.fields if key != identity}
+                  for r in (left, right)]
+        shared, conflicts = field_support(*values)
+        result.append((left, right, round(max(.1, .8 + .05 * min(len(shared), 2)
+                                             - .05 * len(conflicts)), 3)))
+    return sorted(result, key=lambda pair: (pair[0].id, pair[1].id))
 
 
 def duplicate_questions(revision, runtime, rows, definitions, documents, label, locator):
