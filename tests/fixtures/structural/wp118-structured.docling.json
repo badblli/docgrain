@@ -1,0 +1,742 @@
+{
+ "schema_name": "DoclingDocument",
+ "version": "1.10.0",
+ "name": "input",
+ "origin": {
+  "mimetype": "text/markdown",
+  "binary_hash": 8027253680816570700,
+  "filename": "input.md"
+ },
+ "furniture": {
+  "self_ref": "#/furniture",
+  "children": [],
+  "content_layer": "furniture",
+  "name": "_root_",
+  "label": "unspecified"
+ },
+ "body": {
+  "self_ref": "#/body",
+  "children": [
+   {
+    "$ref": "#/texts/0"
+   },
+   {
+    "$ref": "#/groups/0"
+   },
+   {
+    "$ref": "#/texts/6"
+   },
+   {
+    "$ref": "#/texts/7"
+   },
+   {
+    "$ref": "#/groups/1"
+   },
+   {
+    "$ref": "#/groups/2"
+   },
+   {
+    "$ref": "#/texts/11"
+   },
+   {
+    "$ref": "#/groups/3"
+   },
+   {
+    "$ref": "#/groups/4"
+   },
+   {
+    "$ref": "#/tables/0"
+   },
+   {
+    "$ref": "#/texts/14"
+   },
+   {
+    "$ref": "#/groups/5"
+   },
+   {
+    "$ref": "#/groups/6"
+   }
+  ],
+  "content_layer": "body",
+  "name": "_root_",
+  "label": "unspecified"
+ },
+ "groups": [
+  {
+   "self_ref": "#/groups/0",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [
+    {
+     "$ref": "#/texts/1"
+    },
+    {
+     "$ref": "#/texts/2"
+    },
+    {
+     "$ref": "#/texts/3"
+    },
+    {
+     "$ref": "#/texts/4"
+    },
+    {
+     "$ref": "#/texts/5"
+    }
+   ],
+   "content_layer": "body",
+   "name": "group",
+   "label": "inline"
+  },
+  {
+   "self_ref": "#/groups/1",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [
+    {
+     "$ref": "#/texts/8"
+    },
+    {
+     "$ref": "#/texts/9"
+    }
+   ],
+   "content_layer": "body",
+   "name": "list",
+   "label": "list"
+  },
+  {
+   "self_ref": "#/groups/2",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [
+    {
+     "$ref": "#/texts/10"
+    }
+   ],
+   "content_layer": "body",
+   "name": "list",
+   "label": "list"
+  },
+  {
+   "self_ref": "#/groups/3",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [
+    {
+     "$ref": "#/texts/12"
+    }
+   ],
+   "content_layer": "body",
+   "name": "list",
+   "label": "list"
+  },
+  {
+   "self_ref": "#/groups/4",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [
+    {
+     "$ref": "#/texts/13"
+    }
+   ],
+   "content_layer": "body",
+   "name": "list",
+   "label": "list"
+  },
+  {
+   "self_ref": "#/groups/5",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [
+    {
+     "$ref": "#/texts/15"
+    },
+    {
+     "$ref": "#/texts/16"
+    },
+    {
+     "$ref": "#/texts/17"
+    },
+    {
+     "$ref": "#/texts/18"
+    }
+   ],
+   "content_layer": "body",
+   "name": "group",
+   "label": "inline"
+  },
+  {
+   "self_ref": "#/groups/6",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [
+    {
+     "$ref": "#/texts/19"
+    },
+    {
+     "$ref": "#/texts/20"
+    }
+   ],
+   "content_layer": "body",
+   "name": "group",
+   "label": "inline"
+  }
+ ],
+ "texts": [
+  {
+   "self_ref": "#/texts/0",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "title",
+   "prov": [],
+   "orig": "Guest Guide",
+   "text": "Guest Guide"
+  },
+  {
+   "self_ref": "#/texts/1",
+   "parent": {
+    "$ref": "#/groups/0"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "text",
+   "prov": [],
+   "orig": "Welcome! This",
+   "text": "Welcome! This"
+  },
+  {
+   "self_ref": "#/texts/2",
+   "parent": {
+    "$ref": "#/groups/0"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "text",
+   "prov": [],
+   "orig": "guide",
+   "text": "guide",
+   "formatting": {
+    "bold": false,
+    "italic": true,
+    "underline": false,
+    "strikethrough": false,
+    "script": "baseline"
+   }
+  },
+  {
+   "self_ref": "#/texts/3",
+   "parent": {
+    "$ref": "#/groups/0"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "text",
+   "prov": [],
+   "orig": "lists",
+   "text": "lists"
+  },
+  {
+   "self_ref": "#/texts/4",
+   "parent": {
+    "$ref": "#/groups/0"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "text",
+   "prov": [],
+   "orig": "all",
+   "text": "all",
+   "formatting": {
+    "bold": true,
+    "italic": false,
+    "underline": false,
+    "strikethrough": false,
+    "script": "baseline"
+   }
+  },
+  {
+   "self_ref": "#/texts/5",
+   "parent": {
+    "$ref": "#/groups/0"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "text",
+   "prov": [],
+   "orig": "services. Second line of the same paragraph: price 1_200 TL, mail info@example.com.",
+   "text": "services. Second line of the same paragraph: price 1_200 TL, mail info@example.com."
+  },
+  {
+   "self_ref": "#/texts/6",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "section_header",
+   "prov": [],
+   "orig": "Rooms",
+   "text": "Rooms",
+   "level": 1
+  },
+  {
+   "self_ref": "#/texts/7",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "section_header",
+   "prov": [],
+   "orig": "Ground Floor",
+   "text": "Ground Floor",
+   "level": 2
+  },
+  {
+   "self_ref": "#/texts/8",
+   "parent": {
+    "$ref": "#/groups/1"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "list_item",
+   "prov": [],
+   "orig": "Sea view room: 32 m², 2 guests",
+   "text": "Sea view room: 32 m², 2 guests",
+   "enumerated": false,
+   "marker": ""
+  },
+  {
+   "self_ref": "#/texts/9",
+   "parent": {
+    "$ref": "#/groups/1"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "list_item",
+   "prov": [],
+   "orig": "Garden room: 28 m² continued line",
+   "text": "Garden room: 28 m² continued line",
+   "enumerated": false,
+   "marker": ""
+  },
+  {
+   "self_ref": "#/texts/10",
+   "parent": {
+    "$ref": "#/groups/2"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "list_item",
+   "prov": [],
+   "orig": "Star bullet",
+   "text": "Star bullet",
+   "enumerated": false,
+   "marker": ""
+  },
+  {
+   "self_ref": "#/texts/11",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "section_header",
+   "prov": [],
+   "orig": "Roof Floor",
+   "text": "Roof Floor",
+   "level": 2
+  },
+  {
+   "self_ref": "#/texts/12",
+   "parent": {
+    "$ref": "#/groups/3"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "list_item",
+   "prov": [],
+   "orig": "Suite: 45 m²",
+   "text": "Suite: 45 m²",
+   "enumerated": true,
+   "marker": "1."
+  },
+  {
+   "self_ref": "#/texts/13",
+   "parent": {
+    "$ref": "#/groups/4"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "list_item",
+   "prov": [],
+   "orig": "Family room",
+   "text": "Family room",
+   "enumerated": true,
+   "marker": "2."
+  },
+  {
+   "self_ref": "#/texts/14",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "title",
+   "prov": [],
+   "orig": "Setext Title",
+   "text": "Setext Title"
+  },
+  {
+   "self_ref": "#/texts/15",
+   "parent": {
+    "$ref": "#/groups/5"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "text",
+   "prov": [],
+   "orig": "Quoted line HTML",
+   "text": "Quoted line HTML"
+  },
+  {
+   "self_ref": "#/texts/16",
+   "parent": {
+    "$ref": "#/groups/5"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "text",
+   "prov": [],
+   "orig": "tag and \\escaped",
+   "text": "tag and \\escaped"
+  },
+  {
+   "self_ref": "#/texts/17",
+   "parent": {
+    "$ref": "#/groups/5"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "text",
+   "prov": [],
+   "orig": "*",
+   "text": "*"
+  },
+  {
+   "self_ref": "#/texts/18",
+   "parent": {
+    "$ref": "#/groups/5"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "text",
+   "prov": [],
+   "orig": "text.",
+   "text": "text."
+  },
+  {
+   "self_ref": "#/texts/19",
+   "parent": {
+    "$ref": "#/groups/6"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "text",
+   "prov": [],
+   "orig": "Last line #tag 50%",
+   "text": "Last line #tag 50%"
+  },
+  {
+   "self_ref": "#/texts/20",
+   "parent": {
+    "$ref": "#/groups/6"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "text",
+   "prov": [],
+   "orig": "link",
+   "text": "link",
+   "hyperlink": "http://example.com/x"
+  }
+ ],
+ "pictures": [],
+ "tables": [
+  {
+   "self_ref": "#/tables/0",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "table",
+   "prov": [],
+   "captions": [],
+   "references": [],
+   "footnotes": [],
+   "data": {
+    "table_cells": [
+     {
+      "row_span": 1,
+      "col_span": 1,
+      "start_row_offset_idx": 0,
+      "end_row_offset_idx": 1,
+      "start_col_offset_idx": 0,
+      "end_col_offset_idx": 1,
+      "text": "Room",
+      "column_header": true,
+      "row_header": false,
+      "row_section": false,
+      "fillable": false
+     },
+     {
+      "row_span": 1,
+      "col_span": 1,
+      "start_row_offset_idx": 0,
+      "end_row_offset_idx": 1,
+      "start_col_offset_idx": 1,
+      "end_col_offset_idx": 2,
+      "text": "Guests",
+      "column_header": true,
+      "row_header": false,
+      "row_section": false,
+      "fillable": false
+     },
+     {
+      "row_span": 1,
+      "col_span": 1,
+      "start_row_offset_idx": 0,
+      "end_row_offset_idx": 1,
+      "start_col_offset_idx": 2,
+      "end_col_offset_idx": 3,
+      "text": "Price",
+      "column_header": true,
+      "row_header": false,
+      "row_section": false,
+      "fillable": false
+     },
+     {
+      "row_span": 1,
+      "col_span": 1,
+      "start_row_offset_idx": 1,
+      "end_row_offset_idx": 2,
+      "start_col_offset_idx": 0,
+      "end_col_offset_idx": 1,
+      "text": "Suite",
+      "column_header": false,
+      "row_header": false,
+      "row_section": false,
+      "fillable": false
+     },
+     {
+      "row_span": 1,
+      "col_span": 1,
+      "start_row_offset_idx": 1,
+      "end_row_offset_idx": 2,
+      "start_col_offset_idx": 1,
+      "end_col_offset_idx": 2,
+      "text": "2",
+      "column_header": false,
+      "row_header": false,
+      "row_section": false,
+      "fillable": false
+     },
+     {
+      "row_span": 1,
+      "col_span": 1,
+      "start_row_offset_idx": 1,
+      "end_row_offset_idx": 2,
+      "start_col_offset_idx": 2,
+      "end_col_offset_idx": 3,
+      "text": "1.200 TL",
+      "column_header": false,
+      "row_header": false,
+      "row_section": false,
+      "fillable": false
+     },
+     {
+      "row_span": 1,
+      "col_span": 1,
+      "start_row_offset_idx": 2,
+      "end_row_offset_idx": 3,
+      "start_col_offset_idx": 0,
+      "end_col_offset_idx": 1,
+      "text": "Family",
+      "column_header": false,
+      "row_header": false,
+      "row_section": false,
+      "fillable": false
+     },
+     {
+      "row_span": 1,
+      "col_span": 1,
+      "start_row_offset_idx": 2,
+      "end_row_offset_idx": 3,
+      "start_col_offset_idx": 1,
+      "end_col_offset_idx": 2,
+      "text": "4",
+      "column_header": false,
+      "row_header": false,
+      "row_section": false,
+      "fillable": false
+     },
+     {
+      "row_span": 1,
+      "col_span": 1,
+      "start_row_offset_idx": 2,
+      "end_row_offset_idx": 3,
+      "start_col_offset_idx": 2,
+      "end_col_offset_idx": 3,
+      "text": "1.800 TL",
+      "column_header": false,
+      "row_header": false,
+      "row_section": false,
+      "fillable": false
+     }
+    ],
+    "num_rows": 3,
+    "num_cols": 3,
+    "orientation": "rot_0",
+    "grid": [
+     [
+      {
+       "row_span": 1,
+       "col_span": 1,
+       "start_row_offset_idx": 0,
+       "end_row_offset_idx": 1,
+       "start_col_offset_idx": 0,
+       "end_col_offset_idx": 1,
+       "text": "Room",
+       "column_header": true,
+       "row_header": false,
+       "row_section": false,
+       "fillable": false
+      },
+      {
+       "row_span": 1,
+       "col_span": 1,
+       "start_row_offset_idx": 0,
+       "end_row_offset_idx": 1,
+       "start_col_offset_idx": 1,
+       "end_col_offset_idx": 2,
+       "text": "Guests",
+       "column_header": true,
+       "row_header": false,
+       "row_section": false,
+       "fillable": false
+      },
+      {
+       "row_span": 1,
+       "col_span": 1,
+       "start_row_offset_idx": 0,
+       "end_row_offset_idx": 1,
+       "start_col_offset_idx": 2,
+       "end_col_offset_idx": 3,
+       "text": "Price",
+       "column_header": true,
+       "row_header": false,
+       "row_section": false,
+       "fillable": false
+      }
+     ],
+     [
+      {
+       "row_span": 1,
+       "col_span": 1,
+       "start_row_offset_idx": 1,
+       "end_row_offset_idx": 2,
+       "start_col_offset_idx": 0,
+       "end_col_offset_idx": 1,
+       "text": "Suite",
+       "column_header": false,
+       "row_header": false,
+       "row_section": false,
+       "fillable": false
+      },
+      {
+       "row_span": 1,
+       "col_span": 1,
+       "start_row_offset_idx": 1,
+       "end_row_offset_idx": 2,
+       "start_col_offset_idx": 1,
+       "end_col_offset_idx": 2,
+       "text": "2",
+       "column_header": false,
+       "row_header": false,
+       "row_section": false,
+       "fillable": false
+      },
+      {
+       "row_span": 1,
+       "col_span": 1,
+       "start_row_offset_idx": 1,
+       "end_row_offset_idx": 2,
+       "start_col_offset_idx": 2,
+       "end_col_offset_idx": 3,
+       "text": "1.200 TL",
+       "column_header": false,
+       "row_header": false,
+       "row_section": false,
+       "fillable": false
+      }
+     ],
+     [
+      {
+       "row_span": 1,
+       "col_span": 1,
+       "start_row_offset_idx": 2,
+       "end_row_offset_idx": 3,
+       "start_col_offset_idx": 0,
+       "end_col_offset_idx": 1,
+       "text": "Family",
+       "column_header": false,
+       "row_header": false,
+       "row_section": false,
+       "fillable": false
+      },
+      {
+       "row_span": 1,
+       "col_span": 1,
+       "start_row_offset_idx": 2,
+       "end_row_offset_idx": 3,
+       "start_col_offset_idx": 1,
+       "end_col_offset_idx": 2,
+       "text": "4",
+       "column_header": false,
+       "row_header": false,
+       "row_section": false,
+       "fillable": false
+      },
+      {
+       "row_span": 1,
+       "col_span": 1,
+       "start_row_offset_idx": 2,
+       "end_row_offset_idx": 3,
+       "start_col_offset_idx": 2,
+       "end_col_offset_idx": 3,
+       "text": "1.800 TL",
+       "column_header": false,
+       "row_header": false,
+       "row_section": false,
+       "fillable": false
+      }
+     ]
+    ]
+   },
+   "annotations": []
+  }
+ ],
+ "key_value_items": [],
+ "form_items": [],
+ "pages": {}
+}

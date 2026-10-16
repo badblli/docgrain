@@ -227,15 +227,17 @@ test("double click and uncertain start retry keep a single request id; model sav
   await render().start(true); assert.equal(posts.length, 2); assert.equal(posts[0].request_id, posts[1].request_id);
   render(1); await new Promise(resolve => setImmediate(resolve)); assert.equal(posts.length, 2);
 });
-test("closed model, demo and unready documents cannot POST a job", async () => {
+test("closed model starts a structure-only job; demo and unready documents cannot POST", async () => {
   const posts = [];
   const host = hookHost("../../apps/web/app/components/record-job-progress.tsx", async (url, init) => {
     if (init?.method === "POST") posts.push(url);
     return url.endsWith("/model") ? response({ ...readyModel, enabled: false }) : response({}, 404);
   });
   const render = (mode = "live") => host.render("http://example.test", "ws-a", mode, 0, () => {});
-  render(); await until(() => render().modelState === "off"); await render().start(true);
-  await render("demo").start(true); assert.equal(posts.length, 0);
+  // WP119 (karar 21): with the model off the job reads tables and lists only.
+  render(); await until(() => render().loaded && render().modelState === "off"); await render().start(true);
+  assert.equal(posts.length, 1);
+  await render("demo").start(true); assert.equal(posts.length, 1);
   const open = hookHost("../../apps/web/app/components/record-job-progress.tsx", async url => url.endsWith("/model") ? response(readyModel) : response({}, 404));
   const ready = () => open.render("http://example.test", "ws-a", "live", 0, () => {});
   ready(); await until(() => ready().loaded && ready().modelState === "ready"); await ready().start(false);

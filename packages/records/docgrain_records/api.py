@@ -9,6 +9,7 @@ from docgrain_domain.canonical.models import CanonicalKnowledgeSnapshot
 from pydantic import Field, TypeAdapter, ValidationError
 
 from .models import ExtractionUsage, Language, StrictModel, Text
+from .structure_context import pin_structure
 
 
 class SourceMetadata(StrictModel):
@@ -88,4 +89,4 @@ def load_context_bundle(client: httpx.Client, document_id: str, lang: str | None
             )
         except ValidationError as exc:
             raise ValueError("normalized source pin is missing or invalid") from exc
-    return context, language, pin
+    return pin_structure(context, snapshot) if require_pins else context, language, pin

@@ -56,13 +56,6 @@ def record_name_keys(record):
     return name_keys([record.name.value, *(f.name.value for f in record.i18n.values() if f.name)])
 
 
-def place_label(record):
-    """Exact food/place labels also require corroboration; room/contact legacy rules stay intact."""
-    tokens = words(record.name.value)
-    return (record.type in {"outlet", "restaurants", "bars"}
-            or bool(set(tokens) & (GENERIC_WORDS | _CUISINES.keys())))
-
-
 def comparison_key(value, field):
     if field in CATEGORY_FIELDS and isinstance(value, str):
         tokens = words(value)

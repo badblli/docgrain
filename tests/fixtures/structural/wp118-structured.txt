@@ -1,0 +1,30 @@
+# Guest Guide
+
+Welcome! This *guide* lists __all__ services.
+Second line of the same paragraph: price 1_200 TL, mail info@example.com.
+
+## Rooms
+
+### Ground Floor
+- Sea view room: 32 m², 2 guests
+- Garden room: 28 m²
+  continued line
+* Star bullet
+
+### Roof Floor
+1. Suite: 45 m²
+2) Family room
+
+| Room | Guests | Price |
+|------|--------|-------|
+| Suite | 2 | 1.200 TL |
+| Family | 4 | 1.800 TL |
+
+Setext Title
+============
+
+> Quoted line
+<b>HTML</b> tag and \escaped\* text.
+
+---
+Last line #tag 50% [link](http://example.com/x)

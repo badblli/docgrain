@@ -15,11 +15,11 @@ from .models import ExtractionResult, StrictModel, Text
 from .place_names import (
     comparison_key,
     field_support,
-    place_label,
     record_name_keys,
     record_values,
 )
 from .runtime import HOSPITALITY, RuntimeRecords
+from .structure_context import contexts_conflict, record_contexts, structure_vocabulary
 from .verify import normalize_quote
 
 _CYRILLIC = dict(zip(
@@ -46,8 +46,12 @@ def fingerprint(value) -> str:
 
 
 def source_identity(record) -> str:
-    """Lead policy: type + normalized primary name, within one document."""
-    return json.dumps([record.type, normalize_quote(record.name.value).casefold()], ensure_ascii=False)
+    """Type/name plus source structure; context-free legacy identities remain stable."""
+    # KULLANILMIYOR (karar 18): name-only identity is preserved in unused/wp114/match.py.
+    identity = [record.type, normalize_quote(record.name.value).casefold()]
+    if context := record_contexts(record):
+        identity.append(context)
+    return json.dumps(identity, ensure_ascii=False)
 
 
 def transliterate(text: str) -> str:
@@ -72,7 +76,7 @@ class RecordRef(StrictModel):
 class Signal(StrictModel):
     kind: Literal["numeric_agreement", "numeric_conflict", "name_agreement", "shared_tokens",
                   "parallel_position", "category_conflict", "model", "ambiguous",
-                  "insufficient_support", "identity_collision", "source_conflict",
+                  "insufficient_support", "identity_collision", "source_conflict", "structure_conflict",
                   "translated_name", "field_agreement", "field_conflict"]
     field: str = ""
     weight: float = 0
@@ -195,19 +199,13 @@ def _numeric_fields(record):
                        and type(fact.value) in {int, float}}
 
 
-def _score(left, right, parallel):
+def _score(left, right, parallel, vocabulary=None):
     if translated_names(left, right):
-        shared, conflicts = field_support(record_values(left), record_values(right))
-        signals = [Signal(kind="translated_name", field="name", weight=.6,
-                          detail="own names/i18n agree after bounded translation and generic stripping")]
-        signals.extend(Signal(kind="field_agreement", field=key, weight=.3) for key in shared)
-        signals.extend(Signal(kind="field_conflict", field=key, weight=-.7) for key in conflicts)
-        # A conflict means uncertainty about identity, not permission to merge.
-        decision = "same" if shared and not conflicts else "unsure"
-        if decision == "unsure":
-            signals.append(Signal(kind="insufficient_support", detail="name alone or conflicting fields"))
-        return round(max(0, min(1, sum(s.weight for s in signals))), 4), signals, decision
+        return _translated_score(left, right, vocabulary)
     signals = []
+    if contexts_conflict(left, right, vocabulary):
+        signals.append(Signal(kind="structure_conflict", weight=-1,
+                              detail="different source heading paths or table row headers"))
     for field in sorted(_numeric_fields(left) | _numeric_fields(right)):
         a, b = _numbers(getattr(left, field, None), field), _numbers(getattr(right, field, None), field)
         if a is None or b is None:
@@ -236,7 +234,7 @@ def _score(left, right, parallel):
     if parallel:
         signals.append(Signal(kind="parallel_position", weight=.1,
                               detail="same type count and ordinal; weak layout hint only"))
-    conflict = any(s.kind in {"numeric_conflict", "category_conflict"} for s in signals)
+    conflict = any(s.kind in {"numeric_conflict", "category_conflict", "structure_conflict"} for s in signals)
     score = round(max(0, min(1, sum(s.weight for s in signals))), 4)
     numeric = sum(s.kind == "numeric_agreement" for s in signals)
     strong = any(s.kind == "name_agreement" for s in signals)
@@ -283,10 +281,12 @@ def _candidate_pairs(entries):
     return sorted(pairs)
 
 
-def _strong_rule(left, right, proposal):
+def _strong_rule(left, right, proposal, vocabulary=None):
     if proposal.decision != "same" or any(s.kind in {
         "ambiguous", "identity_collision",
     } for s in proposal.signals):
+        return None
+    if contexts_conflict(left, right, vocabulary):
         return None
     if translated_names(left, right):
         if (any(s.kind == "field_agreement" for s in proposal.signals)
@@ -309,16 +309,39 @@ def identical_name(left, right):
 
 
 def translated_names(left, right):
-    """Place labels and new name variants require independent, non-conflicting fields."""
-    return (bool(record_name_keys(left) & record_name_keys(right))
-            and (not identical_name(left, right) or place_label(left) or place_label(right)))
+    """WP115: different spellings/languages of one place need independent, non-conflicting fields.
+
+    Identical normalized names keep the existing identical-name rule (and its structure veto).
+    """
+    return bool(record_name_keys(left) & record_name_keys(right)) and not identical_name(left, right)
 
 
-def identity_conflict(left, right, *, strong_names=False):
+def _translated_score(left, right, vocabulary=None):
+    shared, conflicts = field_support(record_values(left), record_values(right))
+    signals = [Signal(kind="translated_name", field="name", weight=.6,
+                      detail="own names/i18n agree after bounded translation and generic stripping")]
+    signals.extend(Signal(kind="field_agreement", field=key, weight=.3) for key in shared)
+    signals.extend(Signal(kind="field_conflict", field=key, weight=-.7) for key in conflicts)
+    if contexts_conflict(left, right, vocabulary):
+        signals.append(Signal(kind="structure_conflict", weight=-1,
+                              detail="different source heading paths or table row headers"))
+        decision = "different"
+    else:
+        # A conflict means uncertainty about identity, not permission to merge.
+        decision = "same" if shared and not conflicts else "unsure"
+    if decision == "unsure":
+        signals.append(Signal(kind="insufficient_support", detail="name alone or conflicting fields"))
+    return round(max(0, min(1, sum(s.weight for s in signals))), 4), signals, decision
+
+
+def identity_conflict(left, right, *, strong_names=False, vocabulary=None):
+    if contexts_conflict(left, right, vocabulary):
+        return True
     if translated_names(left, right):
         return bool(field_support(record_values(left), record_values(right))[1]
                     or left.conflicts or right.conflicts)
-    return _score(left, right, False)[2] == "different" and not (strong_names and identical_name(left, right))
+    return (_score(left, right, False, vocabulary)[2] == "different"
+            and not (strong_names and identical_name(left, right)))
 
 
 def accept_strong_matches(results, matches):
@@ -330,6 +353,7 @@ def accept_strong_matches(results, matches):
     matches = matches.model_copy(deep=True)
     deterministic = {p.id: p for p in propose_matches(results, strong_names=True).proposals}
     records = {ref_key(record_ref(d.document_id, r)): r for d in results for r in d.records}
+    vocabulary = structure_vocabulary(records.values())
     for proposal in matches.proposals:
         if proposal.review_state != "proposed":
             continue
@@ -338,7 +362,8 @@ def accept_strong_matches(results, matches):
         checked = deterministic.get(proposal.id)
         if checked is None or checked.left != proposal.left or checked.right != proposal.right:
             continue
-        rule = _strong_rule(records[ref_key(checked.left)], records[ref_key(checked.right)], checked)
+        rule = _strong_rule(records[ref_key(checked.left)], records[ref_key(checked.right)], checked,
+                            vocabulary)
         if rule:
             proposal.decision = "same"
             proposal.signals = checked.signals
@@ -367,6 +392,7 @@ def propose_matches(results: list[ExtractionResult], client: PairClient | None =
             for position, record in enumerate(records):
                 by_type[kind].append((result.document_id, position, len(records), record))
     proposals, counts = [], {}
+    vocabulary = structure_vocabulary(r for result in results for r in result.records)
     for kind, entries in by_type.items():
         document_counts = defaultdict(int)
         for document, _, _, _ in entries:
@@ -378,9 +404,8 @@ def propose_matches(results: list[ExtractionResult], client: PairClient | None =
         for index, other in pairs:
             doc_a, pos_a, count_a, a = entries[index]
             doc_b, pos_b, count_b, b = entries[other]
-            score, signals, decision = _score(a, b, count_a == count_b and pos_a == pos_b)
-            # KULLANILMIYOR (karar 18): exact = strong_names and identical_name(a, b)
-            exact = strong_names and identical_name(a, b) and not translated_names(a, b)
+            score, signals, decision = _score(a, b, count_a == count_b and pos_a == pos_b, vocabulary)
+            exact = strong_names and identical_name(a, b) and not contexts_conflict(a, b, vocabulary)
             if exact:
                 decision = "same"
                 score = 1.0
@@ -448,7 +473,8 @@ def propose_matches(results: list[ExtractionResult], client: PairClient | None =
     for group in groups:
         docs = [lookup[key].document_id for key in group]
         ordered = sorted(group)
-        hidden_conflict = any(identity_conflict(records[a], records[b], strong_names=strong_names)
+        hidden_conflict = any(identity_conflict(records[a], records[b], strong_names=strong_names,
+                                                vocabulary=vocabulary)
                               for i, a in enumerate(ordered) for b in ordered[i + 1:])
         if (len(docs) != len(set(docs)) or hidden_conflict
             or any(a in group and b in group for a, b in conflicts)):

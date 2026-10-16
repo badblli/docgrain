@@ -139,14 +139,16 @@ def test_translation_alone_and_model_same_remain_questions(tmp_path):
 
 
 @pytest.mark.parametrize("hours", [None, "19:00-22:00"])
-def test_exact_place_name_cannot_bypass_independent_field_rule(tmp_path, hours):
+def test_identical_place_names_keep_the_identical_name_rule(tmp_path, hours):
+    # Identical normalized names stay on the existing rule; a differing field is a field question.
     active = runtime()
     results = [extraction(active, "a", "Fish restaurant", hours="18:00-22:00" if hours else None),
                extraction(active, "b", "Fish restaurant", hours=hours)]
     revision, matches = merge(tmp_path, results)
-    assert len(revision.records) == 2
-    assert matches.proposals[0].review_state == "proposed"
-    assert len([q for q in questions(revision) if q["kind"] == "duplicate"]) == 1
+    assert len(revision.records) == 1
+    assert matches.proposals[0].reviewer == "rule:identical-name"
+    assert not [q for q in questions(revision) if q["kind"] == "duplicate"]
+    assert bool([q for q in questions(revision) if q["kind"] != "duplicate"]) == bool(hours)
 
 
 def test_conflicts_never_call_judge_and_sparse_bridge_cannot_hide_conflict(tmp_path):

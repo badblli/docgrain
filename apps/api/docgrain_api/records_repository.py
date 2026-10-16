@@ -67,6 +67,18 @@ class RecordsRepository:
             revision = revision.model_copy(deep=True)
             revision.duplicate_decisions.extend(inherited[key].model_copy(deep=True)
                                                 for key in sorted(inherited))
+        # WP119: "same list?" answers stay with the workspace; a new run applies them at grouping.
+        answered = {tuple(sorted(d.signatures)) for d in revision.collection_merge_decisions}
+        lists = {}
+        for old in previous:
+            for decision in old.collection_merge_decisions:
+                key = tuple(sorted(decision.signatures))
+                if key not in answered:
+                    lists.setdefault(key, decision)
+        if lists:
+            revision = revision.model_copy(deep=True)
+            revision.collection_merge_decisions.extend(lists[key].model_copy(deep=True)
+                                                       for key in sorted(lists))
         body = revision.model_dump_json(round_trip=True).encode()
         path.mkdir(parents=True, exist_ok=True)
         descriptor, name = tempfile.mkstemp(dir=path)

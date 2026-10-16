@@ -779,7 +779,8 @@ export default function Home() {
     : informationJob.starting || jobActive(informationJob.job) ? "Bilgi işi devam ediyor; aşamalar aşağıda gösteriliyor."
     : informationJob.modelState === "loading" ? "Model seçimi kontrol ediliyor."
     : informationJob.modelState === "error" ? "Model seçimi alınamadı. Ayarlar'ı açıp bağlantıyı kontrol edin."
-    : informationJob.modelState !== "ready" ? "Bilgi çıkarmak için Ayarlar'dan model seçin ve etkinleştirin."
+    // KULLANILMIYOR (karar 18, WP119): model kapalıyken de tablo ve listeler okunur.
+    // : informationJob.modelState !== "ready" ? "Bilgi çıkarmak için Ayarlar'dan model seçin ve etkinleştirin."
     : !docs.length ? "Önce belgelerinizi yükleyin."
     : transferBusy ? "Dosyaların yüklenmesi bitince bilgi çıkarabilirsiniz."
     : uploadStates.some(item => item.phase === "error") ? "Yüklenemeyen dosyayı yeniden deneyin; tüm belgeler hazır olmalı."
