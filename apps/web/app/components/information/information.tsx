@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ReviewBadge } from "../review-states";
 
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDeveloperMode } from "../developer-mode";
 import { cardGrid, Head, Ep, Icon, pageBody } from "../console-ui";
 import { CollectionCard } from "../collection-card";
@@ -15,6 +15,7 @@ import { displayCollectionLabel, getFieldLabel } from "./labels";
 import { SourceQuote, type Question } from "../question-card";
 import type { CollectionSummary, LoadState } from "../workspace-review";
 import { CollectionActions, type CollectionSchema } from "./collection-actions";
+import { jobActive, RecordJobProgress, type RecordJob } from "../record-job-progress";
 
 type Evidence = { kind?: "user_edit"; who?: string; at?: string; note?: string; document_id?: string; document_name?: string; locator?: string; quote?: string };
 type FieldMeta = {
@@ -72,7 +73,47 @@ export function InformationView({ apiUrl, workspaceId, initialCollection, summar
   const [refreshKey, setRefreshKey] = useState(0);
   const [schema, setSchema] = useState<CollectionSchema | null>(null);
   const [message, setMessage] = useState("");
+  const [fillJobId, setFillJobId] = useState<string | null>(null);
+  const [fillJob, setFillJob] = useState<RecordJob | null>(null);
+  const [fillError, setFillError] = useState("");
+  const completedFill = useRef("");
+  const seenActiveFill = useRef<string | null>(null);
   const base = `${apiUrl}/v1/workspaces/${encodeURIComponent(workspaceId)}`;
+
+  useEffect(() => {
+    setFillJobId(null); setFillJob(null); setFillError(""); completedFill.current = ""; seenActiveFill.current = null;
+  }, [base]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let reading = false;
+    let terminal = false;
+    async function poll() {
+      if (reading || terminal || controller.signal.aborted) return;
+      reading = true;
+      try {
+        const response = await fetch(`${base}/record-jobs/${fillJobId ? encodeURIComponent(fillJobId) : "latest"}`, { signal: controller.signal, cache: "no-store" });
+        if (response.status === 404 && !fillJobId) return;
+        if (!response.ok) throw new Error();
+        const job: RecordJob = await response.json();
+        if (controller.signal.aborted) return;
+        if (job.workspace_id !== workspaceId) throw new Error();
+        if (job.kind !== "field_fill") return;
+        if (!fillJobId && !jobActive(job) && seenActiveFill.current !== job.job_id) return;
+        if (jobActive(job)) seenActiveFill.current = job.job_id;
+        setFillJob(job); setFillError("");
+        terminal = !!fillJobId && !jobActive(job);
+        if (job.status === "done" && completedFill.current !== job.job_id) {
+          completedFill.current = job.job_id;
+          setSelectedRecord(null); setRefreshKey(value => value + 1);
+        }
+      } catch { if (!controller.signal.aborted) setFillError("Alan doldurma durumu alınamadı; tekrar kontrol ediliyor."); }
+      finally { reading = false; }
+    }
+    void poll();
+    const timer = setInterval(() => { void poll(); }, 2000);
+    return () => { controller.abort(); clearInterval(timer); };
+  }, [base, workspaceId, fillJobId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -122,12 +163,17 @@ export function InformationView({ apiUrl, workspaceId, initialCollection, summar
   const questionButton = (question?: Question) => question && <Button variant="ghost" className="inline-flex align-[middle] border-0 bg-transparent rounded-sm [&:hover]:bg-warn-soft p-1" onClick={() => onQuestion(question)} aria-label={`${question.field_label}: açık soruyu cevapla`} title="Bu bilgi için bir soru var"><span className="inline-block w-[6px] h-[6px] rounded-pill bg-warn flex-none" aria-hidden="true" /></Button>;
   const retry = () => setRefreshKey(value => value + 1);
   const result = results[selectedCollection];
-  const changed = (note: string) => { setMessage(note); setSelectedRecord(null); retry(); };
+  const changed = (note: string, jobId?: string) => {
+    setMessage(note); setSelectedRecord(null); retry();
+    if (jobId) { setFillJob(null); setFillError(""); setFillJobId(jobId); }
+  };
 
   return <><Head title="Koleksiyonlar" sub="Belgelerinizden derlenen kayıtları ve kaynaklarını inceleyin." endpoint={revision ? `GET /v1/workspaces/${workspaceId}/revisions/${revision}/collections` : ""}>
     <Label className="flex items-center gap-2 text-xs font-normal text-muted"><input className="size-4 accent-accent" type="checkbox" role="switch" checked={mode === "approved"} onChange={event => { setMode(event.target.checked ? "approved" : "preview"); setSelectedCollection(""); }} />Yalnızca onaylı bilgiler</Label>
   </Head><div className={pageBody}>
     {message && <p className="rounded-lg border border-line bg-sheet p-3 text-sm" role="status">{message}</p>}
+    {(!fillJob?.collection || !selectedCollection || fillJob.collection === selectedCollection) && <RecordJobProgress job={fillJob} error={fillError} />}
+    {developerMode && fillJob && <Ep>{fillJob.job_id}</Ep>}
     {state === "ready" && !selectedCollection && <CollectionActions base={base} revision={revision} schema={schema} developerMode={developerMode} onDone={changed} />}
     {state === "loading" ? <InformationState role="status"><Skeleton className="mx-auto h-1 w-12 bg-accent" /><h2>Koleksiyonlar hazırlanıyor…</h2><p>Şirketinizin kayıtları alınıyor.</p></InformationState> : state !== "ready" ? <InformationState role={state === "error" ? "alert" : "status"}><Icon name="grid" /><h2>{state === "missing" ? "Koleksiyonlar henüz hazır değil" : "Koleksiyonlar alınamadı"}</h2><p>Biraz sonra tekrar deneyebilirsiniz.</p><Button variant="outline" onClick={retry}>Tekrar dene</Button></InformationState> : !collections.length ? <InformationState><Icon name="grid" /><h2>Henüz koleksiyon yok</h2><p>Belgelerinizden derlenen kayıtlar burada görünecek.</p></InformationState> : !selectedCollection ? <div className={cardGrid}>{collections.map(key => {
       const data = results[key];

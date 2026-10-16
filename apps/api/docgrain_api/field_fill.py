@@ -25,6 +25,7 @@ class _GuardTransport(httpx.BaseTransport):
         self.inner.close()
 
 
+# KULLANILMIYOR (karar 18, WP120): HTTP isteğinde alan dolduran eski yol.
 def fill_new_field(store, revision, collection, field):
     settings = get_workspace_model(revision.workspace_id)
     if not settings["enabled"]:
@@ -63,3 +64,50 @@ def fill_new_field(store, revision, collection, field):
     note = ("Belgelerde doğrulanabilen değerler eklendi; diğerleri boş kaldı."
             if not rejected else "Doğrulanamayan belge önerileri eklenmedi.")
     return filled, note
+
+
+def load_pinned_contexts(store, revision, context_job_id):
+    """Read the original full job's immutable Docling-derived contexts, checking every hash."""
+    root = (store._path(revision.workspace_id) / "runtime" /
+            sha256(context_job_id.encode()).hexdigest() / "schema")
+    schema = WorkspaceSchema.model_validate(revision.workspace_schema)
+    if not schema.sources:
+        raise ValueError("pinned contexts unavailable")
+    documents = []
+    for source in schema.sources:
+        context = (source_directory(root, source) / "context.md").read_text(encoding="utf-8")
+        if sha256(context.encode()).hexdigest() != source.context_sha256:
+            raise ValueError("pinned context changed")
+        documents.append(DiscoveryDocument(
+            source=source.model_dump(exclude={"context_sha256"}), context=context))
+    return documents
+
+
+def fill_from_contexts(revision, collection, field, documents, resolved, guard, transport=None,
+                       on_usage=None):
+    """Worker-only model I/O; recheck the job and model opt-in for every physical request."""
+    class GuardedTransport(httpx.BaseTransport):
+        def __init__(self):
+            self.inner = transport or httpx.HTTPTransport()
+
+        def handle_request(self, request):
+            guard()
+            return self.inner.handle_request(request)
+
+        def close(self):
+            self.inner.close()
+
+    guard()
+    chat = ChatClient(resolved.base_url, resolved.model, resolved.api_key or "local-profile",
+                      transport=GuardedTransport(), reasoning_effort=resolved.reasoning_effort,
+                      max_tokens=resolved.max_tokens, on_usage=on_usage)
+    if not resolved.api_key:
+        del chat.client.headers["Authorization"]
+    try:
+        filled, rejected = fill_field(revision, collection, field, documents, chat)
+    finally:
+        chat.close()
+    guard()
+    note = ("Doğrulanamayan belge önerileri eklenmedi." if rejected else
+            "Belgelerde doğrulanabilen değerler eklendi; diğerleri boş kaldı.")
+    return filled, note, rejected

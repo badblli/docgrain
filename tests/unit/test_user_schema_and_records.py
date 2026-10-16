@@ -138,7 +138,7 @@ def test_failed_fill_still_adds_the_field_with_a_note(tmp_path):
         revision.records[0].fields["duration"] = revision.records[0].fields["name"]
         raise RuntimeError("model unreachable")
 
-    store = RecordsRepository(tmp_path / "publications", field_filler=broken)
+    store = RecordsRepository(tmp_path / "publications", field_fill_preparer=broken)
     store.publish(revision(tmp_path))
     result = store.user_change("clinic", "r1", "add_field", "services",
                                NewField(key="duration", label="Süre", type="string"))
