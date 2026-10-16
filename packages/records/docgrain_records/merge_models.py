@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import Field, JsonValue, computed_field, model_validator
+from pydantic import Field, JsonValue, computed_field, model_serializer, model_validator
 
 from .models import Evidence, Language, Record, StrictModel, Text
 
@@ -51,8 +51,26 @@ class VersionedEvidence(Evidence):
 
 class UserEditEvidence(StrictModel):
     kind: Literal["user_edit"] = "user_edit"
+    who: Text | None = None
     at: Text
     note: str
+
+    @model_serializer(mode="wrap")
+    def serialize(self, handler):
+        value = handler(self)
+        if self.who is None:
+            value.pop("who", None)
+        return value
+
+
+class UserChange(StrictModel):
+    kind: Literal["add_field", "add_collection", "add_record", "set_value"]
+    collection: Text
+    record_id: Text | None = None
+    field: Text | None = None
+    who: Text
+    at: Text
+    note: str = ""
 
 
 class FactCandidate(StrictModel):
@@ -187,6 +205,7 @@ class MergeRevision(StrictModel):
     updated_at: Text | None = None
     history: list[AnswerHistory] = Field(default_factory=list)
     duplicate_decisions: list[DuplicateDecision] = Field(default_factory=list)
+    user_changes: list[UserChange] = Field(default_factory=list)
 
 
 class FieldChange(StrictModel):
