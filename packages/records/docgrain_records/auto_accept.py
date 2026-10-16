@@ -18,13 +18,16 @@ and a person can still change it (``review.auto_accepted`` + the answer API).
 from .merge_models import MergeRevision, ReviewDecision, VersionedEvidence
 from .multivalue import multiple_values
 from .normalize import format_key, mentions, near_identical
+from .place_names import name_keys
 from .runtime import revision_runtime
 
-RULES_VERSION = "wp111"
+# KULLANILMIYOR (karar 18): RULES_VERSION = "wp111"
+RULES_VERSION = "wp115"
 RULE_SINGLE = "rule:verified-single-source"
 RULE_AGREEING = "rule:verified-agreeing-sources"
 RULE_FORMAT = "rule:format-equal-variant"
 RULE_NEAR = "rule:near-identical-variant"
+RULE_NAME = "rule:verified-name-alias"
 # Existing U1 reviewer for values that need a person (unchanged wording).
 RULE_HUMAN = "rule:u1-human-field-review"
 HUMAN_REASON = "Kimlik eşleşmesi alan onayı değildir; insan onayı gerekli."
@@ -81,6 +84,14 @@ def plan_slot(runtime, record, field, merged, lang, pins):
     if not all(_verified(c, pins, field) for c in slot):
         return None
     groups = _groups(field, slot)
+    # Identity was already resolved by the reviewed match path. Keep each source
+    # spelling as an evidenced variant when names share a distinguishing key.
+    if field == runtime.identities[record.type] and len(groups) > 1:
+        keys = [name_keys([c.value]) for c in slot]
+        if keys and set.intersection(*keys):
+            kept = _best(slot)
+            return [(c, "accepted" if c is kept else "rejected", RULE_NAME,
+                     "Doğrulanmış aynı yer adı; kaynak yazımı ad varyantı olarak saklandı.") for c in slot]
     if len(groups) == 1:
         members = groups[0]
         kept = _best(members)
