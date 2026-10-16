@@ -38,6 +38,9 @@ def fill_field(revision, collection, field, documents, chat):
             raise ValueError("field fill source does not match published revision")
         result = extract(document.context, pin.document_id, document.source.lang, chat,
                          runtime=runtime, focused_passes=False, concurrency=1)
+        # WP120: extractor reports transport failures as data; a fill must fail atomically.
+        if result.failures:
+            raise ValueError("field fill extraction failed")
         rejected.extend(item.model_dump(mode="json") for item in result.rejected)
         for extracted in result.records:
             name = getattr(extracted, identity)

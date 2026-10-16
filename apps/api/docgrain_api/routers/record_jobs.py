@@ -37,7 +37,8 @@ def _read(workspace, job_id=None):
         "job_id", "workspace_id", "status", "stage", "completed_stages", "total_stages",
         "message", "revision_id", "error_code", "updated_at", "queued_at", "started_at",
         "finished_at", "stages",
-    )}, "summary": records_jobs.summary(job),
+    )}, **{key: job.get(key) for key in ("kind", "collection", "field")},
+        "summary": records_jobs.summary(job),
         "speed": job.get("metadata", {}).get("speed", {})}  # Numeric telemetry; no model/source text.
 
 

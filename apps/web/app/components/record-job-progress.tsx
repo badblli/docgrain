@@ -6,6 +6,7 @@ export type RecordJob = {
   job_id: string; workspace_id: string; status: "queued" | "running" | "needs_review" | "done" | "failed";
   stage: string | null; completed_stages: number; total_stages: number;
   revision_id: string | null; error_code?: string | null;
+  kind?: "records" | "field_fill"; collection?: string; field?: string;
   // WP110: what was left out, in plain words ("N bölüm okunamadı"). Older servers omit it.
   summary?: { rejected_fields: number; failed_sections: number; total_sections: number; needs_review: string[]; notes: string[] };
 };
@@ -13,6 +14,7 @@ const stages: Record<string, string> = {
   structure: "Tablolar ve listeler okunuyor", discover: "Listeler bulunuyor", accept_schema: "Bilgi yapısı kontrol ediliyor",
   extract: "Bilgiler çıkarılıyor", match: "Aynı kayıtlar karşılaştırılıyor",
   merge: "Bilgiler birleştiriliyor", publish: "Yayın hazırlanıyor",
+  fill: "Yeni alan belgelerden dolduruluyor",
 };
 export const jobActive = (job: RecordJob | null) => job?.status === "queued" || job?.status === "running";
 
@@ -122,7 +124,10 @@ export function useRecordJob(apiUrl: string, workspaceId: string, mode: Mode | n
 
 export function RecordJobProgress({ job, error }: { job: RecordJob | null; error: string }) {
   if (!job && !error) return null;
-  const title = !job ? "Bilgi işi" : job.status === "done" ? "Bilgiler hazır; onay bekleyenleri Sorular'dan kontrol edin"
+  const title = job?.kind === "field_fill" ? (job.status === "done" ? "Yeni alan dolduruldu"
+    : job.status === "failed" ? "Yeni alan doldurulamadı; değerleri elle girebilirsiniz. Alan eklendi ve korunuyor."
+    : "Yeni alan dolduruluyor")
+    : !job ? "Bilgi işi" : job.status === "done" ? "Bilgiler hazır; onay bekleyenleri Sorular'dan kontrol edin"
     : job.status === "needs_review" ? "Bilgi yapısı kontrol edilmeli"
     : job.status === "failed" ? "Bilgiler çıkarılamadı"
     : job.status === "queued" ? "Bilgi işi sırada" : stages[job.stage ?? ""] || "Bilgiler hazırlanıyor";

@@ -32,7 +32,7 @@ function parseValue(input: string, type: string): unknown {
 
 export function CollectionActions({ base, revision, schema, collection, record, field, developerMode, onDone }: {
   base: string; revision: string; schema: CollectionSchema | null; collection?: string;
-  record?: string; field?: string; developerMode: boolean; onDone: (message: string) => void;
+  record?: string; field?: string; developerMode: boolean; onDone: (message: string, fillJobId?: string) => void;
 }) {
   const [action, setAction] = useState<Action | null>(null);
   const [label, setLabel] = useState("");
@@ -66,12 +66,13 @@ export function CollectionActions({ base, revision, schema, collection, record, 
         method: action === "value" ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
       });
       if (!response.ok) {
-        setError(response.status === 409 ? "Bu sırada bilgiler değişti veya hazırlanıyor. Yenileyip tekrar deneyin." : response.status === 422 ? "Girdiğiniz bilgileri kontrol edin." : "İşlem tamamlanamadı. Tekrar deneyin.");
+        const detail = response.status === 409 ? await response.json().catch(() => ({})) : {};
+        setError(response.status === 409 ? (detail.detail === "Yeni alan dolduruluyor; bitince tekrar deneyin." ? detail.detail : "Bu sırada bilgiler değişti veya hazırlanıyor. Yenileyip tekrar deneyin.") : response.status === 422 ? "Girdiğiniz bilgileri kontrol edin." : "İşlem tamamlanamadı. Tekrar deneyin.");
         return;
       }
       const result = await response.json();
       setAction(null);
-      onDone(result.note || "Değişiklik düzenleme geçmişine eklendi.");
+      onDone(result.note || "Değişiklik düzenleme geçmişine eklendi.", result.fill_job_id);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "İşlem tamamlanamadı."); }
     finally { setBusy(false); }
   }

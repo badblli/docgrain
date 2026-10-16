@@ -234,6 +234,10 @@ def combine_schemas(structure, model):
 
 
 class Pipeline:
+    stages = lifecycle.STAGES
+    labels = lifecycle.LABELS
+    stage_timeouts = lifecycle.STAGE_TIMEOUTS
+
     def __init__(self, job, transport=None, document_loader=None, concurrency=None,
                  docling_loader=None):
         self.job = job
@@ -787,13 +791,13 @@ class Pipeline:
         self.store.publish(self.revision, check=check, complete=complete, job_id=self.job_id)
 
     def run(self):
-        for stage in lifecycle.STAGES:
+        for stage in self.stages:
             self.guard()
             stamp = lifecycle.now()
             def begin(job, stage=stage, stamp=stamp):
-                job.update(stage=stage, message=lifecycle.LABELS[stage], heartbeat_at=stamp,
+                job.update(stage=stage, message=self.labels[stage], heartbeat_at=stamp,
                            stage_deadline=(datetime.now(UTC) + timedelta(
-                               seconds=lifecycle.STAGE_TIMEOUTS[stage])).isoformat())
+                               seconds=self.stage_timeouts[stage])).isoformat())
                 job["stages"][stage].update(status="running", started_at=stamp)
             if not jobs.change(self.workspace, self.job_id, begin, {"running"}):
                 raise PipelineError("worker_stale")
@@ -848,7 +852,12 @@ def process_job(job_id, transport=None, document_loader=None, docling_loader=Non
     thread = Thread(target=heartbeat, daemon=True)
     thread.start()
     try:
-        Pipeline(job, transport, document_loader, docling_loader=docling_loader).run()
+        if job.get("kind") == "field_fill":
+            from .field_fill_job import FieldFillJob
+
+            FieldFillJob(job, transport).run()
+        else:
+            Pipeline(job, transport, document_loader, docling_loader=docling_loader).run()
     except Exception as exc:  # noqa: BLE001 - persist a fixed terminal error for any failed stage.
         code = (exc.code if isinstance(exc, (PipelineError, lifecycle.JobConflict)) else
                 "guard" if isinstance(exc, ModelSettingsError) else "step_failed")

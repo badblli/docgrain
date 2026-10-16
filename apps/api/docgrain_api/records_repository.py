@@ -39,10 +39,15 @@ class AnswerInvalid(ValueError):
 
 
 class RecordsRepository:
-    def __init__(self, root: str | Path, before_answer=None, field_filler=None):
+    def __init__(self, root: str | Path, before_answer=None, field_filler=None,
+                 field_fill_preparer=None, field_fill_dispatcher=None, field_note_resolver=None):
         self.root = Path(root)
         self.before_answer = before_answer
         self.field_filler = field_filler
+        # field_filler: KULLANILMIYOR (karar 18, WP120); request paths never call a model.
+        self.field_fill_preparer = field_fill_preparer
+        self.field_fill_dispatcher = field_fill_dispatcher
+        self.field_note_resolver = field_note_resolver
 
     def _path(self, workspace, revision=None):
         path = self.root / sha256(workspace.encode()).hexdigest()
@@ -278,7 +283,9 @@ class RecordsRepository:
         if not runtime.schema:
             raise PackMissing("workspace schema unavailable")
         return {"revision_id": source.id, "version": runtime.schema["version"],
-                "field_notes": {f"{change.collection}.{change.field}": change.note
+                "field_notes": {f"{change.collection}.{change.field}":
+                                (self.field_note_resolver(workspace, change)
+                                 if change.fill_job_id and self.field_note_resolver else change.note)
                                 for change in source.user_changes
                                 if change.kind == "add_field" and change.note},
                 "collections": [{"key": item["key"],
@@ -387,16 +394,32 @@ class RecordsRepository:
             except ValueError as exc:
                 raise AnswerInvalid(str(exc)) from exc
             note = None
-            if operation == "add_field" and self.field_filler:
+            fill_job_id = None
+            planned_job = None
+            if operation == "add_field" and self.field_fill_preparer:
                 try:
-                    updated, note = self.field_filler(self, updated.model_copy(deep=True), args[0], args[1].key)
-                except Exception:  # noqa: BLE001 - the field is still added; filling is best effort
+                    planned_job, note = self.field_fill_preparer(
+                        self, updated.model_copy(deep=True), args[0], args[1].key)
+                except Exception:  # noqa: BLE001 - best-effort preparation never blocks the field.
                     note = "Alan eklendi; belgelerden doldurulamadı. Değerleri elle girebilirsiniz."
                 updated.user_changes[-1].note = note
+                if planned_job:
+                    updated.user_changes[-1].fill_job_id = planned_job["job_id"]
             self._publish(updated)
+            if planned_job and self.field_fill_dispatcher:
+                try:
+                    if self.field_fill_dispatcher(planned_job):
+                        fill_job_id = planned_job["job_id"]
+                    else:
+                        note = "Alan eklendi; belgelerden doldurulamadı. Değerleri elle girebilirsiniz."
+                except Exception:  # noqa: BLE001 - the published field survives dispatch failures.
+                    note = "Alan eklendi; belgelerden doldurulamadı. Değerleri elle girebilirsiniz."
+            elif planned_job:
+                note = "Alan eklendi; belgelerden doldurulamadı. Değerleri elle girebilirsiniz."
             return {"revision_id": updated.id,
                     "workspace_schema_version": (updated.workspace_schema or {}).get("version"),
-                    "record_id": updated.user_changes[-1].record_id, "note": note}
+                    "record_id": updated.user_changes[-1].record_id, "note": note,
+                    **({"fill_job_id": fill_job_id} if fill_job_id else {})}
 
     def read(self, workspace, revision, collection, lang=None, compact=False,
              mode="preview", pending_job=None):
