@@ -1,0 +1,60 @@
+"""Fill only a newly added field from pinned document contexts."""
+
+from uuid import uuid4
+
+from .auto_accept import apply_review_rules
+from .discovery_models import WorkspaceSchema
+from .extractor import extract
+from .merge_models import FactCandidate, MergedField, VersionedEvidence
+from .runtime import RuntimeRecords, revision_runtime
+from .verify import normalize_quote
+
+
+def fill_field(revision, collection, field, documents, chat):
+    """Documents are pinned DiscoveryDocument objects; extractor verifies every quote."""
+    schema = WorkspaceSchema.model_validate(revision.workspace_schema)
+    definition = next(item for item in schema.collections if item.key == collection)
+    identity = definition.identity
+    if field == identity:
+        return revision, []
+    definition.fields = [item for item in definition.fields if item.key in {identity, field}]
+    schema.collections = [definition]
+    runtime = RuntimeRecords(schema)
+    current = revision_runtime(revision)
+    by_identity = {}
+    for record in revision.records:
+        if record.type != collection or identity not in record.fields:
+            continue
+        candidate = record.fields[identity].primary
+        if candidate:
+            by_identity.setdefault(normalize_quote(str(candidate.value)).casefold(), []).append(record)
+    rejected = []
+    for document in documents:
+        pin = next((pin for pin in revision.documents
+                    if pin.document_id == document.source.document_id
+                    and pin.source_version_id == document.source.source_version_id
+                    and pin.knowledge_revision_id == document.source.knowledge_revision_id), None)
+        if pin is None:
+            raise ValueError("field fill source does not match published revision")
+        result = extract(document.context, pin.document_id, document.source.lang, chat,
+                         runtime=runtime, focused_passes=False, concurrency=1)
+        rejected.extend(item.model_dump(mode="json") for item in result.rejected)
+        for extracted in result.records:
+            name = getattr(extracted, identity)
+            fact = getattr(extracted, field)
+            if name is None or fact is None:
+                continue
+            matches = by_identity.get(normalize_quote(str(name.value)).casefold(), [])
+            if len(matches) != 1:
+                continue
+            record = matches[0]
+            candidate = FactCandidate(id="fact_" + uuid4().hex,
+                value=current.validate_value(collection, field, fact.value), lang=fact.lang,
+                evidence=[VersionedEvidence(**e.model_dump(),
+                    source_version_id=pin.source_version_id,
+                    knowledge_revision_id=pin.knowledge_revision_id) for e in fact.evidence])
+            if field not in record.fields:
+                record.fields[field] = MergedField(primary_lang=fact.lang, candidates=[candidate])
+            else:
+                record.fields[field].candidates.append(candidate)
+    return apply_review_rules(revision)[0], rejected

@@ -25,6 +25,7 @@ class Definition(StrictModel):
     type: FieldType
     unit: Text | None
     label_i18n: list[Label] = Field(min_length=1)
+    description: str | None = None
 
     @model_validator(mode="after")
     def labels(self):
@@ -81,6 +82,8 @@ class CollectionField(Definition):
 
 
 class Collection(CollectionProposal):
+    # User-created collections have no document example until extraction finds one.
+    examples: list[Example] = Field(default_factory=list)
     fields: list[CollectionField] = Field(min_length=1)
     review_state: ReviewState = "proposed"
     # Missing in legacy versions: retain their name/first-field behaviour.

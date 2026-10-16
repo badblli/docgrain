@@ -5,6 +5,7 @@ from hashlib import sha256
 
 from docgrain_records.export import MODES
 from docgrain_records.review import Answer
+from docgrain_records.user_changes import ManualRecord, ManualValue, NewCollection, NewField
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from ..records_repository import (
@@ -26,12 +27,13 @@ def list_revisions(workspace_id: str):
 
 
 def repository():
+    from ..field_fill import fill_new_field
     from ..records_jobs import block_answer
 
     root = get_settings().records_publication_root
     if not root:
         raise HTTPException(404, "record publications unavailable")
-    return RecordsRepository(root, before_answer=block_answer)
+    return RecordsRepository(root, before_answer=block_answer, field_filler=fill_new_field)
 
 
 def _review_response(operation, workspace_id, *args, **kwargs):
@@ -52,6 +54,11 @@ def get_summary(workspace_id: str, revision_id: str | None = None):
     return _review_response("workspace_summary", workspace_id, revision_id)
 
 
+@workspace_router.get("/collection-schema")
+def get_collection_schema(workspace_id: str, revision_id: str | None = None):
+    return _review_response("workspace_schema", workspace_id, revision_id)
+
+
 @workspace_router.get("/questions")
 def get_questions(workspace_id: str, revision_id: str | None = None,
                   limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0)):
@@ -70,6 +77,34 @@ def answer_question(workspace_id: str, question_id: str, answer: Answer,
                     revision_id: str | None = None):
     """Choose a candidate, all values cited by a document, a correction, or defer."""
     return _review_response("answer_question", workspace_id, question_id, answer, revision_id)
+
+
+@workspace_router.post("/collections/{collection}/fields")
+def create_field(workspace_id: str, collection: str, body: NewField,
+                 revision_id: str = Query(...)):
+    return _review_response("user_change", workspace_id, revision_id,
+                            "add_field", collection, body)
+
+
+@workspace_router.post("/collections")
+def create_collection(workspace_id: str, body: NewCollection,
+                      revision_id: str = Query(...)):
+    return _review_response("user_change", workspace_id, revision_id,
+                            "add_collection", body)
+
+
+@workspace_router.post("/collections/{collection}/records")
+def create_record(workspace_id: str, collection: str, body: ManualRecord,
+                  revision_id: str = Query(...)):
+    return _review_response("user_change", workspace_id, revision_id,
+                            "add_record", collection, body)
+
+
+@workspace_router.put("/records/{record_id}/fields/{field}")
+def edit_value(workspace_id: str, record_id: str, field: str, body: ManualValue,
+               revision_id: str = Query(...)):
+    return _review_response("user_change", workspace_id, revision_id,
+                            "set_value", record_id, field, body)
 
 
 def _response(request, workspace, revision, collection=None, lang=None, compact=False,

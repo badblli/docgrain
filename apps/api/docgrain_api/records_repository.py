@@ -19,6 +19,7 @@ from docgrain_records.export import MODES, SCHEMA_VERSION, encode, export_bundle
 from docgrain_records.merge_models import MergeRevision
 from docgrain_records.review import SkipAnswer, answer_revision, auto_accepted, questions, summary
 from docgrain_records.runtime import revision_runtime
+from docgrain_records.user_changes import add_collection, add_field, add_record, set_value
 
 
 class PackMissing(LookupError):
@@ -38,9 +39,10 @@ class AnswerInvalid(ValueError):
 
 
 class RecordsRepository:
-    def __init__(self, root: str | Path, before_answer=None):
+    def __init__(self, root: str | Path, before_answer=None, field_filler=None):
         self.root = Path(root)
         self.before_answer = before_answer
+        self.field_filler = field_filler
 
     def _path(self, workspace, revision=None):
         path = self.root / sha256(workspace.encode()).hexdigest()
@@ -270,6 +272,24 @@ class RecordsRepository:
                 "document_names": {pin.document_id: pin.document_name or pin.document_id
                                    for pin in source.documents}}
 
+    def workspace_schema(self, workspace, revision=None):
+        source = self._source(workspace, revision)
+        runtime = revision_runtime(source)
+        if not runtime.schema:
+            raise PackMissing("workspace schema unavailable")
+        return {"revision_id": source.id, "version": runtime.schema["version"],
+                "field_notes": {f"{change.collection}.{change.field}": change.note
+                                for change in source.user_changes
+                                if change.kind == "add_field" and change.note},
+                "collections": [{"key": item["key"],
+                    "label": next((label["value"] for label in item["label_i18n"]
+                                   if label["lang"] == "tr"), item["key"]),
+                    "identity": item["identity"],
+                    "fields": [{"key": field["key"], "type": field["type"],
+                        "label": next((label["value"] for label in field["label_i18n"]
+                                       if label["lang"] == "tr"), field["key"])}
+                        for field in item["fields"]]} for item in runtime.schema["collections"]]}
+
     def _review_state(self, workspace):
         path = self._path(workspace) / "review.json"
         return json.loads(path.read_bytes()) if path.exists() else {"issued": {}, "skipped": {}}
@@ -351,6 +371,32 @@ class RecordsRepository:
             state["skipped"][updated.id] = state["skipped"].get(newest.id, [])
             self._save_review_state(workspace, state)
             return {"revision_id": updated.id, "remaining": len(questions(updated))}
+
+    def user_change(self, workspace, expected_revision, operation, *args):
+        """Publish one user edit under the same job/head fence as question answers."""
+        with self._workspace_lock(workspace):
+            if self.before_answer:
+                self.before_answer(workspace)
+            newest = self._source(workspace)
+            if newest.id != expected_revision:
+                raise QuestionStale("revision is no longer newest; reload collections")
+            try:
+                updated = {"add_field": add_field, "add_collection": add_collection,
+                           "add_record": add_record, "set_value": set_value}[operation](
+                               newest, *args)
+            except ValueError as exc:
+                raise AnswerInvalid(str(exc)) from exc
+            note = None
+            if operation == "add_field" and self.field_filler:
+                try:
+                    updated, note = self.field_filler(self, updated.model_copy(deep=True), args[0], args[1].key)
+                except Exception:  # noqa: BLE001 - the field is still added; filling is best effort
+                    note = "Alan eklendi; belgelerden doldurulamadı. Değerleri elle girebilirsiniz."
+                updated.user_changes[-1].note = note
+            self._publish(updated)
+            return {"revision_id": updated.id,
+                    "workspace_schema_version": (updated.workspace_schema or {}).get("version"),
+                    "record_id": updated.user_changes[-1].record_id, "note": note}
 
     def read(self, workspace, revision, collection, lang=None, compact=False,
              mode="preview", pending_job=None):
