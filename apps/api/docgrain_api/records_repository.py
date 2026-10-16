@@ -69,6 +69,18 @@ class RecordsRepository:
             revision = revision.model_copy(deep=True)
             revision.duplicate_decisions.extend(inherited[key].model_copy(deep=True)
                                                 for key in sorted(inherited))
+        # WP119: "same list?" answers stay with the workspace; a new run applies them at grouping.
+        answered = {tuple(sorted(d.signatures)) for d in revision.collection_merge_decisions}
+        lists = {}
+        for old in previous:
+            for decision in old.collection_merge_decisions:
+                key = tuple(sorted(decision.signatures))
+                if key not in answered:
+                    lists.setdefault(key, decision)
+        if lists:
+            revision = revision.model_copy(deep=True)
+            revision.collection_merge_decisions.extend(lists[key].model_copy(deep=True)
+                                                       for key in sorted(lists))
         body = revision.model_dump_json(round_trip=True).encode()
         path.mkdir(parents=True, exist_ok=True)
         descriptor, name = tempfile.mkstemp(dir=path)
@@ -376,7 +388,10 @@ class RecordsRepository:
                 raise AnswerInvalid(str(exc)) from exc
             note = None
             if operation == "add_field" and self.field_filler:
-                updated, note = self.field_filler(self, updated, args[0], args[1].key)
+                try:
+                    updated, note = self.field_filler(self, updated.model_copy(deep=True), args[0], args[1].key)
+                except Exception:  # noqa: BLE001 - the field is still added; filling is best effort
+                    note = "Alan eklendi; belgelerden doldurulamadı. Değerleri elle girebilirsiniz."
                 updated.user_changes[-1].note = note
             self._publish(updated)
             return {"revision_id": updated.id,

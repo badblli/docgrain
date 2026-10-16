@@ -87,7 +87,9 @@ export function QuestionCard({ question, onAnswer, currentIndex = 1, totalCount,
   const groups = groupByDocument(question.options);
   const disabled = submitting || busy || readOnly || saved !== null;
   const schedule = question.kind === "schedule_swap" || question.kind === "schedule_conflict";
-  const duplicate = question.kind === "duplicate";
+  // WP119: "same list?" questions use the same two-card layout as duplicate records.
+  const lists = question.kind === "collection_merge";
+  const duplicate = question.kind === "duplicate" || lists;
   const confirmation = question.kind === "needs_review" && new Set(question.options.map(option => option.candidate_id)).size === 1;
   const fieldLabel = getFieldLabel(question.field, question.field_label);
   async function submit(answer: QuestionAnswer) {
@@ -108,10 +110,10 @@ export function QuestionCard({ question, onAnswer, currentIndex = 1, totalCount,
   return <article aria-labelledby={titleId} aria-busy={submitting || busy} className="min-w-0 self-start motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-3 motion-safe:duration-300">
     <Card className="gap-0 border border-line p-0 ring-0">
       <div className="px-4 pt-5 sm:px-6 sm:pt-6">
-        <p className="mb-3 flex flex-wrap items-center gap-2 text-xs text-warn"><span className="size-1.5 shrink-0 rounded-full bg-warn" aria-hidden="true" />{duplicate ? "Benzer kayıtlar bulundu" : question.kind === "conflict" || schedule ? "Kaynaklar farklı söylüyor" : confirmation ? "Bu bilgiyi onaylayın" : "İnceleme bekliyor"}<span className="text-muted">· {displayCollectionLabel(question.collection, question.collection_label)}</span></p>
+        <p className="mb-3 flex flex-wrap items-center gap-2 text-xs text-warn"><span className="size-1.5 shrink-0 rounded-full bg-warn" aria-hidden="true" />{lists ? "Benzer listeler bulundu" : duplicate ? "Benzer kayıtlar bulundu" : question.kind === "conflict" || schedule ? "Kaynaklar farklı söylüyor" : confirmation ? "Bu bilgiyi onaylayın" : "İnceleme bekliyor"}<span className="text-muted">· {displayCollectionLabel(question.collection, question.collection_label)}</span></p>
         <h2 className="text-xl leading-snug font-semibold tracking-[-0.02em] wrap-anywhere" id={titleId} ref={heading} tabIndex={-1}>{confirmation ? `${question.record_title} · ${fieldLabel}` : question.question_tr || `${question.record_title} için ${fieldLabel} hangisi?`}</h2>
         {schedule && <p className="mt-1 text-sm text-muted">{question.records?.join(" ve ")} · {question.period_label_tr}</p>}
-        <p className="mt-1 text-base text-muted">{duplicate ? "Aynı şeyi anlatıyorlarsa kayıtları birleştirin. Farklı bilgiler için ayrıca soracağız." : confirmation ? "Kaynağı okuyun; bu bilgi doğruysa onaylayın." : <>Güncel belgeyi seçin{question.allow_all ? '; tüm değerler geçerliyse “Hepsi doğru” deyin.' : "; koleksiyonunuz güncellensin."}</>}</p>
+        <p className="mt-1 text-base text-muted">{lists ? "Aynı şeyi anlatıyorlarsa listeleri birleştirin. Cevabınız sonraki hazırlıklarda da kullanılır." : duplicate ? "Aynı şeyi anlatıyorlarsa kayıtları birleştirin. Farklı bilgiler için ayrıca soracağız." : confirmation ? "Kaynağı okuyun; bu bilgi doğruysa onaylayın." : <>Güncel belgeyi seçin{question.allow_all ? '; tüm değerler geçerliyse “Hepsi doğru” deyin.' : "; koleksiyonunuz güncellensin."}</>}</p>
       </div>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,230px),1fr))] gap-3 p-4 sm:px-6 sm:pb-6 sm:pt-5">
         {duplicate && question.duplicate_records?.map(record => <section className="flex min-w-0 flex-col gap-3 rounded-lg border border-line bg-paper p-4 sm:p-5" key={record.id}>
@@ -146,7 +148,7 @@ export function QuestionCard({ question, onAnswer, currentIndex = 1, totalCount,
       {error && <p className="mx-4 mb-5 rounded-lg bg-danger-soft p-3 text-sm text-danger sm:mx-6" role="alert">{error}</p>}
       <footer className="border-t border-line2 px-4 py-3">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          {duplicate && <>{[true, false].map(same => <Button key={String(same)} variant={selection && "same" in selection && selection.same === same ? "default" : "outline"} disabled={disabled} onClick={() => void submit({ same })}>{same ? "Aynı kayıt" : "Farklı kayıtlar"}</Button>)}</>}
+          {duplicate && <>{[true, false].map(same => <Button key={String(same)} variant={selection && "same" in selection && selection.same === same ? "default" : "outline"} disabled={disabled} onClick={() => void submit({ same })}>{same ? (lists ? "Aynı liste" : "Aynı kayıt") : (lists ? "Farklı listeler" : "Farklı kayıtlar")}</Button>)}</>}
           {question.allow_all === true && <Button variant="outline" disabled={disabled} onClick={() => void submit({ all: true })}>Hepsi doğru</Button>}
           {!schedule && !duplicate && <Button variant="ghost" className="h-auto min-h-[30px] max-w-full whitespace-normal text-left" disabled={disabled} aria-expanded={editing} aria-controls={inputId} onClick={() => setEditing(!editing)}>{groups.length === 2 ? "İkisi de yanlış, düzelt" : groups.length > 2 ? "Hiçbiri doğru değil, düzelt" : "Doğru değil, düzelt"}</Button>}
           <Button variant="ghost" className="text-muted" disabled={disabled} onClick={() => void submit({ skip: true })}>Sonra sor</Button>

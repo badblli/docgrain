@@ -9,6 +9,7 @@ from uuid import uuid4
 from pydantic import JsonValue, model_validator
 
 from .auto_accept import auto_slots, rule_decisions
+from .collection_merge import answer_collection_merge, collection_merge_questions
 from .duplicates import answer_duplicate, duplicate_questions
 from .export import encode, project_records
 from .merge_models import AnswerHistory, FactCandidate, MergeRevision, UserEditEvidence
@@ -141,6 +142,8 @@ def questions(revision: MergeRevision) -> list[dict]:
     result = combine_swaps(result, revision.workspace_id, revision.lineage_id or revision.id)
     result.extend(duplicate_questions(revision, runtime, rows, definitions, documents,
                                       _label, _locator))
+    # WP119: unsure groupings of structure lists, asked once ("Bu iki liste aynı şeyi mi anlatıyor?").
+    result.extend(collection_merge_questions(revision, runtime, definitions, _label, documents))
     return sorted(result, key=lambda q: ({"duplicate": 1, "needs_review": 2}.get(q["kind"], 0),
                                         q["collection"], q["record_id"], q["field"], q["lang"] or ""))
 
@@ -226,7 +229,7 @@ def summary(revision: MergeRevision, updated_at: str) -> dict:
                             "duplicates": sum(q["collection"] == key and q["kind"] == "duplicate"
                                               for q in pending),
                             "conflicts": sum(q["collection"] == key and q["kind"] not in {
-                                "needs_review", "duplicate"}
+                                "needs_review", "duplicate", "collection_merge"}
                                              for q in pending),
                             "needs_review": sum(q["collection"] == key and
                                                 q["kind"] == "needs_review" for q in pending)})
@@ -237,6 +240,7 @@ def summary(revision: MergeRevision, updated_at: str) -> dict:
             "conflicts": sum(c["conflicts"] for c in collections),
             "duplicates": sum(c["duplicates"] for c in collections),
             "needs_review": sum(c["needs_review"] for c in collections),
+            "collection_merges": sum(q["kind"] == "collection_merge" for q in pending),
             "accepted_ratio": accepted / total if total else 0.0,
             "updated_at": revision.updated_at or updated_at, "collections": collections}
 
@@ -250,8 +254,8 @@ def answer_revision(base: MergeRevision, question_id: str,
         question = next((q for q in auto_accepted(base) if q["id"] == question_id), None)
     if question is None:
         raise LookupError("question unknown")
-    if (question["kind"] == "duplicate") != isinstance(answer, DuplicateAnswer):
-        raise ValueError("same answer is required only for a duplicate question")
+    if (question["kind"] in {"duplicate", "collection_merge"}) != isinstance(answer, DuplicateAnswer):
+        raise ValueError("same answer is required only for a duplicate or same-list question")
     revision = base.model_copy(deep=True)
     revision.id = "rev_" + uuid4().hex
     revision.parent_id = base.id
@@ -259,6 +263,9 @@ def answer_revision(base: MergeRevision, question_id: str,
     revision.updated_at = datetime.now(UTC).isoformat()
     if question["kind"] == "duplicate":
         answer_duplicate(revision, question, answer.same, revision_runtime(base))
+        return MergeRevision.model_validate_json(revision.model_dump_json(round_trip=True))
+    if question["kind"] == "collection_merge":
+        answer_collection_merge(revision, question, answer.same)
         return MergeRevision.model_validate_json(revision.model_dump_json(round_trip=True))
     if question["kind"] in {"schedule_swap", "schedule_conflict"}:
         _answer_schedule(revision, question, answer)

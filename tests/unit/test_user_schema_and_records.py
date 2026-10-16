@@ -131,3 +131,32 @@ def test_targeted_fill_verifies_quotes_and_publishes_only_supported_values(tmp_p
         assert row["_meta"]["fields"]["duration"]["evidence"][0]["quote"] == "Duration: 30 minutes"
     else:
         assert "duration" not in row and rejected
+
+
+def test_failed_fill_still_adds_the_field_with_a_note(tmp_path):
+    def broken(_store, revision, _collection, _field):
+        revision.records[0].fields["duration"] = revision.records[0].fields["name"]
+        raise RuntimeError("model unreachable")
+
+    store = RecordsRepository(tmp_path / "publications", field_filler=broken)
+    store.publish(revision(tmp_path))
+    result = store.user_change("clinic", "r1", "add_field", "services",
+                               NewField(key="duration", label="Süre", type="string"))
+    added = store._source("clinic", result["revision_id"])
+    assert "duration" not in added.records[0].fields
+    assert added.workspace_schema["version"] == 2
+    assert "elle" in result["note"] and added.user_changes[-1].note == result["note"]
+
+
+def test_manual_value_replaces_only_the_shown_language(tmp_path):
+    base = revision(tmp_path)
+    base.records[0].fields["name"].candidates.append(
+        base.records[0].fields["name"].candidates[0].model_copy(
+            update={"id": "fact-name-tr", "value": "Muayene", "lang": "tr"}))
+    store = RecordsRepository(tmp_path / "publications")
+    store.publish(base)
+    result = store.user_change("clinic", "r1", "set_value", "rec-a", "name",
+                               ManualValue(value="First consultation", note="Fiyat listesi eski"))
+    name = store._source("clinic", result["revision_id"]).records[0].fields["name"]
+    assert name.accepted("en").value == "First consultation"
+    assert name.accepted("tr").value == "Muayene"

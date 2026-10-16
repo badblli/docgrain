@@ -87,6 +87,15 @@ mobile apps and websites.
     candidate (single source, or sources that agree after normalization) is accepted automatically and published
     as approved, with the rule recorded as reviewer; only real conflicts, duplicates and verifier doubts become
     questions. People can still correct any value afterwards.
+21. User decision 2026-10-12 (structure first): collections are built first from the structure Docling already
+    returns — tables (header cells, row headers, spans, cell provenance), list groups, section headings, key-value
+    areas, spreadsheet sheets — and similar units across documents are merged into ONE collection (same items become
+    one record; conflicts become questions; unsure groupings are asked once and remembered). No model is used when
+    the structure is enough; the workspace model is only a fallback for information without structure (prose,
+    designed pages). Sector templates (e.g. one tourism template with per-company additions) come later and would
+    use Docling Graph / DocumentExtractor as template-driven extractors behind our evidence verifier. Code that is
+    replaced is never deleted: it stays, marked KULLANILMIYOR (user rule). The model-based discovery stays as the
+    fallback path. The legacy hospitality taxonomy stops being a default.
 
 ## Phases
 

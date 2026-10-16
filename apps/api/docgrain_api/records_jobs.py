@@ -10,14 +10,18 @@ from . import repository
 from .queue import queue_client
 from .records_repository import QuestionStale, RecordsRepository
 from .settings import get_settings
-from .workspace_settings import resolve_workspace_model
+from .workspace_settings import get_workspace_model, resolve_workspace_model
 
 QUEUE_NAME = "docgrain:records"
-STAGES = ("discover", "accept_schema", "extract", "match", "merge", "publish")
+# WP119 (karar 21): "structure" builds collections from Docling tables/lists before any model.
+STAGES = ("structure", "discover", "accept_schema", "extract", "match", "merge", "publish")
 LABELS = dict(zip(STAGES, (
-    "Listeler bulunuyor", "Bilgi yapısı kontrol ediliyor", "Bilgiler çıkarılıyor",
-    "Aynı kayıtlar karşılaştırılıyor", "Bilgiler birleştiriliyor", "Yayın hazırlanıyor",
+    "Tablolar ve listeler okunuyor", "Listeler bulunuyor", "Bilgi yapısı kontrol ediliyor",
+    "Bilgiler çıkarılıyor", "Aynı kayıtlar karşılaştırılıyor", "Bilgiler birleştiriliyor",
+    "Yayın hazırlanıyor",
 ), strict=True))
+# KULLANILMIYOR (karar 18, WP119): yapı aşamasından önceki altı aşama.
+_STAGES_BEFORE_WP119 = ("discover", "accept_schema", "extract", "match", "merge", "publish")
 ERRORS = {
     "guard": "İşlem koşulları değişti; belgeleri ve model ayarlarını kontrol edin.",
     "source_changed": "Belgeler değişti; işlemi yeniden başlatın.",
@@ -32,13 +36,16 @@ ERRORS = {
     "worker_stale": "İşlem durdu; işlemi yeniden başlatın.",
     "dispatch": "İşlem başlatılamadı; yeniden deneyin.",
     "step_failed": "Bilgiler hazırlanamadı; yeniden deneyin.",
+    # WP119: model kapalı ve belgelerde okunabilir tablo/liste yok.
+    "needs_model": "Belgelerde tablo ya da liste bulunamadı; bilgileri çıkarmak için Ayarlar'dan "
+                   "model seçip açın.",
 }
 # A queue without a worker must also eventually become visibly terminal.
 QUEUE_TIMEOUT = 300
 HEARTBEAT_TIMEOUT = 90
 # WP110: more failed sections than this (after one more try) fail the job.
 MAX_FAILED_SECTIONS_PERCENT = 20
-STAGE_TIMEOUTS = dict(zip(STAGES, (1800, 120, 3600, 600, 600, 300), strict=True))
+STAGE_TIMEOUTS = dict(zip(STAGES, (600, 1800, 120, 3600, 600, 600, 300), strict=True))
 
 
 class JobConflict(RuntimeError):
@@ -146,7 +153,7 @@ def finish(workspace, job_id, code=None, revision_id=None):
             stage = job["stages"][job["stage"]]
             stage.update(status=job["status"] if code else "done", finished_at=now())
         if not code:
-            job["completed_stages"] = 6
+            job["completed_stages"] = len(STAGES)
     return jobs.change(workspace, job_id, mutate)
 
 
@@ -164,6 +171,16 @@ def summary(job):
         notes.append(f"{failed} bölüm okunamadı")
     if review:
         notes.append("İncelenmeyi bekleyen yapı: " + ", ".join(review))
+    # WP119: where the records came from, and documents the model would still have to read.
+    structure = metadata.get("structure") or {}
+    if structure.get("records_from_structure"):
+        notes.append(f"{structure['records_from_structure']} kayıt belgelerdeki tablo ve "
+                     "listelerden alındı")
+    waiting = [item.get("filename") or item.get("document_id")
+               for item in structure.get("documents_without_model") or []]
+    if waiting:
+        notes.append("Şu belgelerdeki yazılı bilgiler için Ayarlar'dan model açılmalı: "
+                     + ", ".join(waiting))
     return {"rejected_fields": rejected, "failed_sections": failed,
             "total_sections": (metadata.get("extraction_sections") or {}).get("total", 0),
             "needs_review": review, "notes": notes}
@@ -186,18 +203,26 @@ def start(workspace, request_id):
         if existing:
             jobs.remember_request(workspace, request_id, existing["job_id"])
             return existing["job_id"]
-        resolved = resolve_workspace_model(workspace)
+        # WP119 (karar 21): with the model off the job still runs on document structure only;
+        # a model that is switched on but not ready still blocks the start.
+        model = get_workspace_model(workspace)
+        if model.get("enabled"):
+            resolved = resolve_workspace_model(workspace)
+            settings_version, model_enabled = resolved.settings_version, True
+        else:
+            settings_version, model_enabled = int(model["settings_version"]), False
         pins = source_snapshot(workspace)
         if has_accepted(store, workspace):
             raise JobConflict("publication_changed")
         stamp = now()
         job = {"job_id": "records_" + uuid4().hex, "workspace_id": workspace,
                "request_id": request_id, "status": "queued", "stage": None,
-               "completed_stages": 0, "total_stages": 6, "message": "İşlem sırada",
+               "completed_stages": 0, "total_stages": len(STAGES), "message": "İşlem sırada",
                "revision_id": None, "error_code": None, "queued_at": stamp,
                "updated_at": stamp, "started_at": None, "finished_at": None,
                "heartbeat_at": stamp, "stage_deadline": None,
-               "settings_version": resolved.settings_version, "sources": pins,
+               "settings_version": settings_version, "model_enabled": model_enabled,
+               "sources": pins,
                "publication_head": head(store, workspace), "metadata": {},
                "stages": {stage: {"status": "pending", "started_at": None, "finished_at": None}
                           for stage in STAGES}}

@@ -18,7 +18,7 @@ from .models import (
     Text,
 )
 
-RESERVED = {"id", "type", "i18n", "conflicts", "review_state", "_meta"}
+RESERVED = {"id", "type", "i18n", "conflicts", "review_state", "_meta", "structure_context"}
 
 
 def _scalar(node):
@@ -114,6 +114,8 @@ class RuntimeRecords:
             raise ValueError("unknown record collection")
         response = self.response if collection is None else self._response((collection,))
         schema = response.model_json_schema()
+        # Models propose citations only; structural context is assigned from the source.
+        schema["$defs"]["Evidence"]["properties"].pop("structure_context", None)
 
         def strict(node):
             if isinstance(node, dict):

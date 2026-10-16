@@ -190,6 +190,38 @@ class DuplicateDecision(StrictModel):
     at: Text
 
 
+class CollectionMergeSide(StrictModel):
+    """WP119: one list in a "same list?" question (labels and a few record names, no values)."""
+
+    collection: Text
+    label: Text
+    records: list[Text] = Field(default_factory=list)
+    record_count: int = Field(default=0, ge=0)
+    documents: list[Text] = Field(default_factory=list)
+
+
+class CollectionMergeQuestion(StrictModel):
+    """WP119: an unsure grouping of two structure lists; asked once, the answer is remembered.
+
+    ``signatures`` identify the structure-unit pairs behind the question by document, kind, name
+    and field labels, so the same pair is recognised in later runs and file versions.
+    """
+
+    signatures: list[Text] = Field(min_length=1)
+    reason: Literal["weak_overlap", "would_bridge_collections"]
+    left: CollectionMergeSide
+    right: CollectionMergeSide
+
+
+class CollectionMergeDecision(StrictModel):
+    question_id: Text
+    signatures: list[Text] = Field(min_length=1)
+    collections: list[Text] = Field(min_length=2, max_length=2)
+    same: bool
+    actor: Literal["local"] = "local"
+    at: Text
+
+
 class MergeRevision(StrictModel):
     workspace_id: Text
     id: Text
@@ -206,6 +238,9 @@ class MergeRevision(StrictModel):
     history: list[AnswerHistory] = Field(default_factory=list)
     duplicate_decisions: list[DuplicateDecision] = Field(default_factory=list)
     user_changes: list[UserChange] = Field(default_factory=list)
+    # WP119: "same list?" questions from structure grouping and the answers (kept across runs).
+    collection_merges: list[CollectionMergeQuestion] = Field(default_factory=list)
+    collection_merge_decisions: list[CollectionMergeDecision] = Field(default_factory=list)
 
 
 class FieldChange(StrictModel):

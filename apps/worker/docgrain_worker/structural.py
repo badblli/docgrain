@@ -128,6 +128,9 @@ def _paragraphs(text: str) -> list[tuple[int, int, str, str, int, int]]:
     return result
 
 
+# KULLANILMIYOR (karar 18, WP118): TXT artık Docling'in Markdown okuyucusundan geçiyor (_txt_docling).
+# Bu okuyucu yalnız Docling kurulu olmayan ortamda (host test ortamı) ve Docling'in TXT'yi okuyamadığı
+# durumda yedek olarak çağrılıyor; metin kuralı (özgün metnin birebir aralıkları) yeni yolda da aynı.
 def _txt(source: VerifiedSource) -> StructuralParseResult:
     data = source.path.read_bytes()
     text = data.decode("utf-8-sig", errors="strict")
@@ -142,6 +145,60 @@ def _txt(source: VerifiedSource) -> StructuralParseResult:
                                  [f"line:{n}" for n in range(1, line_count + 1)], [],
                                  {"encoding": "utf-8-sig" if data.startswith(b"\xef\xbb\xbf") else "utf-8",
                                   "line_count": line_count})
+
+
+def _txt_docling(source: VerifiedSource, *, profile: str = "C_tesseract",
+                 remote: Any = None) -> StructuralParseResult:
+    """WP118: TXT structure from Docling's Markdown backend, text from the original file.
+
+    Docling lists ``txt`` under ``InputFormat.MD``; its Markdown backend returns headings, list items and
+    tables, but rewrites text (emphasis markers, escapes, links, soft breaks) and has no character provenance.
+    ``txt_structure.align`` therefore keeps every item's text as the exact original span (100 % of the source
+    words, as before) and uses Docling only for the item kinds, heading levels and table cells.
+    """
+    import json
+
+    from .docling_profiles import build_converter, safe_options
+    from .txt_structure import align
+
+    data = source.path.read_bytes()
+    text = data.decode("utf-8-sig", errors="strict")
+    converter, input_format = build_converter(SourceFormat.MD, profile=profile, remote=remote)
+    line_count = len(text.splitlines())
+    areas = [f"line:{n}" for n in range(1, line_count + 1)]
+    processing_options = {
+        "encoding": "utf-8-sig", "paragraph_strategy": "docling-md-exact-spans-v1",
+        "structure_reader": "docling-md",
+        "pipeline": safe_options(converter.format_to_options[input_format].pipeline_options.model_dump(mode="json")),
+        "adapter_version": "docling-2", "canonical_schema_version": "0.6.0",
+    }
+    with TemporaryDirectory(prefix="docgrain-txt-") as directory:
+        # Docling reads the decoded text (no BOM); offsets below are code points of the same text.
+        path = Path(directory) / "input.md"
+        path.write_text(text, encoding="utf-8", newline="")
+        converted = converter.convert(path, raises_on_error=False)
+    version = importlib.metadata.version("docling")
+    status = str(converted.status)
+    if converted.document is None or status.lower().endswith(("failure", "skipped")):
+        result = _txt(source)
+        result.issues.append(_issue(SourceFormat.TXT, "docling_structure_unavailable",
+                                    "Docling TXT yapısını okuyamadı; metin yapısız paragraflar olarak alındı.",
+                                    impact="document"))
+        result.status = "partial"
+        return result
+    raw = converted.document.export_to_dict()
+    items = [StructuralItem(kind=item.kind, anchor=f"chars:{item.start}:{item.end}",
+                            locator={"kind": "text_span", "start": item.start, "end": item.end},
+                            text=item.text, level=item.level, cells=item.cells, line_range=item.line_range)
+             for item in align(text, raw)]
+    result = StructuralParseResult(
+        SourceFormat.TXT, "docling", version, "complete", items, areas, list(areas), [],
+        {"encoding": "utf-8-sig" if data.startswith(b"\xef\xbb\xbf") else "utf-8",
+         "line_count": line_count, "docling_status": status},
+        processing_options=processing_options)
+    result.legacy_markdown = converted.document.export_to_markdown().encode()
+    result.legacy_json = json.dumps(raw, ensure_ascii=False).encode()
+    return result
 
 
 def _docling(source: VerifiedSource, fmt: SourceFormat, *,
@@ -460,6 +517,15 @@ def _reading_refs(body: dict[str, Any], raw: dict[str, Any], lookup: dict[str, A
     return result
 
 
+TABLE_HEADER_FLAGS = ("column_header", "row_header", "row_section")
+
+
+def _header_flags(cell: dict[str, Any]) -> dict[str, bool] | None:
+    """WP118: Docling's ``TableCell`` header flags, kept as canonical ``source_attributes`` (true ones only)."""
+    flags = {name: True for name in TABLE_HEADER_FLAGS if cell.get(name)}
+    return flags or None
+
+
 def _docling_cells(item: dict[str, Any]) -> list[list[dict[str, Any]]]:
     data = item.get("data", {})
     rows = [[{"value": ""} for _ in range(data.get("num_cols", 0))]
@@ -469,6 +535,9 @@ def _docling_cells(item: dict[str, Any]) -> list[list[dict[str, Any]]]:
         if r < len(rows) and c < len(rows[r]):
             rows[r][c] = {"value": cell.get("text", ""), "row_span": cell.get("row_span", 1),
                           "col_span": cell.get("col_span", 1)}
+            flags = _header_flags(cell)
+            if flags:
+                rows[r][c]["source_attributes"] = flags
     return rows
 
 
@@ -509,6 +578,9 @@ def _xlsx_items(source: VerifiedSource, raw: dict[str, Any], issues: list[ParseI
                     continue
                 cell = sheet.cell(first_row + r, first_col + c)
                 rows[r][c] = _xlsx_cell(sheet, cached[sheet.title], cell, issues, parsed.get("text"))
+                flags = _header_flags(parsed)
+                if flags:
+                    rows[r][c]["source_attributes"] = flags
             start = sheet.cell(first_row, first_col).coordinate
             end = sheet.cell(last_row, last_col).coordinate
             a1 = start if start == end else f"{start}:{end}"
@@ -606,11 +678,19 @@ class DocumentParser:
                                     remote=self.remote)
             result = parse_image(data, source_format, read_prepared)
         else:
-            result = _txt(source) if source_format is SourceFormat.TXT else _docling(
-                source, source_format, profile=self.profile, remote=self.remote)
+            # KULLANILMIYOR (karar 18, WP118): TXT her zaman kendi okuyucumuzdan geçiyordu.
+            # result = _txt(source) if source_format is SourceFormat.TXT else _docling(
+            #     source, source_format, profile=self.profile, remote=self.remote)
+            if source_format is SourceFormat.TXT:
+                import importlib.util
+                # Docling is installed only in the worker image; the host test environment keeps the old reader.
+                result = (_txt_docling(source, profile=self.profile, remote=self.remote)
+                          if importlib.util.find_spec("docling") is not None else _txt(source))
+            else:
+                result = _docling(source, source_format, profile=self.profile, remote=self.remote)
             from .docling_dispatch import mark_document_area
             mark_document_area(result)
-        if source_format is SourceFormat.TXT:
+        if source_format is SourceFormat.TXT and result.parser == "deterministic-text":
             result.processing_options = {"encoding": "utf-8-sig", "paragraph_strategy": "exact-spans-v1"}
         if self.bbox_tolerance:
             result.processing_options["bbox_tolerance_points"] = self.bbox_tolerance

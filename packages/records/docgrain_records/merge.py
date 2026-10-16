@@ -27,6 +27,12 @@ from .merge_models import (
 )
 from .models import Text
 from .runtime import HOSPITALITY
+from .structure_context import (
+    StructureIndex,
+    contexts_conflict,
+    identity_context,
+    structure_vocabulary,
+)
 from .verify import _blocks, normalize_quote
 from .verify import _source_key as evidence_source_key
 
@@ -59,6 +65,7 @@ def _keys(document, item):
 
 def _facts(document, item, runtime):
     blocks = _blocks(document.context)
+    structure = StructureIndex(document.context)
     source = normalize_quote(document.context)
     _, fields_model = runtime.models[item.record.type]
     for field in fields_model.model_fields:
@@ -79,7 +86,8 @@ def _facts(document, item, runtime):
                     or not quote or quote not in blocks.get(locator, source)):
                     raise ValueError("merge requires verified evidence in the pinned source context")
                 evidence.append(VersionedEvidence(
-                    **_payload(citation), source_version_id=document.source_version_id,
+                    **(_payload(citation) | {"structure_context": structure.at(citation.locator, citation.quote)}),
+                    source_version_id=document.source_version_id,
                     knowledge_revision_id=document.knowledge_revision_id,
                 ))
             yield field, fact.lang, fact.value, evidence
@@ -91,6 +99,11 @@ def _match(workspace_id, entries, identity_map):
     anchors = [set() for _ in entries]
     strong, weak = defaultdict(list), defaultdict(list)
     keys = []
+    vocabulary = structure_vocabulary(item.record for _, item in entries)
+
+    def conflict(a, b):
+        return contexts_conflict(entries[a][1].record, entries[b][1].record, vocabulary)
+
     for index, (document, item) in enumerate(entries):
         source, aliases, names = _keys(document, item)
         keys.append((source, aliases, names))
@@ -108,6 +121,10 @@ def _match(workspace_id, entries, identity_map):
     def union(left, right):
         left, right = root(left), root(right)
         if left != right:
+            a = [i for i in range(len(entries)) if root(i) == left]
+            b = [i for i in range(len(entries)) if root(i) == right]
+            if any(conflict(i, j) for i in a for j in b):
+                return
             parents[max(left, right)] = min(left, right)
 
     # Known IDs themselves connect translated/renamed inputs after a restart.
@@ -122,6 +139,7 @@ def _match(workspace_id, entries, identity_map):
             union(indices[0], index)
     for record_id, indices in known.items():
         excluded = any(keys[b][0] in entries[a][1].match_exclusions
+                       or conflict(a, b)
                        for a in indices for b in indices)
         if not excluded:
             for index in indices[1:]:
@@ -192,6 +210,10 @@ def _match(workspace_id, entries, identity_map):
                 "rec_", [workspace_id, min(keys[index][0] for index in partition)])
             for index in partition:
                 resolved[index] = record_id
+    for record_id in set(resolved.values()):
+        group = [i for i, value in resolved.items() if value == record_id]
+        if any(conflict(a, b) for a in group for b in group):
+            raise ValueError("identity links would merge conflicting structural contexts")
     for index, record_id in resolved.items():
         source, aliases, names = keys[index]
         for key in {source} | aliases | names:
@@ -201,6 +223,10 @@ def _match(workspace_id, entries, identity_map):
 
 def _merge(state, revision_id, documents, decisions, alias_decisions, runtime):
     entries = [(document, item) for document in documents for item in document.records]
+    # Re-derive identity boundaries even for imported/old artifacts. Model metadata cannot grant a merge.
+    for document, item in entries:
+        structure = StructureIndex(document.context)
+        item.record.structure_context = identity_context(item.record, structure)
     # Verify before identity allocation, even if a model was bypassed or mutated.
     facts = [list(_facts(document, item, runtime)) for document, item in entries]
     # Only reviewed alias decisions may consolidate established IDs. Historical

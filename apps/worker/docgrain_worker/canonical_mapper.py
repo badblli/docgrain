@@ -38,7 +38,7 @@ from docgrain_domain.canonical import (
 from docgrain_domain.canonical.lifecycle import ProcessingSpec
 
 from .pdf_geometry import normalized_pdf_box
-from .structural import ParseIssue, StructuralParseResult
+from .structural import TABLE_HEADER_FLAGS, ParseIssue, StructuralParseResult
 
 
 class CanonicalMapper:
@@ -81,6 +81,7 @@ class CanonicalMapper:
         previous_list: ListNode | None = None
         previous_part = None
         ocr_engine = result.processing_options.get("ocr_profile", {}).get("engine", "easyocr")
+        schema_version = processing.schema_version if processing else "0.2.0"
         pdf = pymupdf.open(pdf_path) if pdf_path is not None and result.source_format.value == "pdf" else None
         try:
             for item in result.items:
@@ -177,7 +178,8 @@ class CanonicalMapper:
                                     value=cell.get("value"), formula=cell.get("formula"),
                                     cached_value=cell.get("cached_value"), display_text=cell.get("display_text"),
                                     row_span=cell.get("row_span", 1), col_span=cell.get("col_span", 1),
-                                    source_attributes=cell.get("source_attributes"),
+                                    # KULLANILMIYOR (karar 18, WP118): source_attributes=cell.get("source_attributes"),
+                                    source_attributes=_cell_attributes(cell, schema_version),
                                     annotation=_extraction_annotation(cell.get("text_origin", "native"), cell.get("ocr_confidence"),
                                                                       [cell_evidence_id], engine=ocr_engine) if cell_evidence_id else None,
                                 ))
@@ -234,6 +236,14 @@ class CanonicalMapper:
                       **({"docling_confidence": result.source_metadata["docling_confidence"]}
                          if "docling_confidence" in result.source_metadata else {})},
         )
+
+
+def _cell_attributes(cell: dict[str, Any], schema_version: str) -> dict[str, Any] | None:
+    """WP118: Docling's table header flags are 0.6.0 source facts; older snapshot schemas omit them."""
+    attributes = cell.get("source_attributes")
+    if attributes and schema_version != "0.6.0":
+        attributes = {key: value for key, value in attributes.items() if key not in TABLE_HEADER_FLAGS} or None
+    return attributes
 
 
 def _annotation(producer_id: str, evidence_ids: list[str]) -> Annotation:

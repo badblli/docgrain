@@ -109,8 +109,8 @@ def add_collection(base: MergeRevision, value: NewCollection, who="local"):
     return MergeRevision.model_validate_json(revision.model_dump_json(round_trip=True))
 
 
-def _candidate(value, note, who, at):
-    return FactCandidate(id="fact_" + uuid4().hex, value=value, lang="tr",
+def _candidate(value, note, who, at, lang="tr"):
+    return FactCandidate(id="fact_" + uuid4().hex, value=value, lang=lang,
                          evidence=[UserEditEvidence(who=who, at=at, note=note)],
                          review_state="accepted")
 
@@ -128,11 +128,13 @@ def set_value(base: MergeRevision, record_id: str, field: str, update: ManualVal
         record.fields[field] = MergedField(primary_lang="tr", candidates=[
             _candidate(value, update.note, update.who, revision.updated_at)])
     else:
-        merged.primary_lang = "tr"
+        # The shown value is the primary language; other languages keep their own values
+        # (same per-language rule as an EditAnswer in review.answer_revision).
+        lang = merged.primary_lang
         for candidate in merged.candidates:
-            if candidate.review_state == "accepted":
+            if candidate.lang == lang and candidate.review_state == "accepted":
                 candidate.review_state = "rejected"
-        merged.candidates.append(_candidate(value, update.note, update.who, revision.updated_at))
+        merged.candidates.append(_candidate(value, update.note, update.who, revision.updated_at, lang))
     return MergeRevision.model_validate_json(revision.model_dump_json(round_trip=True))
 
 
