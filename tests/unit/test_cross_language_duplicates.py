@@ -94,7 +94,8 @@ def test_agreeing_hours_merge_and_keep_both_evidenced_names(tmp_path, left, righ
                extraction(active, "other", right, lang, hours="18.00 – 22.00")]
     revision, matches = merge(tmp_path, results)
     assert len(revision.records) == 1
-    assert matches.proposals[0].reviewer == "rule:translated-name-and-field"
+    # Pairs the existing scoring already merges keep their rule; the rest use the WP115 rule.
+    assert matches.proposals[0].reviewer in {"rule:translated-name-and-field", "rule:name-and-numbers"}
     names = revision.records[0].fields["name"]
     assert {c.value for c in names.candidates} == {left, right}
     assert names.accepted("en").value == left and names.accepted(lang).value == right
@@ -260,3 +261,22 @@ def test_existing_wp111_republish_recomputes_duplicate_counts_without_model(
         assert not republish.republish(workspace)["published"]
     else:
         assert not report["published"]
+
+
+def test_existing_same_decision_is_kept_for_marked_name_variants(tmp_path):
+    # Real case: "Terrace Lagoon Family Suite*" / "Terrace Lagoon Family Suite" share a name key
+    # but differ in a text field, so the translated rule says "unsure". It must not replace the
+    # existing "same" (tokens + numbers), or the neighbouring "Terrace Family Suite" (token
+    # overlap 0.75 + equal numbers) becomes the unique best pair and two rooms merge.
+    active = runtime()
+    a = extraction(active, "a", "Terrace Lagoon Family Suite*", hours="2", location="Lagoon")
+    a.records.append(extraction(active, "a", "Terrace Family Suite*", hours="2", location="Garden").records[0]
+                     .model_copy(update={"id": "a:2"}))
+    b = extraction(active, "b", "Terrace Lagoon Family Suite", hours="2", location="Lagoon side")
+    b.records.append(extraction(active, "b", "Terrace Family Suite", hours="2",
+                                location="Garden view").records[0]
+                     .model_copy(update={"id": "b:2"}))
+    revision, _ = merge(tmp_path, [a, b])
+    names = sorted(sorted(c.value for c in r.fields["name"].candidates) for r in revision.records)
+    assert ["Terrace Family Suite", "Terrace Lagoon Family Suite*"] not in names
+    assert ["Terrace Family Suite*", "Terrace Lagoon Family Suite"] not in names
