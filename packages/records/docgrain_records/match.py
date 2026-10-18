@@ -13,7 +13,6 @@ from pydantic import Field, ValidationError, model_validator
 from .model import ChatClient, ModelResponseError
 from .models import ExtractionResult, StrictModel, Text
 from .place_names import (
-    comparison_key,
     field_support,
     record_name_keys,
     record_values,
@@ -200,8 +199,17 @@ def _numeric_fields(record):
 
 
 def _score(left, right, parallel, vocabulary=None):
-    if translated_names(left, right):
+    # WP115 fix: the translated-name rule only adds merges. A pair the existing scoring already
+    # calls "same" keeps that result (e.g. "Suite*" / "Suite" with agreeing numbers); replacing it
+    # made the correct pair "unsure" and let a different room win the unique-best-pair check.
+    # KULLANILMIYOR (karar 18): if translated_names(left, right): return _translated_score(...)
+    legacy = _legacy_score(left, right, parallel, vocabulary)
+    if legacy[2] != "same" and translated_names(left, right):
         return _translated_score(left, right, vocabulary)
+    return legacy
+
+
+def _legacy_score(left, right, parallel, vocabulary=None):
     signals = []
     if contexts_conflict(left, right, vocabulary):
         signals.append(Signal(kind="structure_conflict", weight=-1,
@@ -257,9 +265,12 @@ def _blocking_keys(record):
         yield "token", token
     for key in record_name_keys(record):
         yield "translated_name", key
-    for field, values in record_values(record).items():
-        for value in values:
-            yield "field", (field, comparison_key(value, field))
+    # KULLANILMIYOR (karar 18): any shared field value (e.g. equal opening hours) admitted a pair.
+    # On real companies the extra pairs made identical names ambiguous and paired different rooms;
+    # translated names are already admitted by the "translated_name" key above.
+    # for field, values in record_values(record).items():
+    #     for value in values:
+    #         yield "field", (field, comparison_key(value, field))
     for field in sorted(_numeric_fields(record)):
         numbers = _numbers(getattr(record, field, None), field)
         if numbers is not None:
@@ -288,7 +299,7 @@ def _strong_rule(left, right, proposal, vocabulary=None):
         return None
     if contexts_conflict(left, right, vocabulary):
         return None
-    if translated_names(left, right):
+    if any(s.kind == "translated_name" for s in proposal.signals):
         if (any(s.kind == "field_agreement" for s in proposal.signals)
             and not any(s.kind in {"field_conflict", "source_conflict"} for s in proposal.signals)):
             return "translated-name-and-field"
@@ -337,11 +348,11 @@ def _translated_score(left, right, vocabulary=None):
 def identity_conflict(left, right, *, strong_names=False, vocabulary=None):
     if contexts_conflict(left, right, vocabulary):
         return True
-    if translated_names(left, right):
+    _, signals, decision = _score(left, right, False, vocabulary)
+    if any(s.kind == "translated_name" for s in signals):
         return bool(field_support(record_values(left), record_values(right))[1]
                     or left.conflicts or right.conflicts)
-    return (_score(left, right, False, vocabulary)[2] == "different"
-            and not (strong_names and identical_name(left, right)))
+    return decision == "different" and not (strong_names and identical_name(left, right))
 
 
 def accept_strong_matches(results, matches):
