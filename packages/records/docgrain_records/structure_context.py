@@ -157,11 +157,35 @@ def pin_structure(context, snapshot):
         return context
     keys = {object_id: key for object_id, key in index.aliases.items()}
     paths = {}
+    evidence_pages = {e["id"]: (e.get("locator") or {}).get("page_number")
+                      for e in snapshot.get("evidence", [])}
+    paginated = any(page is not None for page in evidence_pages.values())
+
+    def provenance(node):
+        return (node.get("annotation") or {}).get("provenance") or {}
+
+    def pages(node):
+        if not paginated:
+            return {None}  # Non-paginated documents are one page.
+        return {evidence_pages[e] for e in provenance(node).get("evidence_ids", [])
+                if evidence_pages.get(e) is not None}
+
+    # Docling's native text items (including list text and table cells), not empty containers.
+    native_pages = set()
+    for node in nodes.values():
+        has_text = (any(str(node.get(field) or "").strip() for field in ("heading", "text")) or any(
+            cell.get("value") is not None and str(cell["value"]).strip()
+            for row in node.get("rows", []) for cell in row))
+        if has_text and not provenance(node).get("confidence_method"):
+            native_pages.update(pages(node))
 
     def visit(node_id, ancestors):
         node = nodes[node_id]
         path = ancestors
-        if node.get("kind") == "section" and node.get("heading") and node_id in keys:
+        image_text = (str(provenance(node).get("confidence_method") or "").endswith((":ocr", ":mixed"))
+                      and bool(pages(node) & native_pages))
+        # KULLANILMIYOR (karar 18, WP123): if node.get("kind") == "section" and node.get("heading") and node_id in keys:
+        if node.get("kind") == "section" and node.get("heading") and node_id in keys and not image_text:
             path = [*ancestors, StructureHeading(locator=keys[node_id], title=node["heading"])]
         paths[node_id] = path
         for child in node.get("children", []):
@@ -195,9 +219,19 @@ def row_header_column(node):
     return min(columns) if columns else None
 
 
+def structural_label(title):
+    """Ignore symbol-only labels; one-letter block names and numbered floors remain structural."""
+    # The numero sign is a symbol here even though NFKC expands it to "No".
+    content = unicodedata.normalize("NFKC", (title or "").replace("№", ""))
+    return normalized(title) if any(char.isalpha() or char.isdigit() for char in content) else ""
+
+
 def context_signature(context):
-    return (tuple(normalized(h.title) for h in context.heading_path),
-            normalized(context.row_header or ""), normalized(context.section_title or ""))
+    # KULLANILMIYOR (karar 18, WP123):
+    # return (tuple(normalized(h.title) for h in context.heading_path),
+    #         normalized(context.row_header or ""), normalized(context.section_title or ""))
+    return (tuple(label for h in context.heading_path if (label := structural_label(h.title))),
+            structural_label(context.row_header), structural_label(context.section_title))
 
 
 def _context_objects(record):
@@ -219,9 +253,11 @@ def _labels(record):
     """Distinguishing structural labels: containing heading titles and table row headers."""
     labels = set()
     for context in _context_objects(record):
-        labels.update(normalized(h.title) for h in context.heading_path)
-        if context.row_header:
-            labels.add(normalized(context.row_header))
+        # KULLANILMIYOR (karar 18, WP123): labels.update(normalized(h.title) for h in context.heading_path)
+        # KULLANILMIYOR (karar 18, WP123): if context.row_header: labels.add(normalized(context.row_header))
+        labels.update(label for h in context.heading_path if (label := structural_label(h.title)))
+        if label := structural_label(context.row_header):
+            labels.add(label)
     return labels
 
 

@@ -199,6 +199,10 @@ class MemoryJobs:
 
 @pytest.fixture
 def setup(tmp_path, monkeypatch):
+    from docgrain_worker import republish
+
+    # WP123: the synthetic pipeline documents have no stored canonical structure.
+    monkeypatch.setattr(republish, "_load_structure_snapshot", lambda *_: None)
     settings = get_settings()
     monkeypatch.setattr(settings, "use_fixtures", False)
     monkeypatch.setattr(settings, "records_publication_root", str(tmp_path))
