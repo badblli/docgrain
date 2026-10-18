@@ -71,6 +71,7 @@ class UserChange(StrictModel):
     who: Text
     at: Text
     note: str = ""
+    fill_job_id: Text | None = None
 
 
 class FactCandidate(StrictModel):

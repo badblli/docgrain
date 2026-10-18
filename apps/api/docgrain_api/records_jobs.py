@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from docgrain_records.auto_accept import human_accepted
+from docgrain_records.discovery_models import WorkspaceSchema
 
 from . import records_jobs_repository as jobs
 from . import repository
@@ -15,6 +16,12 @@ from .workspace_settings import get_workspace_model, resolve_workspace_model
 QUEUE_NAME = "docgrain:records"
 # WP119 (karar 21): "structure" builds collections from Docling tables/lists before any model.
 STAGES = ("structure", "discover", "accept_schema", "extract", "match", "merge", "publish")
+FILL_STAGES = ("fill", "publish")
+FILL_LABELS = {"fill": "Yeni alan belgelerden dolduruluyor", "publish": "Yayın hazırlanıyor"}
+FILL_STAGE_TIMEOUTS = {"fill": 3600, "publish": 300}
+FILL_FALLBACK = "Alan eklendi; belgelerden doldurulamadı. Değerleri elle girebilirsiniz."
+FILL_QUEUED = "Alan eklendi; değerler belgelerden aranıyor."
+FILL_MODEL_OFF = "Model kapalı; alanı elle doldurabilirsiniz."
 LABELS = dict(zip(STAGES, (
     "Tablolar ve listeler okunuyor", "Listeler bulunuyor", "Bilgi yapısı kontrol ediliyor",
     "Bilgiler çıkarılıyor", "Aynı kayıtlar karşılaştırılıyor", "Bilgiler birleştiriliyor",
@@ -147,13 +154,15 @@ def finish(workspace, job_id, code=None, revision_id=None):
     def mutate(job):
         job.update(status=("needs_review" if code == "schema_review" else "failed") if code else "done",
                    error_code=code, message=ERRORS[code] if code else
-                   "Bilgiler hazır; onay bekleyenleri Sorular'dan kontrol edin",
+                   ("Yeni alan dolduruldu; onay bekleyenleri Sorular'dan kontrol edin"
+                    if job.get("kind") == "field_fill" else
+                    "Bilgiler hazır; onay bekleyenleri Sorular'dan kontrol edin"),
                    revision_id=revision_id, finished_at=now())
         if job["stage"]:
             stage = job["stages"][job["stage"]]
             stage.update(status=job["status"] if code else "done", finished_at=now())
         if not code:
-            job["completed_stages"] = len(STAGES)
+            job["completed_stages"] = job["total_stages"]
     return jobs.change(workspace, job_id, mutate)
 
 
@@ -199,7 +208,10 @@ def start(workspace, request_id):
     store = pack_store()
     with store._workspace_lock(workspace):
         reap_locked(workspace)
-        existing = jobs.requested(workspace, request_id) or jobs.active(workspace)
+        active = jobs.active(workspace)
+        if active and active.get("kind") == "field_fill":
+            raise JobConflict("publication_changed")
+        existing = jobs.requested(workspace, request_id) or active
         if existing:
             jobs.remember_request(workspace, request_id, existing["job_id"])
             return existing["job_id"]
@@ -248,5 +260,85 @@ def block_answer(workspace):
     if get_settings().use_fixtures:
         raise QuestionStale("Örnek görünümde bilgiler değiştirilemez.")
     reap_locked(workspace)
-    if jobs.active(workspace):
+    active = jobs.active(workspace)
+    if active and active.get("kind") == "field_fill":
+        raise QuestionStale("Yeni alan dolduruluyor; bitince tekrar deneyin.")
+    if active:
         raise QuestionStale("Bilgiler hazırlanıyor; işlem bitince cevaplayın.")
+
+
+def context_job(store, revision):
+    """Walk publication ancestry without reading document contexts in the API."""
+    ancestor = revision.parent_id
+    while ancestor:
+        manifest = store.manifest(revision.workspace_id, ancestor)
+        job_id = manifest.get("record_job_id")
+        if job_id:
+            job = jobs.get(revision.workspace_id, job_id)
+            if not job or job.get("kind") != "field_fill":
+                return job_id
+        ancestor = store._source(revision.workspace_id, ancestor).parent_id
+    return None
+
+
+def prepare_field_fill(store, revision, collection, field):
+    """Plan a field job under the workspace lock, without DB, queue or model I/O."""
+    workspace = revision.workspace_id
+    if not get_workspace_model(workspace)["enabled"]:
+        return None, FILL_MODEL_OFF
+    try:
+        if get_settings().use_fixtures:
+            return None, FILL_FALLBACK
+        resolved = resolve_workspace_model(workspace)
+        schema = WorkspaceSchema.model_validate(revision.workspace_schema)
+        definition = next(item for item in schema.collections if item.key == collection)
+        pinned = context_job(store, revision)
+        if field == definition.identity or not schema.sources or not pinned:
+            return None, FILL_FALLBACK
+        stamp = now()
+        job_id = "records_" + uuid4().hex
+        job = {"job_id": job_id, "workspace_id": workspace, "request_id": job_id,
+               "kind": "field_fill", "collection": collection, "field": field,
+               "base_revision_id": revision.id, "context_job_id": pinned,
+               "status": "queued", "stage": None, "completed_stages": 0,
+               "total_stages": len(FILL_STAGES), "message": "İşlem sırada",
+               "revision_id": None, "error_code": None, "queued_at": stamp,
+               "updated_at": stamp, "started_at": None, "finished_at": None,
+               "heartbeat_at": stamp, "stage_deadline": None,
+               "settings_version": resolved.settings_version, "model_enabled": True,
+               "sources": [], "publication_head": revision.id, "metadata": {},
+               "stages": {stage: {"status": "pending", "started_at": None, "finished_at": None}
+                          for stage in FILL_STAGES}}
+    except Exception:  # noqa: BLE001 - schema succeeds even if job preparation is unavailable.
+        return None, FILL_FALLBACK
+    return job, FILL_QUEUED
+
+
+def dispatch_field_fill(job):
+    """The empty field revision is already published; persist and queue its job."""
+    created = False
+    try:
+        jobs.create(job)
+        created = True
+        queue_client().lpush(QUEUE_NAME, job["job_id"])
+    except Exception:  # noqa: BLE001 - never expose DB, queue or provider exception text.
+        if created:
+            try:
+                finish(job["workspace_id"], job["job_id"], "dispatch")
+            except Exception:  # noqa: BLE001 - the field is published; GET reaps a stale row.
+                return False
+        return False
+    return True
+
+
+def field_fill_note(workspace, change):
+    """Resolve the current user-facing note without changing an immutable revision."""
+    try:
+        job = jobs.get(workspace, change.fill_job_id)
+    except Exception:  # noqa: BLE001 - a schema read must not fail on job storage; keep the stored note.
+        return change.note
+    if job and job["status"] in jobs.ACTIVE:
+        return FILL_QUEUED
+    if job and job["status"] == "done":
+        return change.note
+    return FILL_FALLBACK

@@ -27,13 +27,18 @@ def list_revisions(workspace_id: str):
 
 
 def repository():
-    from ..field_fill import fill_new_field
-    from ..records_jobs import block_answer
+    from ..records_jobs import (
+        block_answer,
+        dispatch_field_fill,
+        field_fill_note,
+        prepare_field_fill,
+    )
 
     root = get_settings().records_publication_root
     if not root:
         raise HTTPException(404, "record publications unavailable")
-    return RecordsRepository(root, before_answer=block_answer, field_filler=fill_new_field)
+    return RecordsRepository(root, before_answer=block_answer, field_fill_preparer=prepare_field_fill,
+                             field_fill_dispatcher=dispatch_field_fill, field_note_resolver=field_fill_note)
 
 
 def _review_response(operation, workspace_id, *args, **kwargs):
