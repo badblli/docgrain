@@ -22,7 +22,8 @@ from .place_names import name_keys
 from .runtime import revision_runtime
 
 # KULLANILMIYOR (karar 18): RULES_VERSION = "wp111"
-RULES_VERSION = "wp115"
+# KULLANILMIYOR (karar 18, WP123): RULES_VERSION = "wp115"
+RULES_VERSION = "wp123"
 RULE_SINGLE = "rule:verified-single-source"
 RULE_AGREEING = "rule:verified-agreeing-sources"
 RULE_FORMAT = "rule:format-equal-variant"

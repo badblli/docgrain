@@ -22,6 +22,8 @@ def offline(monkeypatch):
         pytest.fail("no network or real model in duplicate tests")
     monkeypatch.setattr(socket.socket, "connect", forbidden)
     monkeypatch.setattr(socket, "create_connection", forbidden)
+    # WP123: these legacy-runtime tests have no canonical snapshot; keep their stored pins.
+    monkeypatch.setattr(republish, "_load_structure_snapshot", lambda *_: None)
 
 
 def runtime(identity="name"):
