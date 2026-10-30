@@ -94,9 +94,11 @@ def test_retry_never_reports_fake_acceptance(monkeypatch, live_repository):
         assert "no work was queued" in response.json()["detail"]
 
 
-def test_live_diff_is_count_only_and_document_scoped(live_repository):
+def test_live_diff_preserves_counts_and_document_scope(live_repository, monkeypatch):
+    # KULLANILMIYOR (karar 18): count-only live response; WP124 now requires Docling input.
     head, base = (v.model_copy(deep=True) for v in fixtures.VERSIONS)
     live_repository["versions"].update({head.id: head, base.id: base})
+    monkeypatch.setattr(versions, "get_text", lambda _: '{"body": {"children": []}}')
     result = client.get(f"/v1/versions/{head.id}/diff?base={base.id}").json()
     assert result["entries"] == []
     assert result["chunk_delta"] == head.chunk_count - base.chunk_count

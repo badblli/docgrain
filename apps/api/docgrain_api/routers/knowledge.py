@@ -53,6 +53,27 @@ def latest_knowledge(document_id: str) -> KnowledgeResponse:
     if heads is None or heads[0] is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "canonical knowledge not found")
     snapshot = store.get_snapshot(heads[0])
+    # KULLANILMIYOR (karar 18, WP124): returning the canonical head unconditionally could
+    # serve a new file version's parse before its job finished usable (copy: unused/wp124/
+    # knowledge.py). Walk back from the head to the latest version's source instead.
+    version_id = getattr(document, "latest_version_id", None)
+    if version_id is not None:
+        version = repository.get_version(document_id, version_id)
+        if version is None or version.status not in {"done", "partial"}:
+            raise HTTPException(404, "canonical knowledge not ready")
+        visited = set()
+        while snapshot is not None:
+            revision = snapshot.knowledge_revision
+            if revision.id in visited or (snapshot.document_id, snapshot.workspace_id) != (
+                document_id, document.workspace_id
+            ):
+                snapshot = None
+                break
+            visited.add(revision.id)
+            if snapshot.source_version.content_sha256 == version.content_sha256:
+                break
+            snapshot = store.get_snapshot(revision.parent_revision_id) if revision.parent_revision_id else None
+        heads = (snapshot.knowledge_revision.id if snapshot else None, heads[1])
     if snapshot is None or (snapshot.document_id, snapshot.workspace_id,
                             snapshot.knowledge_revision.id) != (
         document_id, document.workspace_id, heads[0]

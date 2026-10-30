@@ -42,6 +42,9 @@ class DocumentVersion(BaseModel):
     revision: int = Field(ge=1, description="1-based; never reused")
     content_sha256: str = Field(min_length=64, max_length=64)
     source_uri: str
+    # WP124: nullable for historical rows; readers fall back to Document metadata.
+    filename: str | None = None
+    mime_type: str | None = None
     byte_size: int
     page_count: int = 0
     chunk_count: int = 0

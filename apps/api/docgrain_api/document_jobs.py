@@ -36,6 +36,27 @@ def progress(connection, job_id, token):
         return cur.rowcount == 1
 
 
+def promote_usable_version(connection, version_id):
+    """Called in the worker's final transaction, after verified outputs and job status.
+
+    done/partial jobs with published canonical outputs are usable. Row locking
+    serializes completions; an older job finishing late cannot roll back latest.
+    Failure/lease recovery never calls this function.
+    """
+    with connection.cursor() as cur:
+        cur.execute("""SELECT d.id FROM documents d JOIN document_versions v ON v.document_id=d.id
+            WHERE v.id=%s FOR UPDATE OF d""", (version_id,))
+        cur.execute("""UPDATE documents d SET latest_version_id=v.id, updated_at=NOW()
+            FROM document_versions v
+            WHERE v.id=%s AND v.document_id=d.id AND v.workspace_id=d.workspace_id
+              AND v.status IN ('done', 'partial')
+              AND EXISTS (SELECT 1 FROM jobs j WHERE j.document_version_id=v.id
+                          AND j.status IN ('done', 'partial'))
+              AND (d.latest_version_id IS NULL OR d.latest_version_id=v.id OR
+                   v.revision > (SELECT previous.revision FROM document_versions previous
+                                 WHERE previous.id=d.latest_version_id))""", (version_id,))
+
+
 def failure_stages(stages, code, message, failed_stage="extract"):
     for stage in stages:
         stage["status"] = "failed" if stage["stage"] == failed_stage else "skipped"
