@@ -25,6 +25,7 @@ from docgrain_api.workspace_settings import (
     resolve_workspace_model,
 )
 from docgrain_records.auto_accept import apply_review_rules
+from docgrain_records.carry_forward import carry_forward, unchanged
 from docgrain_records.collection_merge import remembered
 from docgrain_records.discovery import (
     FIELD_SYNONYMS,
@@ -35,7 +36,11 @@ from docgrain_records.discovery import (
     verify_examples,
 )
 from docgrain_records.discovery_cli import load_workspace_documents
-from docgrain_records.discovery_models import DiscoveryResponse, Example
+from docgrain_records.discovery_models import (
+    DiscoveryResponse,
+    Example,
+    WorkspaceSchema,
+)
 from docgrain_records.discovery_store import (
     accept_schema,
     source_directory,
@@ -53,7 +58,7 @@ from docgrain_records.match_merge import merge_matches, write_json
 from docgrain_records.merge_models import MergeRevision
 from docgrain_records.model import ChatClient
 from docgrain_records.models import ExtractionUsage
-from docgrain_records.runtime import load_runtime
+from docgrain_records.runtime import RuntimeRecords, load_runtime
 from docgrain_records.structure_records import build_structure_plan, reduced_context
 from docgrain_records.verify import _coalesce_document_records, verify_response
 
@@ -266,6 +271,12 @@ class Pipeline:
         self.unverified = []
         self.measurements = {"stages": {}, "calls": []}
         self.measurement_lock = Lock()
+        self.base = (self.store._source(self.workspace, job["publication_head"])
+                     if job.get("publication_head") else None)
+        self.reused = {}
+        self.saved_discovery = None
+        self.cached_schema = (WorkspaceSchema.model_validate(self.base.workspace_schema)
+                              if self.base and self.base.workspace_schema else None)
         # WP113: parallel extraction calls (1-32); record and usage order stay in plan order.
         self.concurrency = concurrency or get_settings().records_extraction_concurrency
         self.root.mkdir(parents=True, mode=0o700, exist_ok=True)
@@ -290,9 +301,74 @@ class Pipeline:
             raise PipelineError("source_changed")
 
     def publication_unchanged(self):
+        if lifecycle.head(self.store, self.workspace) != self.job["publication_head"]:
+            raise PipelineError("publication_changed")
+
+    # KULLANILMIYOR (karar 18, WP125): onaylı herhangi bir alan işi durduruyordu.
+    # Dosyanın WP125 öncesi tam kopyası: unused/wp125/records_pipeline.py.
+    def _publication_unchanged_before_wp125(self):
         if (lifecycle.head(self.store, self.workspace) != self.job["publication_head"]
                 or lifecycle.has_accepted(self.store, self.workspace)):
             raise PipelineError("publication_changed")
+
+    def _reuse_documents(self):
+        """Find extraction artifacts through review/fill ancestry, only for head pins.
+
+        A cache is private to its workspace and published ancestor job. Missing/old
+        artifacts cause normal processing; an unrelated run can never supply results.
+        """
+        if self.base is None or self.cached_schema is None:
+            return
+        ancestor = self.base
+        root = None
+        while ancestor:
+            job_id = self.store.manifest(self.workspace, ancestor.id).get("record_job_id")
+            if job_id:
+                candidate = self.store._path(self.workspace) / "runtime" / sha256(job_id.encode()).hexdigest()
+                if (candidate / "records").is_dir():
+                    root = candidate
+                    break
+            ancestor = self.store._source(self.workspace, ancestor.parent_id) if ancestor.parent_id else None
+        if root is None:
+            return
+        manifest = (json.loads((root / "reuse.json").read_bytes())
+                    if (root / "reuse.json").is_file() else {})
+        plan = (json.loads((root / "structure" / "plan.json").read_bytes())
+                if (root / "structure" / "plan.json").is_file() else {})
+        previous = {p.document_id: p for p in self.base.documents}
+        for doc in self.documents:
+            key = doc.source.document_id
+            if not unchanged(previous.get(key), doc.source):
+                continue
+            path = root / "records" / sha256(key.encode()).hexdigest() / "records.json"
+            # Pre-WP125 jobs already stored these immutable per-document artifacts.
+            source_path = path.with_name("source.json")
+            cached_pin = manifest.get("documents", {}).get(key) or (
+                json.loads(source_path.read_bytes()) if source_path.is_file() else None)
+            if not cached_pin or any(cached_pin.get(k) != getattr(doc.source, k) for k in (
+                    "content_sha256", "knowledge_revision_id")) or not path.is_file():
+                continue
+            result = json.loads(path.read_bytes())
+            if result.get("failures"):
+                continue  # Retry incomplete extraction rather than permanently caching gaps.
+            # A document that needed the model while it was off is read once the model is on.
+            pending = cached_pin.get("model_pending", key in plan.get("documents_needing_model", [])
+                                     and not cached_pin.get("usage"))
+            if pending and self.model_enabled:
+                continue
+            calls = cached_pin.get("model_calls", len((cached_pin.get("usage") or {}).get("calls", [])))
+            self.reused[key] = (result, calls, pending)
+        discovery = manifest.get("discovery")
+        if discovery and set(discovery["documents"]) <= set(self.reused):
+            self.saved_discovery = discovery
+
+    def _accepted_update_schema(self):
+        """Preserve accepted definitions (including user additions); pin current sources."""
+        schema = combine_schemas(self.cached_schema, self.schema)
+        schema.sources = source_pins(self.documents, self.workspace)
+        self.schema = schema
+        self.runtime = RuntimeRecords(schema)
+        write_json(self.root / "schema" / f"schema.v{schema.version}.json", schema.model_dump(mode="json"))
 
     def metadata(self, **values):
         def mutate(job):
@@ -347,6 +423,8 @@ class Pipeline:
         self.sources_unchanged()
         self.publication_unchanged()
         self._load_documents()
+        self._reuse_documents()
+        changed = [doc for doc in self.documents if doc.source.document_id not in self.reused]
         api_url = os.environ.get("DOCGRAIN_INTERNAL_API_URL", "http://api:8000")
         try:
             doclings = self.docling_loader(api_url, self.workspace, self.job["sources"])
@@ -354,13 +432,15 @@ class Pipeline:
             logger.warning("docling structure could not be loaded")
             doclings = {}
         decisions, self.remembered_decisions = self._remembered()
+        # WP125: grouping still sees every document (cross-document lists and "same list?"
+        # answers stay consistent); records of reused documents are not rebuilt or re-read.
         self.plan = build_structure_plan(self.documents, doclings, self.workspace, decisions)
         write_json(self.root / "structure" / "plan.json", {
             **self.plan.report(), "candidates": self.plan.candidates,
             "questions": [q.model_dump(mode="json") for q in self.plan.questions],
             "schema": self.plan.schema.model_dump(mode="json") if self.plan.schema else None})
         needs = self.plan.needs_model
-        self.fallback = needs if self.model_enabled else []
+        self.fallback = [key for key in needs if key not in self.reused] if self.model_enabled else []
         names = {doc.source.document_id: doc.source.filename for doc in self.documents}
         self.structure_report = {
             **self.plan.report(), "model_enabled": self.model_enabled,
@@ -368,7 +448,10 @@ class Pipeline:
             "documents_without_model": [] if self.model_enabled else [
                 {"document_id": key, "filename": names.get(key)} for key in needs]}
         self.metadata(structure=self.structure_report)
-        if self.plan.schema is None and not self.fallback:
+        self.metadata(document_reuse={"reused": len(self.reused), "processed": len(changed),
+                                      "model_calls_saved": sum(item[1] for item in self.reused.values())
+                                      + (self.saved_discovery["calls"] if self.saved_discovery else 0)})
+        if self.plan.schema is None and not self.fallback and self.cached_schema is None:
             raise PipelineError("empty" if self.model_enabled else "needs_model")
 
     def discover(self):
@@ -400,6 +483,8 @@ class Pipeline:
             finally:
                 chat.close()
         self.schema = combine_schemas(structure, model_schema)
+        if self.schema is None and self.cached_schema is not None:
+            return  # No new definitions; accept_schema uses the published contract directly.
         self.schema.sources = source_pins(self.documents, self.workspace)
         update_coverage(self.schema, self.documents)
         write_proposal(self.root / "schema", self.schema, self.documents)
@@ -456,6 +541,9 @@ class Pipeline:
 
     def accept_schema(self):
         """WP110: accept what verifies; set the rest aside for review instead of stopping."""
+        if self.schema is None and self.cached_schema is not None:
+            self._accepted_update_schema()
+            return
         schema = self.schema
         blocks = {doc.source.document_id: _blocks(doc.context) for doc in self.documents}
         set_aside, accepted = [], {}
@@ -535,6 +623,8 @@ class Pipeline:
             "set_aside": len(set_aside),
         }, schema_needs_review=set_aside)
         self.runtime = load_runtime(self.root / "schema" / f"schema.v{self.schema.version}.json")
+        if self.cached_schema is not None:
+            self._accepted_update_schema()
 
     # KULLANILMIYOR (karar 18, WP110): doğrulanamayan tek bir alan bütün işi durduruyordu.
     def _accept_schema_before_wp110(self):
@@ -593,7 +683,8 @@ class Pipeline:
 
     def extract(self):
         """WP119: structure records for every document; the model only reads what they left out."""
-        structure = {doc.source.document_id: self._structure_result(doc) for doc in self.documents}
+        structure = {doc.source.document_id: self._structure_result(doc) for doc in self.documents
+                     if doc.source.document_id not in self.reused}
         fallback = [doc for doc in self.documents if doc.source.document_id in self.fallback]
         plans, runs, retried = {}, [], 0
         if fallback:
@@ -623,6 +714,19 @@ class Pipeline:
         counts = Counter()
         for doc in self.documents:
             key = doc.source.document_id
+            if key in self.reused:
+                raw = {**self.reused[key][0], "workspace_schema": self.runtime.schema}
+                # A reviewed "same list" answer may have retired the extraction's old key.
+                aliases = {alias: c["key"] for c in self.runtime.schema["collections"]
+                           for alias in c.get("aliases", []) if alias not in self.runtime.models}
+                for record in raw["records"]:
+                    record["type"] = aliases.get(record["type"], record["type"])
+                # A list set aside since then is skipped, as in _structure_result.
+                raw["records"] = [r for r in raw["records"] if r["type"] in self.runtime.models]
+                result = self.runtime.result.model_validate(raw)
+                path = self.root / "records" / sha256(key.encode()).hexdigest()
+                write_json(path / "records.json", result.model_dump(mode="json", exclude_none=True))
+                continue
             usage, from_model = model.get(key, (None, None))
             from_structure = structure.get(key)
             counts["structure"] += len(from_structure.records) if from_structure else 0
@@ -655,7 +759,23 @@ class Pipeline:
         if total and len(failed_sections) * 100 > total * lifecycle.MAX_FAILED_SECTIONS_PERCENT:
             raise PipelineError("sections_failed")
         self.results = load_records(self.root / "records", runtime=self.runtime)
-        if not any(result.records for result in self.results):
+        discovery = {"documents": list(self.fallback), "calls": sum(
+            call["stage"] == "discover" for call in self.measurements["calls"])}
+        if not self.fallback and self.saved_discovery:
+            discovery = self.saved_discovery
+        write_json(self.root / "reuse.json", {"discovery": discovery, "documents": {
+            doc.source.document_id: {
+                "content_sha256": doc.source.content_sha256,
+                "knowledge_revision_id": doc.source.knowledge_revision_id,
+                "model_calls": (self.reused[doc.source.document_id][1]
+                                if doc.source.document_id in self.reused else
+                                len(doc.source.usage.calls) if doc.source.usage else 0),
+                "model_pending": (self.reused[doc.source.document_id][2]
+                                  if doc.source.document_id in self.reused else
+                                  doc.source.document_id in (self.plan.needs_model if self.plan else [])
+                                  and doc.source.document_id not in self.fallback),
+            } for doc in self.documents}})
+        if not any(result.records for result in self.results) and self.base is None:
             raise PipelineError("empty" if self.model_enabled else "needs_model")
 
     # KULLANILMIYOR (karar 18, WP119): model her belgenin bütün içeriğinden kayıt çıkarıyordu.
@@ -737,8 +857,11 @@ class Pipeline:
         merge_matches(self.root / "records", self.results, self.matches, self.root / "merged",
                       self.workspace, "u1_" + self.job_id, "strong")
         self.revision = load_revision((self.root / "merged" / "merge_revision.json").read_bytes())
-        if not self.revision.records:
+        if not self.revision.records and self.base is None:
             raise PipelineError("empty")
+        self.revision, counts = carry_forward(self.revision, self.base, {
+            doc.source.document_id: doc.context for doc in self.documents})
+        self.metadata(carry_forward=counts)
         self.revision, audit = apply_review_rules(self.revision)
         self.metadata(field_review_audit=audit, field_review_counts=review_counts(audit))
         # WP119: unsure list groupings become "same list?" questions; earlier answers are kept.

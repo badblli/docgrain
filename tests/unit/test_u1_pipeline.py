@@ -358,7 +358,9 @@ def test_real_six_stage_run_questions_answer_and_old_bytes(setup):
     # assert "capacity" not in approved[0]
     assert approved[0]["capacity"] == 2
     assert setup.store.read(WORKSPACE, source.id, "rooms") == old
-    assert setup.client.post(BASE + "/record-jobs", json={"request_id": "new-job"}).status_code == 409
+    # KULLANILMIYOR (karar 18, WP125): onay sonrası 409 bekleniyordu; artık güncelleme başlar
+    # (önceki hali apps/worker/docgrain_worker/unused/wp125/test_u1_pipeline.txt).
+    assert setup.client.post(BASE + "/record-jobs", json={"request_id": "new-job"}).status_code == 202
     assert lifecycle.start(WORKSPACE, "request-1") == key  # completed request is idempotent too.
     assert setup.client.post(BASE + f"/questions/{size['id']}/answer", json={"candidate_id": chosen["candidate_id"]}).status_code == 409
 
@@ -722,7 +724,9 @@ def test_section_failing_twice_finishes_with_note(setup, no_backoff):
     assert setup.store.list_revisions(WORKSPACE) == [result["revision_id"]]
 
 
-def test_section_recovering_on_retry_matches_a_clean_run(setup, no_backoff):
+def test_section_recovering_on_retry_matches_a_clean_run(setup, no_backoff, monkeypatch):
+    # This compares actual extraction/retries; WP125 reuse is covered separately.
+    monkeypatch.setattr(pipeline.Pipeline, "_reuse_documents", lambda _: None)
     clean = run(setup, start(setup, "clean"))
     clean_records = records_files(setup, clean["job_id"])
     setup.model.failing[("rooms", None)] = 4  # The whole first attempt fails; the stage-end retry works.
@@ -791,6 +795,7 @@ def test_nothing_verifiable_still_stops_for_review(setup, mode):
 
 
 def test_concurrency_four_matches_concurrency_one(setup, monkeypatch):
+    monkeypatch.setattr(pipeline.Pipeline, "_reuse_documents", lambda _: None)
     add_documents(setup, 3)
     setup.model.jitter = True
     outputs = {}

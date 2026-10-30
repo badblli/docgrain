@@ -85,7 +85,7 @@ def questions(revision: MergeRevision) -> list[dict]:
     titles = {row["id"]: _display(row.get(runtime.identities[kind], row["id"]))
               for kind, key in runtime.collections.items() for row in rows[key]}
     documents = {pin.document_id: pin.document_name or pin.document_id
-                 for pin in revision.documents}
+                 for pin in revision.historical_documents + revision.documents}
     result = []
     for record in sorted(revision.records, key=lambda r: r.id):
         collection = runtime.collections[record.type]
@@ -97,16 +97,19 @@ def questions(revision: MergeRevision) -> list[dict]:
                 if candidate.review_state != "rejected":
                     languages[candidate.lang].append(candidate)
             for lang, candidates in sorted(languages.items()):
-                if any(c.review_state == "accepted" for c in candidates):
+                # KULLANILMIYOR (karar 18, WP125): source_changes öncesi hali
+                # apps/worker/docgrain_worker/unused/wp125/review.py içinde.
+                source_change = merged.source_changes.get(lang)
+                if not source_change and any(c.review_state == "accepted" for c in candidates):
                     continue
                 schedules = document_dates(field, candidates)
-                if schedules and len(schedules) > 1 and same_recurrence(schedules):
+                if not source_change and schedules and len(schedules) > 1 and same_recurrence(schedules):
                     continue
-                if len(candidates) > 1 and multiple_values(
+                if not source_change and len(candidates) > 1 and multiple_values(
                         runtime, record, field, merged, lang, candidates):
                     continue
                 kind = "conflict" if len(candidates) > 1 else "needs_review"
-                if kind == "needs_review" and candidates[0].review_state != "needs_review":
+                if not source_change and kind == "needs_review" and candidates[0].review_state != "needs_review":
                     continue
                 identity = [revision.workspace_id, revision.lineage_id or revision.id,
                             record.id, field, lang]
@@ -125,7 +128,7 @@ def questions(revision: MergeRevision) -> list[dict]:
                             "quote": None if user_edit else evidence.quote,
                             "document_id": None if user_edit else evidence.document_id,
                             "document_name": "Sizin düzeltmeniz" if user_edit else
-                            documents[evidence.document_id],
+                            documents.get(evidence.document_id, evidence.document_id),
                             "locator": None if user_edit else _locator(evidence.locator),
                         })
                 question = {
@@ -136,7 +139,11 @@ def questions(revision: MergeRevision) -> list[dict]:
                     "lang": lang, "options": options,
                     "allow_all": len(candidates) > 1 and not list_field(runtime, record.type, field),
                 }
-                if schedules and len(schedules) > 1:
+                if source_change:
+                    question["question_tr"] = source_change
+                    question["source_changed"] = True
+                    question["allow_all"] = False
+                elif schedules and len(schedules) > 1:
                     question = schedule_question(question, schedules, candidates, documents)
                 result.append(question)
     result = combine_swaps(result, revision.workspace_id, revision.lineage_id or revision.id)
@@ -165,6 +172,8 @@ def auto_accepted(revision: MergeRevision) -> list[dict]:
     rules = rule_decisions(revision)
     result = []
     for record, field, lang, candidates in auto_slots(revision):
+        if lang in record.fields[field].source_changes:
+            continue
         collection = runtime.collections[record.type]
         definition = definitions.get(collection, {})
         fields = {f["key"]: f for f in definition.get("fields", [])}
@@ -272,6 +281,7 @@ def answer_revision(base: MergeRevision, question_id: str,
         return MergeRevision.model_validate_json(revision.model_dump_json(round_trip=True))
     record = next(r for r in revision.records if r.id == question["record_id"])
     field = record.fields[question["field"]]
+    field.source_changes.pop(question["lang"], None)
     if question["kind"] == "auto_accepted":
         # Reopen the rule's slot, including its recorded variants; the answer below decides it.
         offered = {option["candidate_id"] for option in question["options"]}

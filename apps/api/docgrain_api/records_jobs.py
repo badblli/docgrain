@@ -122,6 +122,7 @@ def head(store, workspace):
     return revisions[0] if revisions else None
 
 
+# KULLANILMIYOR (karar 18, WP125): onaylar artık yeni işi engellemez; alan bazında taşınır.
 def has_accepted(store, workspace):
     """A person's acceptance on the head; a new job must not overwrite it (karar 20: rules don't count)."""
     revision_id = head(store, workspace)
@@ -190,9 +191,29 @@ def summary(job):
     if waiting:
         notes.append("Şu belgelerdeki yazılı bilgiler için Ayarlar'dan model açılmalı: "
                      + ", ".join(waiting))
+    # WP125: an update run reuses unchanged documents and carries people's decisions.
+    if reused := (metadata.get("document_reuse") or {}).get("reused"):
+        notes.append(f"{reused} belge değişmediği için yeniden okunmadı")
+    carried = metadata.get("carry_forward") or {}
+    if carried.get("kept_decisions"):
+        notes.append(f"{carried['kept_decisions']} onay ve düzeltme korundu")
+    if carried.get("reasked_decisions"):
+        notes.append(f"{carried['reasked_decisions']} onaylı değerin belgesi değişti; soru olarak soruldu")
     return {"rejected_fields": rejected, "failed_sections": failed,
             "total_sections": (metadata.get("extraction_sections") or {}).get("total", 0),
             "needs_review": review, "notes": notes}
+
+
+UPDATE_COUNTS = {"document_reuse": ("reused", "processed", "model_calls_saved"),
+                 "carry_forward": ("kept_decisions", "reasked_decisions", "new_values", "removed_values")}
+
+
+def update_counts(job):
+    """WP125: numeric update counts for the read API (no source text); None before the counts exist."""
+    metadata = job.get("metadata") or {}
+    counts = {key: int(metadata[group][key]) for group, keys in UPDATE_COUNTS.items()
+              if isinstance(metadata.get(group), dict) for key in keys if key in metadata[group]}
+    return counts or None
 
 
 def reap_locked(workspace):
@@ -224,8 +245,7 @@ def start(workspace, request_id):
         else:
             settings_version, model_enabled = int(model["settings_version"]), False
         pins = source_snapshot(workspace)
-        if has_accepted(store, workspace):
-            raise JobConflict("publication_changed")
+        # WP125: the pinned publication is the update base, including human decisions.
         stamp = now()
         job = {"job_id": "records_" + uuid4().hex, "workspace_id": workspace,
                "request_id": request_id, "status": "queued", "stage": None,
@@ -245,6 +265,13 @@ def start(workspace, request_id):
             finish(workspace, job["job_id"], "dispatch")
             raise JobConflict("dispatch") from None
         return job["job_id"]
+
+
+# KULLANILMIYOR (karar 18, WP125): kişinin onayı varsa güncelleme tümüyle engelleniyordu.
+# Dosyanın WP125 öncesi tam kopyası: apps/worker/docgrain_worker/unused/wp125/records_jobs.py.
+def _approval_guard_before_wp125(store, workspace):
+    if has_accepted(store, workspace):
+        raise JobConflict("publication_changed")
 
 
 def read(workspace, job_id=None):
