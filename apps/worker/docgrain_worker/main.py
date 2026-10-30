@@ -179,7 +179,8 @@ def _lease_tick(job_id: str, token: str, every: float = 30.0):
 def process(job_id: str, token: str) -> None:
     with closing(psycopg.connect(db_url())) as conn, conn.cursor() as cur:
         cur.execute("""SELECT j.document_version_id, j.document_id, j.stages,
-                             d.filename, d.mime_type, d.workspace_id, v.byte_size, v.content_sha256, v.source_uri
+                             COALESCE(v.filename, d.filename), COALESCE(v.mime_type, d.mime_type),
+                             d.workspace_id, v.byte_size, v.content_sha256, v.source_uri
                       FROM jobs j JOIN documents d ON d.id=j.document_id
                       JOIN document_versions v ON v.id=j.document_version_id
                       WHERE j.id=%s AND j.status='running' AND j.run_token=%s""", (job_id, token))
@@ -295,6 +296,11 @@ def process(job_id: str, token: str) -> None:
                     if data is None:
                         raise ValueError("Docling extraction artifact unavailable")
                     client.put_object(bucket, f"{prefix}/{name}", BytesIO(data), len(data), content_type=mime)
+            elif structural.legacy_json is not None:
+                # WP124: keep the same per-version Docling JSON path for Office and all
+                # other Docling readers, even when canonical persistence is disabled.
+                client.put_object(bucket, f"{prefix}/document.json", BytesIO(structural.legacy_json),
+                                  len(structural.legacy_json), content_type="application/json")
             if canonical_persisted:
                 _progress(job_id, token)
                 active_stage = "publish"
@@ -352,6 +358,12 @@ def process(job_id: str, token: str) -> None:
                     job_id,
                 ),
             )
+            # WP124: a new file version becomes latest only here, in the job's final transaction.
+            # With canonical persistence on, it must also have published canonical outputs, so
+            # records/AI never switch to a version without knowledge (pre-change copy:
+            # unused/wp124/main.py).
+            if outputs_published or os.getenv("CANONICAL_PERSISTENCE_ENABLED", "false").lower() != "true":
+                document_jobs.promote_usable_version(conn, version_id)
             conn.commit()
     except WorkerCrash as exc:
         if rereading:

@@ -117,6 +117,15 @@ class RegisterResponse(BaseModel):
     )
 
 
+class VersionRegisterRequest(BaseModel):
+    filename: str
+    mime_type: str
+    byte_size: int = Field(gt=0)
+    content_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    workspace_id: str | None = None
+    source_uri: str | None = None
+
+
 class DocumentListItem(BaseModel):
     document: Document
     latest_version: DocumentVersion | None
@@ -232,6 +241,8 @@ def _register_document(payload: RegisterRequest) -> RegisterResponse:
         revision=1,
         content_sha256=payload.content_sha256 or ("0" * 64),
         source_uri=f"s3://{get_settings().s3_bucket}/{upload_key(payload.workspace_id, document_id, version_id)}",
+        filename=payload.filename,
+        mime_type=payload.mime_type,
         byte_size=payload.byte_size,
         status=VersionStatus.PROCESSING,
         created_at=now,
@@ -265,6 +276,75 @@ def _register_document(payload: RegisterRequest) -> RegisterResponse:
     )
 
 
+def _format_family(source_format: SourceFormat) -> str:
+    spec = SPECS[source_format.value]
+    return spec.docling_format or spec.value
+
+
+@router.post("/{document_id}/versions", response_model=RegisterResponse, status_code=status.HTTP_202_ACCEPTED)
+def register_version(document_id: str, payload: VersionRegisterRequest) -> RegisterResponse:
+    """Prepare a version in the same document; the worker promotes usable results."""
+    _require_live_uploads()
+    # All registrations of one document serialize, including hashes that differ.
+    with repository.registration_lock("document", document_id):
+        document = repository.get_document(document_id)
+        if document is None:
+            raise HTTPException(404, "document not found")
+        if payload.workspace_id is not None and payload.workspace_id != document.workspace_id:
+            raise HTTPException(400, "workspace does not match document")
+        if payload.source_uri is not None:
+            raise HTTPException(501, "external source ingestion is not implemented")
+        try:
+            new_format = declared_format(payload.filename, payload.mime_type)
+            old_format = declared_format(document.filename, document.mime_type)
+            # Family = Docling's reader; TXT and generic XML have none, so their own value counts.
+            if _format_family(new_format) != _format_family(old_format):
+                raise FormatMismatch("new version must use the same format family")
+            format_capabilities.ensure_format_enabled(new_format)
+        except FormatMismatch as exc:
+            raise HTTPException(415, str(exc)) from exc
+        versions = repository.list_versions(document_id)
+        latest = next((v for v in versions if v.id == document.latest_version_id), None)
+        # Also reuse an identical in-flight version newer than latest (idempotent upload
+        # retries), but never deduplicate into a different logical document. An older failed
+        # revision could never be promoted, so the same bytes then get a new revision.
+        candidates = ([latest] if latest else []) + sorted(
+            (v for v in versions if v.status in {VersionStatus.PROCESSING, VersionStatus.FAILED}
+             and v.revision > (latest.revision if latest else 0)),
+            key=lambda v: -v.revision)
+        for existing in candidates:
+            if not payload.content_sha256 or existing.content_sha256 != payload.content_sha256:
+                continue
+            job = repository.job_for_version(existing.id)
+            if job is None:
+                continue
+            if job.status == JobStatus.FAILED:
+                repository.requeue_failed_job(job.id, existing.id)
+                job = repository.job_for_version(existing.id)
+                existing = repository.get_version(document_id, existing.id)
+            object_name = urlparse(existing.source_uri).path.lstrip("/")
+            return RegisterResponse(
+                document=document, version=existing, job_id=job.id, deduplicated=True,
+                upload_url=None if object_exists(object_name) else (
+                    f"{get_settings().api_public_url}/v1/documents/{document_id}/versions/{existing.id}/content"))
+        now = datetime.now(UTC)
+        version_id = new_id("version")
+        version = DocumentVersion(
+            id=version_id, document_id=document_id, workspace_id=document.workspace_id,
+            revision=max((v.revision for v in versions), default=0) + 1,
+            filename=payload.filename, mime_type=payload.mime_type,
+            content_sha256=payload.content_sha256 or "0" * 64, byte_size=payload.byte_size,
+            source_uri=f"s3://{get_settings().s3_bucket}/{upload_key(document.workspace_id, document_id, version_id)}",
+            created_at=now)
+        job = Job(id=new_id("job"), document_id=document_id, document_version_id=version_id,
+                  workspace_id=document.workspace_id, queued_at=now,
+                  stages=[StageRun(stage=stage) for stage in STAGE_ORDER])
+        repository.add_version(document, version, job)
+        return RegisterResponse(document=document, version=version, job_id=job.id,
+                                upload_url=f"{get_settings().api_public_url}/v1/documents/{document_id}"
+                                           f"/versions/{version_id}/content")
+
+
 @router.put("/{document_id}/versions/{version_id}/content", status_code=status.HTTP_201_CREATED)
 def upload_content(
     document_id: str,
@@ -277,12 +357,14 @@ def upload_content(
     if version is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "document version not found")
     document = repository.get_document(document_id)
-    if document is None or file.filename != document.filename:
+    # KULLANILMIYOR (karar 18, WP124): compared only Document.filename; a new version may be
+    # renamed, so its own filename/mime type win (copy: unused/wp124/documents.py).
+    if document is None or file.filename != (version.filename or document.filename):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "uploaded filename does not match registration")
     try:
-        source_format = declared_format(document.filename, document.mime_type)
+        source_format = declared_format(version.filename or document.filename, version.mime_type or document.mime_type)
         if file.content_type:
-            declared_format(document.filename, file.content_type)
+            declared_format(version.filename or document.filename, file.content_type)
         data = file.file.read()
         if len(data) != version.byte_size:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "upload size differs from registration")
