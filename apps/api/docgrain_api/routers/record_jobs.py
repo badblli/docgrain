@@ -39,6 +39,8 @@ def _read(workspace, job_id=None):
         "finished_at", "stages",
     )}, **{key: job.get(key) for key in ("kind", "collection", "field")},
         "summary": records_jobs.summary(job),
+        # WP125: update counts only (önceki hali unused/wp125/record_jobs_router.py).
+        "update": records_jobs.update_counts(job),
         "speed": job.get("metadata", {}).get("speed", {})}  # Numeric telemetry; no model/source text.
 
 

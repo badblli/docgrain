@@ -87,10 +87,15 @@ class MergedField(StrictModel):
     candidates: list[FactCandidate] = Field(min_length=1)
     # Record-local, language-specific override after an explicit "all" answer.
     multi_value_languages: list[Language] = Field(default_factory=list)
+    # WP125: ask about changed/missing sources while the previous approval remains published.
+    # KULLANILMIYOR (karar 18, WP125): önceki model apps/worker/docgrain_worker/unused/wp125/merge_models.py.
+    source_changes: dict[Language, str] = Field(default_factory=dict)
 
     @computed_field
     @property
     def review_state(self) -> ReviewState:
+        if self.source_changes:
+            return "needs_review"
         states = {candidate.review_state for candidate in self.candidates}
         if "needs_review" in states:
             return "needs_review"
@@ -227,6 +232,8 @@ class MergeRevision(StrictModel):
     workspace_id: Text
     id: Text
     documents: list[SourcePin]
+    # Historical evidence is retained explicitly; it is never a current extraction input.
+    historical_documents: list[SourcePin] = Field(default_factory=list)
     records: list[MergedRecord]
     match_issues: list[MatchIssue] = Field(default_factory=list)
     decisions: list[ReviewDecision] = Field(default_factory=list)

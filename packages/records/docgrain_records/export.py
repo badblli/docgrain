@@ -82,9 +82,12 @@ def project_records(revision: MergeRevision, lang: str | None = None,
             row[field] = primary.value
             unresolved = any(c["field"] == field and c["lang"] == primary.lang
                              for c in meta["conflicts"])
+            # KULLANILMIYOR (karar 18, WP125): önceki hali (source_changes yok)
+            # apps/worker/docgrain_worker/unused/wp125/export.py içinde.
             meta["fields"][field] = {
                 "lang": primary.lang,
-                "review_state": "needs_review" if unresolved else primary.review_state,
+                "review_state": "needs_review" if unresolved or primary.lang in merged.source_changes
+                                else primary.review_state,
                 "evidence": [e.model_dump(mode="json") for e in primary.evidence],
                 "i18n": {language: [e.model_dump(mode="json") for e in c.evidence]
                          for language, c in visible.items()},
@@ -93,6 +96,8 @@ def project_records(revision: MergeRevision, lang: str | None = None,
                                           for x in meta["conflicts"]) else c.review_state)
                     for language, c in visible.items() if not language.startswith("en")},
             }
+            if primary.lang in merged.source_changes:
+                meta["fields"][field]["source_change"] = merged.source_changes[primary.lang]
             if date_field(field) and isinstance(primary.value, list):
                 schedule = infer_schedule(primary.value)
                 if schedule:
@@ -182,7 +187,7 @@ def export_bundle(revision: MergeRevision, mode: str = "preview") -> dict[str, b
         raise ValueError("unknown publication mode")
     revision = MergeRevision.model_validate_json(revision.model_dump_json(round_trip=True))
     pins = {(p.document_id, p.source_version_id, p.knowledge_revision_id)
-            for p in revision.documents}
+            for p in revision.documents + revision.historical_documents}
     for record in revision.records:
         for field in record.fields.values():
             for candidate in field.candidates:
