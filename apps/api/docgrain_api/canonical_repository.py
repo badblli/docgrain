@@ -259,6 +259,15 @@ class CanonicalRepository:
             row = cursor.fetchone()
             return CanonicalKnowledgeSnapshot.model_validate(row["snapshot"]) if row else None
 
+    def snapshot_for_source(self, document_id: str, source_id: str) -> CanonicalKnowledgeSnapshot | None:
+        """Read an immutable historical source's newest revision, independent of heads."""
+        with self._connect() as connection, connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(sql.SQL("""SELECT snapshot FROM {} WHERE document_id=%s
+                AND source_version_id=%s ORDER BY created_at DESC, id DESC LIMIT 1""")
+                .format(self._table("knowledge_revisions")), (document_id, source_id))
+            row = cursor.fetchone()
+            return CanonicalKnowledgeSnapshot.model_validate(row["snapshot"]) if row else None
+
     def find_review_operation(self, document_id: str, operation_id: str) -> CanonicalKnowledgeSnapshot | None:
         with self._connect() as connection, connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(sql.SQL("""

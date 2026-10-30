@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from hashlib import sha256
+from urllib.parse import parse_qs, urlparse
 
 from docgrain_domain import (
     Asset,
@@ -13,6 +15,8 @@ from docgrain_domain import (
     Page,
     TableArtifact,
 )
+from docgrain_domain.canonical.lifecycle import source_revision_id
+from docgrain_domain.canonical.version_diff import DocumentChanges, diff_docling_documents
 from docgrain_domain.models import VersionDiff
 from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import BaseModel
@@ -20,6 +24,7 @@ from pydantic import BaseModel
 from .. import fixtures, repository
 from ..settings import get_settings
 from ..storage import get_text, storage_client
+from .knowledge import _store
 
 router = APIRouter(prefix="/v1/versions", tags=["versions"])
 
@@ -188,8 +193,9 @@ def chunk_boundaries(version_id: str) -> BoundaryReport:
     return BoundaryReport(threshold=fixtures.SPLIT_THRESHOLD, points=fixtures.boundaries())
 
 
-@router.get("/{version_id}/diff", response_model=VersionDiff)
-def diff(version_id: str, base: str) -> VersionDiff:
+# KULLANILMIYOR (karar 18, WP124): the former live `diff` route (count deltas only). Live
+# versions now get a block-level Docling diff below; only the demo fixtures still call this.
+def _count_only_diff(version_id: str, base: str) -> VersionDiff:
     """Live responses contain count deltas only, not semantic changes."""
     head = _require_version(version_id)
     base_version = _require_version(base)
@@ -205,6 +211,76 @@ def diff(version_id: str, base: str) -> VersionDiff:
         table_delta=head.table_count - base_version.table_count,
         asset_delta=head.asset_count - base_version.asset_count,
     )
+
+
+class FileVersionDiff(VersionDiff, DocumentChanges):
+    """File ids/count deltas plus the pure WP125 content-change contract."""
+
+
+def _docling_document(version: DocumentVersion) -> dict:
+    """Read this version's Docling export, including historical Office artifacts."""
+    content = get_text(f"artifacts/{version.document_id}/{version.id}/document.json")
+    if content is None and get_settings().canonical_persistence_enabled:
+        snapshot = _store().snapshot_for_source(version.document_id, source_revision_id(
+            version.workspace_id, version.document_id, version.content_sha256))
+        if snapshot is not None and (snapshot.workspace_id, snapshot.document_id,
+                                     snapshot.source_version.content_sha256) == (
+            version.workspace_id, version.document_id, version.content_sha256
+        ):
+            inline = snapshot.metadata.get("docling_document")
+            if isinstance(inline, dict):
+                return inline
+            artifact = next((a for a in snapshot.artifacts if a.role == "docling-document"), None)
+            if artifact:
+                uri = urlparse(artifact.storage_uri)
+                key = uri.path.lstrip("/")
+                prefix = f"artifacts/{version.document_id}/"
+                if uri.scheme == "s3" and uri.netloc == get_settings().s3_bucket and key.startswith(prefix):
+                    options = parse_qs(uri.query)
+                    obj = storage_client().get_object(uri.netloc, key,
+                        **({"version_id": options["versionId"][0]} if options.get("versionId") else {}))
+                    try:
+                        data = obj.read()
+                    finally:
+                        obj.close()
+                        obj.release_conn()
+                    if sha256(data).hexdigest() != artifact.content_sha256:
+                        raise HTTPException(409, "Docling artifact checksum mismatch")
+                    content = data.decode("utf-8")
+    if content is None:
+        raise HTTPException(409, "Docling document is not available for this version")
+    try:
+        result = json.loads(content)
+        if not isinstance(result, dict) or not isinstance(result.get("body"), dict):
+            raise TypeError("not a Docling document")
+        return result
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(409, "Docling document is not readable") from exc
+
+
+@router.get("/{version_id}/diff", response_model=FileVersionDiff | VersionDiff)
+def diff(version_id: str, base: str) -> FileVersionDiff | VersionDiff:
+    """Block-level changes between two usable versions of one document (WP124).
+
+    Units, matching and the result shape: docgrain_domain.canonical.version_diff.
+    The old count fields stay for compatibility; `entries` stays empty.
+    """
+    head, before = _require_version(version_id), _require_version(base)
+    if (head.document_id, head.workspace_id) != (before.document_id, before.workspace_id):
+        raise HTTPException(400, "versions must belong to the same document and workspace")
+    if _fixture_version(version_id):
+        return _count_only_diff(version_id, base)
+    if head.status not in {"done", "partial"} or before.status not in {"done", "partial"}:
+        raise HTTPException(409, "both versions must be usable before comparison")
+    try:
+        changes = diff_docling_documents(_docling_document(before), _docling_document(head))
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(409, "Docling document is not readable") from exc
+    return FileVersionDiff(
+        base_version_id=before.id, head_version_id=head.id,
+        page_delta=head.page_count - before.page_count, chunk_delta=head.chunk_count - before.chunk_count,
+        table_delta=head.table_count - before.table_count, asset_delta=head.asset_count - before.asset_count,
+        **changes.model_dump())
 
 
 class RetryRequest(BaseModel):

@@ -75,6 +75,8 @@ def initialize() -> None:
             );
             CREATE INDEX IF NOT EXISTS documents_updated_at_idx ON documents(updated_at DESC);
             CREATE INDEX IF NOT EXISTS jobs_version_idx ON jobs(document_version_id);
+            ALTER TABLE document_versions ADD COLUMN IF NOT EXISTS filename TEXT;
+            ALTER TABLE document_versions ADD COLUMN IF NOT EXISTS mime_type TEXT;
             """
         )
         from .document_jobs import initialize as initialize_document_jobs
@@ -96,7 +98,9 @@ def _job(row: dict[str, object]) -> Job:
     return Job.model_validate(row)
 
 
-def add(document: Document, version: DocumentVersion, job: Job) -> None:
+def _unused_add_before_file_versions(document: Document, version: DocumentVersion, job: Job) -> None:
+    # KULLANILMIYOR (karar 18, WP124): positional version INSERT predates per-version
+    # filename/mime_type; replaced by add() + _insert_version_job (copy: unused/wp124/repository.py).
     if _fixture_mode():
         raise RuntimeError("demo repository is read-only")
     with _connection() as connection, connection.cursor() as cursor:
@@ -123,6 +127,60 @@ def add(document: Document, version: DocumentVersion, job: Job) -> None:
             %(started_at)s, %(finished_at)s, %(duration_ms)s, %(correlation_id)s)""",
             values,
         )
+
+
+def _insert_version_job(cursor, version: DocumentVersion, job: Job) -> None:
+    values = version.model_dump(mode="json")
+    columns = list(values)
+    # Column names come only from the domain model, never a request.
+    cursor.execute(
+        "INSERT INTO document_versions (" + ", ".join(columns) + ") VALUES ("
+        + ", ".join(f"%({key})s" for key in columns) + ")", values)
+    values = job.model_dump(mode="json")
+    values["stages"] = json.dumps(values["stages"])
+    values["page_failures"] = json.dumps(values["page_failures"])
+    cursor.execute(
+        """INSERT INTO jobs (id, document_id, document_version_id, workspace_id, status,
+        stages, page_failures, queued_at, started_at, finished_at, duration_ms, correlation_id)
+        VALUES (%(id)s, %(document_id)s, %(document_version_id)s, %(workspace_id)s,
+        %(status)s, %(stages)s::jsonb, %(page_failures)s::jsonb, %(queued_at)s,
+        %(started_at)s, %(finished_at)s, %(duration_ms)s, %(correlation_id)s)""", values)
+
+
+def add(document: Document, version: DocumentVersion, job: Job) -> None:
+    if _fixture_mode():
+        raise RuntimeError("demo repository is read-only")
+    with _connection() as connection, connection.cursor() as cursor:
+        cursor.execute(
+            """INSERT INTO documents VALUES (%(id)s, %(workspace_id)s, %(title)s, %(filename)s,
+            %(mime_type)s, %(latest_version_id)s, %(version_count)s, %(created_at)s, %(updated_at)s)""",
+            document.model_dump())
+        _insert_version_job(cursor, version, job)
+
+
+def add_version(document: Document, version: DocumentVersion, job: Job) -> None:
+    """Append atomically under the route's document registration advisory lock.
+
+    Lock the document row too; latest_version_id is deliberately untouched. Revision
+    numbers include failed/preparing versions and are never reused.
+    """
+    if _fixture_mode():
+        raise RuntimeError("demo repository is read-only")
+    with _connection() as connection, connection.cursor() as cursor:
+        cursor.execute("SELECT id FROM documents WHERE id=%s AND workspace_id=%s FOR UPDATE",
+                       (document.id, version.workspace_id))
+        if cursor.fetchone() is None:
+            raise ValueError("document/workspace scope mismatch")
+        cursor.execute("SELECT COALESCE(MAX(revision), 0) + 1 AS revision FROM document_versions WHERE document_id=%s",
+                       (document.id,))
+        version.revision = cursor.fetchone()["revision"]
+        _insert_version_job(cursor, version, job)
+        cursor.execute("""UPDATE documents SET version_count=version_count+1, updated_at=NOW()
+                       WHERE id=%s RETURNING *""", (document.id,))
+        updated = _document(cursor.fetchone())
+        document.version_count = updated.version_count
+        document.latest_version_id = updated.latest_version_id
+        document.updated_at = updated.updated_at
 
 
 def list_documents() -> list[Document]:

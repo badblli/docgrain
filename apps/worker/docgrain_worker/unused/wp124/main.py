@@ -1,0 +1,488 @@
+# KULLANILMIYOR (karar 18): WP124 öncesi tam kopya; canlı koddan import edilmez.
+# ruff: noqa
+"""Worker for verified source parsing and legacy PDF extraction artifacts."""
+
+# Karar 18 (2026-10-08): document_converter(), render_pages(), gemini_extraction() ve RenderedPage artık kullanılmıyor; okuma Docling + Tesseract ile yapılıyor.
+# Eski kod silinmedi, başvuru için duruyor: unused/main_before_docling.py
+# (ayrıca native_office.py, pdf_fidelity.py, pdf_reading.py, vision.py — hiçbiri import edilmiyor).
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import threading
+import time
+from contextlib import closing
+from datetime import UTC, datetime
+from hashlib import sha256
+from io import BytesIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from urllib.parse import parse_qs, urlparse
+
+import psycopg
+import redis
+from docgrain_api import document_jobs
+from docgrain_api.canonical_repository import CanonicalRepository
+from docgrain_domain.canonical import SourceVersion
+from docgrain_domain.canonical.lifecycle import source_revision_id
+from docgrain_domain.source_format import SourceFormat, declared_format, storage_suffix
+from minio import Minio
+
+from .canonical_assets import store_asset
+from .canonical_writer import persist_structural, processing_spec
+from .conversion_guard import WorkerCrash, convert
+from .output_writer import publish_outputs
+from .quality import page_failures
+from .structural import (
+    VerifiedSource,
+)
+
+QUEUE_NAME = "docgrain:pipeline"
+
+
+def db_url() -> str:
+    return os.environ["DATABASE_URL"].replace("postgresql+psycopg://", "postgresql://")
+
+
+def storage() -> Minio:
+    parsed = urlparse(os.environ["S3_ENDPOINT_URL"])
+    return Minio(parsed.netloc or parsed.path, access_key=os.environ["S3_ACCESS_KEY"], secret_key=os.environ["S3_SECRET_KEY"], secure=parsed.scheme == "https", region="us-east-1")
+
+
+def stage_update(
+    stages: list[dict[str, object]],
+    failed: str | None = None,
+    *,
+    rendered_pages: int = 0,
+    missing_pages: list[int] | None = None,
+    extraction_provider: str = "docling",
+    failed_stage: str = "extract",
+    non_pdf: bool = False,
+    structural_status: str | None = None,
+    structural_issues: list[dict[str, object]] | None = None,
+    canonical_persisted: bool = False,
+    outputs_published: bool = False,
+    chunk_count: int = 0,
+    output_revision_id: str | None = None,
+) -> list[dict[str, object]]:
+    done = {"register", "render", "extract", "quality", "publish"}
+    if outputs_published:
+        done.update({"normalize", "chunk"})
+    missing_pages = missing_pages or []
+    for stage in stages:
+        name = str(stage["stage"])
+        stage["status"] = "failed" if failed and name == failed_stage else ("done" if name in done and not failed else "skipped")
+        if non_pdf and name == "render":
+            stage["status"] = "skipped"
+            stage["summary"] = "Not applicable to this source format."
+        stage["error"] = failed if failed and name == failed_stage else None
+        if name == "render" and not failed and not non_pdf:
+            stage["summary"] = f"Docling page images published for {rendered_pages} source pages."
+            stage["provider"] = "docling"
+            stage["attributes"] = {"pages": rendered_pages, "dpi": 144}
+        elif name == "extract" and not failed:
+            stage["summary"] = ("Structural extraction completed." if non_pdf else (
+                f"{rendered_pages - len(missing_pages)} of {rendered_pages} pages extracted."
+            ))
+            stage["provider"] = extraction_provider
+            stage["attributes"] = {
+                "pages": rendered_pages,
+                "failed_pages": missing_pages,
+                "structural_status": structural_status,
+                "structural_issues": structural_issues or [],
+                "canonical_persisted": canonical_persisted,
+            }
+        elif name == "quality" and not failed:
+            stage["summary"] = (f"Structural parse: {structural_status}; {len(structural_issues or [])} issues."
+                                if non_pdf else (
+                "Docling confidence report captured; grades do not certify source correctness."
+                if not missing_pages
+                else f"{len(missing_pages)} pages require source review; stage replay is not implemented."
+            ))
+            stage["attributes"] = {"failed_pages": missing_pages, "structural_issues": structural_issues or []}
+        if name in {"normalize", "chunk"} and outputs_published and not failed:
+            stage["summary"] = ("Common ai.json + canonical JSON/Markdown and verified manifest published; semantic content is not verified."
+                                if name == "normalize" else f"{chunk_count} canonical chunks published; no embedding performed.")
+            stage["attributes"] = {"output_revision_id":output_revision_id,"chunk_count":chunk_count}
+        elif name in {"normalize", "chunk", "enrich", "embed"}:
+            stage["summary"] = "Not implemented."
+        elif name == "vision":
+            stage["summary"] = "No separate enrichment stage; configured Vision runs under extract."
+        elif name == "publish" and not failed:
+            stage["summary"] = ("Verified canonical.json, ai.json, canonical.md, chunks.jsonl and manifest published; no index produced."
+                                if outputs_published else
+                                "Canonical revision persisted; no canonical artifact/manifest or index was produced."
+                                if canonical_persisted else
+                                ("Structural extraction completed; no canonical revision or PDF artifacts were published."
+                                 if non_pdf else "Extraction JSON/Markdown stored; no canonical manifest or index was produced."))
+    return stages
+
+
+def fail(job_id: str, message: str, failed_stage: str = "extract", *,
+         code: str | None = None, token: str | None = None) -> None:
+    with closing(psycopg.connect(db_url())) as conn, conn.cursor() as cur:
+        cur.execute("""SELECT document_version_id, stages FROM jobs WHERE id = %s AND status='running'
+            AND (%s IS NULL OR run_token=%s) FOR UPDATE""", (job_id, token, token))
+        row = cur.fetchone()
+        if row is None:
+            return
+        version_id, stages = row
+        if code:
+            stages = document_jobs.failure_stages(stages, code, message, failed_stage)
+        cur.execute("UPDATE jobs SET status='failed', stages=%s::jsonb, finished_at=NOW() WHERE id=%s", (json.dumps(stage_update(stages, message, failed_stage=failed_stage)), job_id))
+        cur.execute("UPDATE document_versions SET status='failed' WHERE id=%s", (version_id,))
+        conn.commit()
+
+
+def publish_page_images(result, prefix: str, bucket: str) -> None:
+    """Publish Docling's existing page images for the source-review API."""
+    from PIL import Image
+    client = storage()
+    pages = []
+    for number, data in sorted(result.page_images.items()):
+        with Image.open(BytesIO(data)) as image:
+            width, height = image.size
+        client.put_object(bucket, f"{prefix}/pages/{number:04d}.png", BytesIO(data),
+                          len(data), content_type="image/png")
+        pages.append({"page_number": number, "width": width, "height": height})
+    manifest = json.dumps({"dpi": 144, "pages": pages}).encode()
+    client.put_object(bucket, f"{prefix}/pages.json", BytesIO(manifest), len(manifest),
+                      content_type="application/json")
+
+
+def _progress(job_id: str, token: str) -> None:
+    with psycopg.connect(db_url()) as conn:
+        if not document_jobs.progress(conn, job_id, token):
+            raise WorkerCrash("Bu okuma denemesi sona erdi.")
+
+
+def _lease_active(job_id: str, token: str) -> None:
+    with psycopg.connect(db_url()) as conn, conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM jobs WHERE id=%s AND status='running' AND run_token=%s", (job_id, token))
+        if cur.fetchone() is None:
+            raise WorkerCrash("Bu okuma denemesi sona erdi.")
+
+
+def _lease_tick(job_id: str, token: str, every: float = 30.0):
+    """Check the lease while the child converts, at most every `every` seconds."""
+    last = time.monotonic()
+
+    def tick() -> None:
+        nonlocal last
+        if time.monotonic() - last >= every:
+            last = time.monotonic()
+            _lease_active(job_id, token)
+
+    return tick
+
+
+def process(job_id: str, token: str) -> None:
+    with closing(psycopg.connect(db_url())) as conn, conn.cursor() as cur:
+        cur.execute("""SELECT j.document_version_id, j.document_id, j.stages,
+                             d.filename, d.mime_type, d.workspace_id, v.byte_size, v.content_sha256, v.source_uri
+                      FROM jobs j JOIN documents d ON d.id=j.document_id
+                      JOIN document_versions v ON v.id=j.document_version_id
+                      WHERE j.id=%s AND j.status='running' AND j.run_token=%s""", (job_id, token))
+        row = cur.fetchone()
+    if row is None:
+        return
+    version_id, document_id, stages, filename, mime_type, workspace_id, expected_size, expected_sha, source_uri = row
+    bucket = os.environ["S3_BUCKET"]
+    active_stage = "extract"
+    rereading = any(stage.get("attributes", {}).get("reading_reread") for stage in stages)
+    try:
+        with TemporaryDirectory() as temp:
+            client = storage()
+            object_key = urlparse(source_uri).path.lstrip("/")
+            source_query = parse_qs(urlparse(source_uri).query)
+            source_options = {"version_id": source_query["versionId"][0]} if source_query.get("versionId") else {}
+            response = client.get_object(bucket, object_key, **source_options)
+            source_format = declared_format(filename, mime_type)
+            # KULLANILMIYOR (karar 18): source = Path(temp) / f"source.{source_format.value}"
+            # WP106: Docling detects the newer formats by suffix (eml/msg, dclg, tar.gz); the six keep theirs.
+            source = Path(temp) / f"source.{storage_suffix(filename, source_format)}"
+            try:
+                source.write_bytes(response.read())
+                storage_version = response.headers.get("x-amz-version-id")
+            finally:
+                response.close()
+                response.release_conn()
+            source_bytes = source.read_bytes()
+            content_hash = sha256(source_bytes).hexdigest()
+            if len(source_bytes) != expected_size:
+                raise ValueError("source byte size differs from registration")
+            if expected_sha != "0" * 64 and expected_sha != content_hash:
+                raise ValueError("source SHA-256 differs from registration")
+            _progress(job_id, token)
+            canonical_repository = CanonicalRepository(lambda: psycopg.connect(db_url()))
+            expected_head = None
+            if os.getenv("CANONICAL_PERSISTENCE_ENABLED", "false").lower() == "true":
+                heads = canonical_repository.get_heads(document_id)
+                expected_head = heads[0] if heads else None
+            structural = None if rereading else convert(
+                VerifiedSource(source, content_hash, len(source_bytes)), source_format,
+                tick=_lease_tick(job_id, token))
+            _progress(job_id, token)
+            prefix = f"artifacts/{document_id}/{version_id}"
+            if structural is not None and structural.status == "failed":
+                raise ValueError("structural parser failed: " + "; ".join(i.reason for i in structural.issues))
+            canonical_persisted = False
+            outputs_published = False
+            chunk_count = 0
+            output_revision_id = None
+            structural_issues = [] if rereading else [i.__dict__ for i in structural.issues]
+            if not rereading and os.getenv("CANONICAL_PERSISTENCE_ENABLED", "false").lower() == "true":
+                if storage_version and storage_version != "null" and structural.status != "failed":
+                    stat = client.stat_object(bucket, object_key, version_id=storage_version)
+                    source_id = source_revision_id(workspace_id, document_id, content_hash)
+                    source_version = SourceVersion(
+                        id=source_id, document_id=document_id, workspace_id=workspace_id,
+                        content_sha256=content_hash,
+                        storage_uri=f"s3://{bucket}/{object_key}?versionId={storage_version}",
+                        storage_version=storage_version, byte_size=len(source_bytes), mime_type=mime_type,
+                        filename=filename, recorded_at=stat.last_modified or datetime.now(UTC),
+                    )
+                    stored_source = canonical_repository.get_source(source_id)
+                    if stored_source:
+                        source_version = stored_source
+                    # The first verified receipt owns canonical asset storage on source replay.
+                    source_key = urlparse(source_version.storage_uri).path.strip("/").split("/")
+                    canonical_prefix = f"artifacts/{document_id}/{source_key[-2]}"
+                    for item in structural.items:
+                        if item.asset_bytes:
+                            digest = sha256(item.asset_bytes).hexdigest()
+                            object_name = f"{canonical_prefix}/structural/assets/{digest}"
+                            item.asset_path = store_asset(client, bucket, object_name, item.asset_bytes,
+                                                          item.asset_mime or "application/octet-stream")
+                    if structural.legacy_json is not None:
+                        digest = sha256(structural.legacy_json).hexdigest()
+                        structural.docling_artifact_uri = store_asset(client, bucket,
+                            f"{canonical_prefix}/structural/docling/{digest}.json",
+                            structural.legacy_json, "application/json")
+                    snapshot, _ = persist_structural(
+                        canonical_repository, structural, source_version, spec=processing_spec(structural),
+                        pdf_path=source if source_format is SourceFormat.PDF else None,
+                        expected_latest_revision_id=expected_head,
+                    )
+                    canonical_persisted = True
+                    structural_issues = snapshot.metadata["structural_parse"]["issues"]
+                else:
+                    structural_issues.append({"code": "source_not_versioned", "stage": "source_verification",
+                                              "reason": "Immutable object version is unavailable; canonical persistence gated",
+                                              "impact": "document"})
+            # WP97: reading report + hard pages through the workspace model (decision 17), via Docling's
+            # remote options. Model off: no remote call; the report says which pages wait for the model.
+            reading = _read_hard_pages(job_id, token, VerifiedSource(source, content_hash, len(source_bytes)),
+                                       workspace_id=workspace_id, document_id=document_id, version_id=version_id,
+                                       client=client, bucket=bucket, structural=structural,
+                                       mapping_issues=structural_issues, required=rereading)
+            if rereading:
+                _finish_reread(job_id, token, stages, reading)
+                return
+            rendered_page_count = len(structural.expected_areas) if source_format is SourceFormat.PDF else 0
+            failures = page_failures(structural) if source_format is SourceFormat.PDF else []
+            missing_pages = [failure["page_number"] for failure in failures]
+            table_count = sum(i.kind == "table" for i in structural.items)
+            asset_count = sum(i.kind == "picture" and bool(i.asset_bytes) for i in structural.items)
+            parser = extraction_provider = structural.parser
+            vision_provider = None
+            if source_format is SourceFormat.PDF:
+                active_stage = "render"
+                publish_page_images(structural, prefix, bucket)
+                active_stage = "publish"
+                for name, data, mime in (("document.md", structural.legacy_markdown, "text/markdown"),
+                                         ("document.json", structural.legacy_json, "application/json")):
+                    if data is None:
+                        raise ValueError("Docling extraction artifact unavailable")
+                    client.put_object(bucket, f"{prefix}/{name}", BytesIO(data), len(data), content_type=mime)
+            if canonical_persisted:
+                _progress(job_id, token)
+                active_stage = "publish"
+                output, publication, _ = publish_outputs(canonical_repository,snapshot,client,bucket)
+                outputs_published = True
+                chunk_count = output.quality.measurements["chunks"]
+                output_revision_id = publication.revision.id
+            final_status = "partial" if failures or structural_issues or not canonical_persisted else "done"
+        with closing(psycopg.connect(db_url())) as conn, conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM jobs WHERE id=%s AND status='running' AND run_token=%s FOR UPDATE",
+                        (job_id, token))
+            if cur.fetchone() is None:
+                return
+            cur.execute(
+                """UPDATE document_versions
+                SET status=%s, parser=%s, vision_provider=%s, content_sha256=%s,
+                    page_count=%s, table_count=%s, asset_count=%s, chunk_count=%s, published_at=NOW()
+                WHERE id=%s""",
+                (
+                    final_status,
+                    parser,
+                    vision_provider,
+                    content_hash,
+                    rendered_page_count,
+                    table_count,
+                    asset_count,
+                    chunk_count,
+                    version_id,
+                ),
+            )
+            cur.execute(
+                """UPDATE jobs
+                SET status=%s, stages=%s::jsonb, page_failures=%s::jsonb,
+                    finished_at=NOW(),
+                    duration_ms=(EXTRACT(EPOCH FROM (NOW() - started_at)) * 1000)::INTEGER
+                WHERE id=%s""",
+                (
+                    final_status,
+                    json.dumps(
+                        stage_update(
+                            stages,
+                            rendered_pages=rendered_page_count,
+                            missing_pages=missing_pages,
+                            extraction_provider=extraction_provider,
+                            non_pdf=source_format is not SourceFormat.PDF,
+                            structural_status=structural.status,
+                            structural_issues=structural_issues,
+                            canonical_persisted=canonical_persisted,
+                            outputs_published=outputs_published,
+                            chunk_count=chunk_count,
+                            output_revision_id=output_revision_id,
+                        )
+                    ),
+                    json.dumps(failures),
+                    job_id,
+                ),
+            )
+            conn.commit()
+    except WorkerCrash as exc:
+        if rereading:
+            _finish_reread(job_id, token, stages, None)
+            return
+        fail(job_id, str(exc), active_stage, code="worker_crash", token=token)
+    except Exception as exc:  # noqa: BLE001 - pipeline must persist unexpected provider failures.
+        if rereading:
+            _finish_reread(job_id, token, stages, None)
+            return
+        fail(job_id, str(exc)[:1000], active_stage, token=token)
+
+
+READ_STATES = {"done", "partial"}
+
+
+def _read_hard_pages(job_id: str, token: str, source, *, required: bool, **kwargs) -> dict | None:
+    """Run the reading report; a failed report never fails an ingested version.
+
+    The advisory lock is shared with the reread CLI/API so page checkpoints never compete.
+    """
+    from .reread import run_reading
+
+    try:
+        with closing(psycopg.connect(db_url())) as reading_conn:
+            locked = reading_conn.execute("SELECT pg_try_advisory_lock(hashtextextended(%s, 0))",
+                                          (f"reading:{kwargs['version_id']}",)).fetchone()
+            if not locked or not locked[0]:
+                raise ValueError("reading already running")
+            return run_reading(source, progress=lambda: _progress(job_id, token),
+                               tick=_lease_tick(job_id, token), **kwargs)
+    except WorkerCrash:
+        raise
+    except Exception:  # noqa: BLE001 -- fixed boundary; provider/storage diagnostics may contain secrets
+        if required:
+            raise ValueError("Okuma raporu hazırlanamadı.") from None
+        logging.getLogger(__name__).error("reading report deferred (reading_report_unavailable)")
+        return None
+
+
+def _finish_reread(job_id: str, token: str, stages: list[dict[str, object]], reading: dict | None) -> None:
+    """A reread job never changes the version's parse; it restores the status claim() replaced."""
+    attributes = stages[0].setdefault("attributes", {})
+    previous = attributes.get("previous_version_status")
+    previous = previous if previous in READ_STATES else "partial"
+    if reading is None:
+        stages[0]["status"] = "failed"
+        stages[0]["error"] = "Yeniden okuma tamamlanamadı."
+        status = "failed"
+    else:
+        stages[0]["status"] = "done"
+        stages[0]["error"] = None
+        stages[0]["summary"] = reading["summary"]
+        attributes["reading_report"] = {key: reading.get(key) for key in (
+            "summary", "total_pages", "pages_read_well", "pages_read_by_model", "pages_waiting_model",
+            "attempted_pages", "model_enabled")}
+        status = "partial" if reading["pages_waiting_model"] else "done"
+    with closing(psycopg.connect(db_url())) as conn, conn.cursor() as cur:
+        cur.execute("SELECT document_version_id FROM jobs WHERE id=%s AND status='running' AND run_token=%s FOR UPDATE",
+                    (job_id, token))
+        row = cur.fetchone()
+        if row is None:
+            return
+        cur.execute("UPDATE jobs SET status=%s, stages=%s::jsonb, finished_at=NOW() WHERE id=%s",
+                    (status, json.dumps(stages), job_id))
+        cur.execute("UPDATE document_versions SET status=%s WHERE id=%s AND status='processing'", (previous, row[0]))
+        conn.commit()
+
+
+def recover_jobs(client) -> None:
+    with psycopg.connect(db_url()) as conn:
+        queued = document_jobs.recover(conn, stale_seconds=int(os.getenv("DOCGRAIN_JOB_STALE_SECONDS", "900")))
+    for job_id in queued:
+        client.lpush(QUEUE_NAME, job_id)
+
+
+def recovery_loop(client, stop):
+    interval = float(os.getenv("DOCGRAIN_JOB_RECOVERY_INTERVAL_SECONDS", "60"))
+    if interval <= 0:
+        raise ValueError("recovery interval must be positive")
+    while not stop.wait(interval):
+        try:
+            recover_jobs(client)
+        except Exception:  # noqa: BLE001 - leave durable recovery pending; do not log credentials.
+            logging.getLogger(__name__).error("document job recovery deferred")
+
+
+def run() -> None:
+    from .docling_models import startup_check
+
+    startup_check()
+    try:
+        # WP106: tell the API which optional Docling readers this image has (LibreOffice, odfdo, ...).
+        from .format_capabilities import publish
+
+        publish(storage(), os.environ["S3_BUCKET"])
+    except Exception:  # noqa: BLE001 - without a report the API keeps optional formats closed.
+        logging.getLogger(__name__).error("format capabilities were not published")
+    from docgrain_api.records_jobs import QUEUE_NAME as RECORDS_QUEUE
+
+    from .records_pipeline import supervise
+
+    client = redis.Redis.from_url(os.environ["REDIS_URL"], decode_responses=True, socket_timeout=None)
+    with psycopg.connect(db_url()) as conn:
+        document_jobs.initialize(conn)
+    if float(os.getenv("DOCGRAIN_CONVERSION_TIMEOUT_SECONDS", "600")) >= float(
+            os.getenv("DOCGRAIN_JOB_STALE_SECONDS", "900")):
+        logging.getLogger(__name__).warning(
+            "conversion timeout should stay below the stale job limit; long conversions may be re-queued")
+    recover_jobs(client)
+    stop = threading.Event()
+    threading.Thread(target=recovery_loop, args=(client, stop), daemon=True).start()
+    while True:
+        queue, job_id = client.brpop([QUEUE_NAME, RECORDS_QUEUE], timeout=0)
+        if queue == RECORDS_QUEUE:
+            try:
+                supervise(job_id)
+            except Exception:  # noqa: BLE001 - GET fences stale jobs when storage is available again.
+                logging.getLogger(__name__).error("record supervisor stopped (worker_stale)")
+            continue
+        with closing(psycopg.connect(db_url())) as conn:
+            token = document_jobs.claim(conn, job_id)
+            conn.commit()
+        if token:
+            try:
+                process(job_id, token)
+            except Exception:  # noqa: BLE001 - storage outage leaves a recoverable lease.
+                logging.getLogger(__name__).error("document job stopped; recovery pending")
+
+
+if __name__ == "__main__":
+    run()
