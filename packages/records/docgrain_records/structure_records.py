@@ -38,6 +38,12 @@ from .structure_units import (
     structure_units,
     unit_counts,
 )
+from .structure_vocab import (
+    COLLECTION_KEYS,
+    FIELD_KEYS,
+    known_collection_key,
+    vocabulary_key,
+)
 from .verify import _blocks, _source_key, normalize_quote, verify_response
 
 # Share of a document's (non-heading) text that verified structure must cover; below it the
@@ -47,48 +53,26 @@ MIN_COVERAGE = 0.5
 MIN_RECORDS = 2
 DESCRIPTION = "Built from the document structure (tables, lists, sheets); no model was used."
 
-# Obvious header/name translations to English keys (sector-neutral; Turkish and English labels).
-FIELD_KEYS = {
-    "name": "name", "ad": "name", "adi": "name", "isim": "name", "ismi": "name", "title": "name",
-    "description": "description", "aciklama": "description", "detail": "detail", "detay": "detail",
-    "ayrinti": "detail", "price": "price", "fiyat": "price", "ucret": "price", "tutar": "price",
-    "cost": "price", "hours": "hours", "saat": "hours", "saatler": "hours", "saatleri": "hours",
-    "opening hours": "hours", "acilis saatleri": "hours", "calisma saatleri": "hours",
-    "hizmet saatleri": "hours", "open": "opening_time", "opens": "opening_time",
-    "acilis": "opening_time", "closes": "closing_time", "kapanis": "closing_time",
-    "capacity": "capacity", "kapasite": "capacity", "kisi": "capacity", "kisi sayisi": "capacity",
-    "phone": "phone", "telefon": "phone", "tel": "phone", "email": "email", "e mail": "email",
-    "e posta": "email", "eposta": "email", "address": "address", "adres": "address",
-    "location": "location", "konum": "location", "yer": "location", "date": "date",
-    "tarih": "date", "duration": "duration", "sure": "duration", "floor": "floor", "kat": "floor",
-    "type": "category", "tur": "category", "tip": "category", "kategori": "category",
-    "category": "category", "notes": "notes", "note": "notes", "not": "notes", "notlar": "notes",
-    "size": "size", "alan": "size", "buyukluk": "size", "website": "website", "web": "website",
-    "web sitesi": "website", "unit": "unit", "birim": "unit", "currency": "currency",
-    "para birimi": "currency", "day": "day", "gun": "day", "gunler": "days", "days": "days",
-}
-COLLECTION_KEYS = {
-    "restaurants": "restaurants", "restaurant": "restaurants", "restoran": "restaurants",
-    "restoranlar": "restaurants", "bars": "bars", "bar": "bars", "barlar": "bars",
-    "rooms": "rooms", "room": "rooms", "oda": "rooms", "odalar": "rooms",
-    "activities": "activities", "aktiviteler": "activities", "etkinlikler": "activities",
-    "services": "services", "hizmetler": "services", "prices": "prices", "fiyatlar": "prices",
-    "fiyat listesi": "prices", "price list": "prices", "contacts": "contacts",
-    "iletisim": "contacts", "contact": "contacts", "products": "products", "urunler": "products",
-    "menu": "menu_items", "menuler": "menu_items", "staff": "staff_members",
-    "personel": "staff_members", "courses": "courses", "kurslar": "courses",
-    "dersler": "courses", "events": "events", "branches": "branches", "subeler": "branches",
-    "meeting rooms": "meeting_rooms", "toplanti salonlari": "meeting_rooms",
-    "pools": "pools", "havuzlar": "pools", "policies": "policies", "kurallar": "policies",
-}
+# KULLANILMIYOR (karar 18): eski sözlükler unused/wp122/structure_records.py içinde;
+# ortak sözlükten yeniden dışa aktarılır, mevcut importlar korunur.
 _ENGLISH_LABELS = {key: key.replace("_", " ").capitalize() for key in
                    set(FIELD_KEYS.values()) | set(COLLECTION_KEYS.values())}
 _PLACEHOLDER = re.compile(r"col \d+|col_\d+|\d+")
 
 
+# Small deterministic Russian transliteration; fold already normalizes accents/case.
+_CYRILLIC = str.maketrans(dict(zip(
+    "абвгдежзийклмнопрстуфхцчшщъыьэюяё",
+    ("a", "b", "v", "g", "d", "e", "zh", "z", "i", "y", "k", "l", "m", "n", "o", "p",
+     "r", "s", "t", "u", "f", "kh", "ts", "ch", "sh", "shch", "", "y", "", "e", "yu", "ya", "e"),
+    strict=True)))
+
+
 def _slug(text: str, limit: int = 40) -> str:
     folded = fold(text or "")
-    folded = folded.replace("ı", "i")
+    # ASCII identifiers are required by discovery_models.Key/CollectionKey.
+    # KULLANILMIYOR (karar 18): ASCII-only dropping is archived in unused/wp122.
+    folded = folded.replace("ı", "i").translate(_CYRILLIC)
     slug = re.sub(r"[^a-z0-9]+", "_", folded).strip("_")
     if len(slug) > limit:
         slug = slug[:limit].rsplit("_", 1)[0] or slug[:limit]
@@ -97,7 +81,7 @@ def _slug(text: str, limit: int = 40) -> str:
 
 def field_key(label: str) -> str:
     """English snake_case key: an obvious translation, else the normalized header."""
-    folded = " ".join(fold(label or "").replace("ı", "i").split())
+    folded = vocabulary_key(label)
     key = FIELD_KEYS.get(folded) or _slug(label) or "value"
     if not key[0].isalpha():
         key = "field_" + key
@@ -107,9 +91,9 @@ def field_key(label: str) -> str:
 
 
 def collection_key(name: str | None) -> str:
-    folded = " ".join(fold(name or "").replace("ı", "i").split())
-    if folded in COLLECTION_KEYS:
-        return COLLECTION_KEYS[folded]
+    # KULLANILMIYOR (karar 18): exact-title lookup is archived in unused/wp122.
+    if known := known_collection_key(name):
+        return known
     slug = _slug(name or "") or "items"
     if not slug[0].isalpha():
         slug = "list_" + slug

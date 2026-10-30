@@ -29,6 +29,8 @@ from hashlib import sha256
 from typing import Any
 
 from .normalize import fold, format_key
+from .place_names import name_keys
+from .structure_vocab import FIELD_KEYS, known_collection_key, vocabulary_key
 
 # Names Docling gives groups by default; they carry no meaning.
 _DEFAULT_GROUP_NAMES = {"", "group", "list", "ordered list", "unordered list", "key-value area",
@@ -749,6 +751,16 @@ def _keys(units: list[StructureUnit]) -> tuple[set[str], set[str], set[str]]:
     return _field_keys(units), _item_keys(units), _name_keys(units)
 
 
+def _canonical_keys(unit: StructureUnit) -> tuple[set[str], set[str], set[str]]:
+    """Comparison only: original labels, item values and signatures stay untouched."""
+    fields = {"name" if label == unit.name_field else
+              FIELD_KEYS.get(vocabulary_key(label), norm(label)) for label in unit.fields
+              if norm(label) and not re.fullmatch(r"col \d+", norm(label))}
+    items = name_keys([item.name for item in unit.items])
+    known = known_collection_key(unit.name)
+    return fields, items, {known} if known else set()
+
+
 def _signals(left: tuple[set[str], set[str], set[str]],
              right: tuple[set[str], set[str], set[str]]) -> tuple[float, float, int, bool]:
     (a, x, m), (b, y, n) = left, right
@@ -773,8 +785,9 @@ def _strong(jaccard: float, overlap: float, shared: int, named: bool,
 def group_units(units: list[StructureUnit]) -> Grouping:
     """Deterministic candidate collections for one workspace; unsure joins are listed, not decided.
 
-    Two units join when their normalized field sets overlap (Jaccard >= 0.6), their candidate names
-    match after normalization, or at least half of the smaller unit's item names are shared. Pairs are
+    Known collection kinds need agreeing canonical fields or translated item overlap. Distinct
+    known kinds never join or raise a question. Unknown kinds with field agreement alone ask once;
+    original title/item signals retain the existing same-language behavior. Pairs are
     applied strongest first. Joining two groups that already hold several units also needs the
     signal between the whole groups (items: at least two shared); otherwise, and for weaker
     overlaps, the pair is reported in ``ambiguous``. A single unit joins the first group it links to
@@ -793,12 +806,33 @@ def group_units(units: list[StructureUnit]) -> Grouping:
         return uid
 
     keys = {u.id: _keys([u]) for u in pool}
+    canonical = {u.id: _canonical_keys(u) for u in pool}
     pairs = []
     weak = []
     for i, left in enumerate(pool):
         for right in pool[i + 1:]:
             jaccard, overlap, shared, named = _signals(keys[left.id], keys[right.id])
             strong = _strong(jaccard, overlap, shared, named)
+            cj, co, cs, cn = _signals(canonical[left.id], canonical[right.id])
+            left_kind, right_kind = canonical[left.id][2], canonical[right.id][2]
+            if left_kind and right_kind:
+                if not cn:
+                    continue  # Identical fields/items cannot turn restaurants into bars.
+                # Keep legacy reason labels when the canonical checks support the join.
+                # KULLANILMIYOR (karar 18): raw-only pair selection archived in unused/wp122.
+                support = _strong(cj, co, cs, False)
+                strong = (strong or support) if support else []
+                # Plain same-language lists without headers retain their title signal.
+                if not canonical[left.id][0] and not canonical[right.id][0] and named:
+                    strong = ["name"]
+                jaccard, overlap, shared = cj, max(overlap, co), max(shared, cs)
+            else:
+                # Even identical headers alone cannot establish an unknown collection's kind.
+                # Keep the established same-language title/item rules (e.g. a named sheet).
+                if not ({"name", "items"} & set(strong)):
+                    strong = []
+                if not strong:
+                    jaccard, overlap, shared = max(jaccard, cj), max(overlap, co), max(shared, cs)
             score = max(jaccard, overlap if shared else 0.0, 1.0 if named else 0.0)
             if strong:
                 pairs.append((-score, left.id, right.id, strong, jaccard, overlap, shared))
@@ -816,6 +850,10 @@ def group_units(units: list[StructureUnit]) -> Grouping:
                 ambiguous.append(AmbiguousJoin(left, right, "would_bridge_collections",
                                                jaccard, overlap, shared))
                 continue
+        a_kinds = {key for u in members[a] for key in canonical[u.id][2]}
+        b_kinds = {key for u in members[b] for key in canonical[u.id][2]}
+        if a_kinds and b_kinds and a_kinds != b_kinds:
+            continue  # An unknown unit must not indirectly connect different known kinds.
         root, other = sorted((a, b))
         parent[other] = root
         members[root] = sorted(members[root] + members.pop(other), key=lambda u: u.id)
